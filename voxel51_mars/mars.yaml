@@ -1,0 +1,2 @@
+format: ParquetFilesDataset
+classification_fields: label
