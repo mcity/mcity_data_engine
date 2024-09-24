@@ -1,0 +1,10 @@
+datasets:
+  - name: mars_multitraversal
+    hf_dataset_name: ai4ce/MARS
+    hf_path: Multitraversal_2023_10_04-2024_03_08
+    loader: load_mars_multitraversal
+  - name: mars_multiagent
+    hf_dataset_name: ai4ce/MARS
+    hf_path: Multiagent_53scene
+    v51_config: mars_multiagent.yaml
+    loader: load_mars_multiagent
