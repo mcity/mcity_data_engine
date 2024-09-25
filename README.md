@@ -1,6 +1,6 @@
 # Mcity Data Engine
 
-Developed under Ubuntu 24.04 and Python 3.12.
+Developed under Ubuntu 24.04.1 LTS and Python 3.12.3.
 
 Download and install requirements:
 ```
@@ -25,5 +25,21 @@ If not installed yet, install the nuscenes-devkit with
 cd data_loader/nuscenes-devkit
 pip install .
 ```
+
+### Mcity Fisheye 2000 (Labeled)
+
+Download the data with
+```
+cd datasets
+scp -r <uniqname>@lighthouse.arc-ts.umich.edu:/nfs/turbo/coe-mcity/tinghanw/midadvrb_2000 .
+```
+
+### Mcity Fisheye 3-Months (unlabeled)
+```
+cd datasets
+scp -r dbogdoll@lighthouse.arc-ts.umich.edu:/nfs/turbo/coe-mcity/tinghanw/midadv_swinl_label_veh_0p3_ped_0p3_2023q4_yolov8_format_v2 .
+```
+
+### Fisheye 8k
 
 
