@@ -16,6 +16,15 @@ Development System Specifications:
 - Python 3.12.3
 - CUDA Version: 12.4 (RTX 4090)
 
+## Structure
+
+    .
+    ├── datasets                # Stores datasets and computed embeddings
+    ├── data_loader             # Handles dataset loading
+    ├── main.py                 # Core of the framework
+    ├── brain.py                # V51 Analysis of data
+    └── README.md
+
 ## Datasets
 
 ### [MARS](https://ai4ce.github.io/MARS/)
