@@ -1,0 +1,3 @@
+[submodule "data_loader/nuscenes-devkit"]
+	path = data_loader/nuscenes-devkit
+	url = https://github.com/daniel-bogdoll/nuscenes-devkit
