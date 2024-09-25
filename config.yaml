@@ -1,1 +1,5 @@
-selected_dataset: mcity_fisheye_2000
+selected_dataset: mcity_fisheye_2000  # Choose from datasets.yaml
+v51_embedding_models: # Choose from Embedding models https://docs.voxel51.com/user_guide/model_zoo/models.html
+  - mobilenet-v2-imagenet-torch
+  - dinov2-vitl14-torch
+  - inception-v3-imagenet-torch 

@@ -1,16 +1,16 @@
 datasets:
   - name: mars_multitraversal
+    loader: load_mars_multitraversal
     hf_dataset_name: ai4ce/MARS
     hf_path: Multitraversal_2023_10_04-2024_03_08
-    loader: load_mars_multitraversal
   - name: mars_multiagent
+    loader: load_mars_multiagent
     hf_dataset_name: ai4ce/MARS
     hf_path: Multiagent_53scene
     v51_config: mars_multiagent.yaml
-    loader: load_mars_multiagent
   - name: mcity_fisheye_2000
-    hf_dataset_name: dbogdollumich/mcity_fisheye
     loader: load_mcity_fisheye_2000
+    hf_dataset_name: dbogdollumich/mcity_fisheye
     local_path: midadvrb_2000
     v51_type: YOLOv5Dataset
-    v51_splits: ["train", "val"]
+    v51_splits: ["val"]
