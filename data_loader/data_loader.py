@@ -27,5 +27,3 @@ def load_mars_multitraversal(dataset_info):
     location = 10
     data_root = "./datasets/MARS/Multitraversal_2023_10_04-2024_03_08"
     nusc = NuScenes(version="v1.0", dataroot=f"data_root/{location}", verbose=True)
-
-    # nuscenes dev-kit is for python3.7, we are on 3.12. It asks for shapely<2.0
