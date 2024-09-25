@@ -26,7 +26,7 @@ cd data_loader/nuscenes-devkit
 pip install .
 ```
 
-### Mcity Fisheye 2000 (Labeled)
+### Mcity Fisheye 2000 (labeled)
 
 Download the data with
 ```
@@ -37,7 +37,7 @@ scp -r <uniqname>@lighthouse.arc-ts.umich.edu:/nfs/turbo/coe-mcity/tinghanw/mida
 ### Mcity Fisheye 3-Months (unlabeled)
 ```
 cd datasets
-scp -r dbogdoll@lighthouse.arc-ts.umich.edu:/nfs/turbo/coe-mcity/tinghanw/midadv_swinl_label_veh_0p3_ped_0p3_2023q4_yolov8_format_v2 .
+scp -r <uniqname>@lighthouse.arc-ts.umich.edu:/nfs/turbo/coe-mcity/tinghanw/midadv_swinl_label_veh_0p3_ped_0p3_2023q4_yolov8_format_v2 .
 ```
 
 ### Fisheye 8k
