@@ -77,6 +77,7 @@ def load_mcity_fisheye_2000(dataset_info):
         sample["timestamp"] = metadata["timestamp"]
         sample.save()
 
+    dataset.persistent = False
     return dataset
 
 
