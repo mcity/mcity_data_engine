@@ -8,3 +8,9 @@ datasets:
     hf_path: Multiagent_53scene
     v51_config: mars_multiagent.yaml
     loader: load_mars_multiagent
+  - name: mcity_fisheye_2000
+    hf_dataset_name: dbogdollumich/mcity_fisheye
+    loader: load_mcity_fisheye_2000
+    local_path: midadvrb_2000
+    v51_type: YOLOv5Dataset
+    v51_splits: ["train", "val"]
