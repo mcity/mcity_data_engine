@@ -1,5 +1,6 @@
 import yaml
 import logging
+import time
 
 from data_loader.data_loader import *
 from brain import compute_embeddings
@@ -10,6 +11,7 @@ logging.basicConfig(
 
 
 def main():
+    time_start = time.time()
     # Load the main configuration
     with open("config.yaml") as f:
         main_config = yaml.safe_load(f)
@@ -24,9 +26,14 @@ def main():
 
     # Compute model embeddings
     embedding_model_names = main_config.get("v51_embedding_models")
-    embeddings, model_embeddings = compute_embeddings(dataset, dataset_info, None)
+    embeddings, model_embeddings = compute_embeddings(
+        dataset, dataset_info, embedding_model_names
+    )
 
     # Launch V51 session
+    time_stop = time.time()
+    logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
+
     session = fo.launch_app(dataset)
     session.wait()
 

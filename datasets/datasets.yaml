@@ -13,4 +13,4 @@ datasets:
     hf_dataset_name: dbogdollumich/mcity_fisheye
     local_path: midadvrb_2000
     v51_type: YOLOv5Dataset
-    v51_splits: ["val"]
+    v51_splits: ["train", "val"]

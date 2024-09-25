@@ -6,6 +6,8 @@ import re
 import os
 from pathlib import Path
 import json
+import numpy as np
+import pickle
 
 
 def compute_embeddings(dataset, dataset_info, embedding_model_names, seed=0):
@@ -19,48 +21,58 @@ def compute_embeddings(dataset, dataset_info, embedding_model_names, seed=0):
         dict: A dictionary containing the computed embeddings for 'umap', 'tsne', and 'pca'.
     """
 
-    # Use V51 pre-defined dim. reduction methods
-    embeddings = dict.fromkeys(fob.brain_config.visualization_methods.keys())
-    embeddings.pop("manual", None)
-    embeddings.pop("umap", None)  # TODO Remove
-    embeddings.pop("tsne", None)  # TODO Remove
-
     dataset_name = dataset_info["name"]
     embeddings_root = "./datasets/embeddings/" + dataset_name + "/"
     Path(embeddings_root).mkdir(parents=True, exist_ok=True)
 
-    for embedding_name in embeddings:
-        file_path = embeddings_root + embedding_name + ".json"
-        if os.path.exists(file_path):
-            with open(file_path, "r") as json_file:
-                loaded_embedding = json.load(json_file)
+    # Use V51 pre-defined dim. reduction methods
+    dim_reduction_methods = list(fob.brain_config.visualization_methods.keys())
+    dim_reduction_methods.remove("manual")
+    embeddings = {}
 
-                # TODO: Implement loading
-        else:
-            embedding = fob.compute_visualization(
-                dataset,
-                method=embedding_name,
-                brain_key=embedding_name,
+    for model_name in embedding_model_names:
+        model = foz.load_zoo_model(model_name)
+
+        if model.has_embeddings:
+            embedding_file_name = (
+                embeddings_root + re.sub(r"[\W-]+", "_", model_name) + ".pkl"
             )
-            # TODO embedding.write_json(file_path)
-        embeddings[embedding_name] = embedding
-
-    # TODO Implement saving + loading
-    if embedding_model_names:
-        model_embeddings = dict.fromkeys(embedding_model_names)
-        for model_name in model_embeddings:
-            model = foz.load_zoo_model(model_name)
-            if model.has_embeddings:
-                embedding = dataset.compute_embeddings(model)
-                embedding_key = re.sub("[\W_]+", "", model_name)
-                embeddings[model_name] = fob.compute_visualization(
-                    dataset,
-                    embeddings=embedding,
-                    seed=seed,
-                    brain_key=embedding_key,
-                )
+            if os.path.exists(embedding_file_name):
+                with open(embedding_file_name, "rb") as f:
+                    model_embeddings = pickle.load(f)
             else:
-                print("Model ", model_name, " does not provide embeddings.")
+                model_embeddings = dataset.compute_embeddings(model=model)
+                with open(embedding_file_name, "wb") as f:
+                    pickle.dump(model_embeddings, f)
+
+            for method in dim_reduction_methods:
+                key = re.sub(r"[\W-]+", "_", model_name + "_" + method)
+                vis_file_name = embeddings_root + key + ".pkl"
+
+                if os.path.exists(vis_file_name):
+                    with open(vis_file_name, "rb") as f:
+                        points = pickle.load(f)
+                    embeddings[key] = fob.compute_visualization(
+                        dataset,
+                        method=method,
+                        embeddings=model_embeddings,
+                        points=points,
+                        seed=seed,
+                        brain_key=key,
+                    )
+                else:
+                    embeddings[key] = fob.compute_visualization(
+                        dataset,
+                        method=method,
+                        embeddings=model_embeddings,
+                        seed=seed,
+                        brain_key=key,
+                    )
+
+                    # Save VisualizationResults object
+                    with open(vis_file_name, "wb") as f:
+                        pickle.dump(embeddings[key].points, f)
+                    # embeddings[key].write_json(vis_file_name)
     else:
         model_embeddings = None
 
