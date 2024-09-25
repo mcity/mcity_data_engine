@@ -1,12 +1,19 @@
 # Mcity Data Engine
 
-Developed under Ubuntu 24.04.1 LTS and Python 3.12.3.
-
-Download and install requirements:
+Download, install requirements, and run:
 ```
 git clone --recurse-submodules git@github.com:daniel-bogdoll/mcity_data_engine.git
+cd mcity_data_engine
 pip install -r "requirements.txt"
+python main.py
 ```
+
+In case there are issues with MongoDB, use ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
+
+Development System Specifications:
+- Ubuntu 24.04.1 LTS
+- Python 3.12.3
+- CUDA Version: 12.4 (RTX 4090)
 
 ## Datasets
 
@@ -33,6 +40,8 @@ Download the data with
 cd datasets
 scp -r <uniqname>@lighthouse.arc-ts.umich.edu:/nfs/turbo/coe-mcity/tinghanw/midadvrb_2000 .
 ```
+
+If ```images/val``` contains json files, delete them.
 
 ### Mcity Fisheye 3-Months (unlabeled)
 ```
