@@ -20,10 +20,11 @@ Development System Specifications:
 
     .
     ├── datasets                # Stores datasets and computed embeddings
+        ├── datasets.yaml       # Dataset related parameters
     ├── data_loader             # Handles dataset loading
     ├── main.py                 # Core of the framework
     ├── brain.py                # V51 Analysis of data
-    └── README.md
+    └── config.yaml             # Main parameters
 
 ## Datasets
 
