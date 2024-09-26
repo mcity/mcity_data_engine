@@ -74,7 +74,7 @@ multivolumefile==0.2.3
 networkx==3.3
 numba==0.60.0
 numpy==1.26.4
-nuscenes-devkit @ ./data_loader/nuscenes-devkit
+nuscenes-devkit @ file:///home/dbogdoll/mcity_data_engine/data_loader/nuscenes-devkit
 nvidia-cublas-cu12==12.4.2.65
 nvidia-cuda-cupti-cu12==12.4.99
 nvidia-cuda-nvrtc-cu12==12.4.99
