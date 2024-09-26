@@ -28,6 +28,7 @@ jobs:
         git pull --recurse-submodules
         git submodule update --remote --recursive
     - name: Install nuscenes-devkit
+      run: |
         pip install -e ./data_loader/nuscenes-devkit
     - name: Install dependencies
       run: |
