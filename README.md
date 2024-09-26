@@ -1,10 +1,18 @@
 # Mcity Data Engine
+[![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04-blue)]()
+[![Python](https://img.shields.io/badge/Python-3.12-blue)]()
+[![CUDA](https://img.shields.io/badge/CUDA-12.4-blue)]()
+
+[![Basic validation](https://github.com/daniel-bogdoll/mcity_data_engine/actions/workflows/python-app.yml/badge.svg?branch=main)](https://github.com/daniel-bogdoll/mcity_data_engine/blob/main/.github/workflows/python-app.yml)
+
 
 Download, install requirements, and run:
 ```
 git clone --recurse-submodules git@github.com:daniel-bogdoll/mcity_data_engine.git
 cd mcity_data_engine
-pip install -r "requirements.txt"
+pip install -e ./data_loader/nuscenes-devkit
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+pip install -r requirements.txt
 fiftyone plugins download https://github.com/jacobmarks/clustering-plugin
 python main.py
 ```
