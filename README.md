@@ -13,7 +13,7 @@ Download, install requirements, and run:
 git clone --recurse-submodules git@github.com:daniel-bogdoll/mcity_data_engine.git
 cd mcity_data_engine
 pip install -e ./data_loader/nuscenes-devkit
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements.txt
 fiftyone plugins download https://github.com/jacobmarks/clustering-plugin
 python main.py
@@ -33,8 +33,8 @@ Development System Specifications:
         ├── datasets.yaml       # Dataset related parameters
     ├── data_loader             # Handles dataset loading
     ├── main.py                 # Core of the framework
-    ├── brain.py                # V51 Analysis of data
-    └── config.yaml             # Main parameters
+    ├── brain.py                # V51 analysis of data
+    └── config.py               # General config
 
 ## Datasets
 

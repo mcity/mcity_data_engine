@@ -1,8 +1,9 @@
-import yaml
 import time
 
 from colorlog import ColoredFormatter
 import logging
+
+from config import SELECTED_DATASET, V51_EMBEDDING_MODELS
 
 from data_loader.data_loader import *
 from brain import compute_embeddings, compute_similarity, compute_unique_images
@@ -38,13 +39,10 @@ logging.basicConfig(
 
 def main():
     time_start = time.time()
-    # Load the main configuration
-    with open("config.yaml") as f:
-        main_config = yaml.safe_load(f)
 
     # Load the selected dataset
     logging.info(f"Available V51 datasets: {fo.list_datasets()}")
-    dataset_info = load_dataset_info(main_config["selected_dataset"])
+    dataset_info = load_dataset_info(SELECTED_DATASET)
     if dataset_info:
         loader_function = dataset_info.get("loader_fct")
         dataset = globals()[loader_function](dataset_info)
@@ -52,9 +50,8 @@ def main():
         logging.error("No valid dataset name provided in config.yaml")
 
     # Compute model embeddings
-    embedding_model_names = main_config.get("v51_embedding_models")
     embeddings_vis, embeddings_models = compute_embeddings(
-        dataset, dataset_info, embedding_model_names
+        dataset, dataset_info, V51_EMBEDDING_MODELS
     )
     similarities = compute_similarity(dataset, embeddings_models)
     similarities = compute_unique_images(similarities, embeddings_vis)
