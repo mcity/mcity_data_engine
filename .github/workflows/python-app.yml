@@ -27,15 +27,17 @@ jobs:
       run: |
         git pull --recurse-submodules
         git submodule update --remote --recursive
-    - name: Install dependencies
+    - name: Upgrade pip
       run: |
         python -m pip install --upgrade pip
+    - name: Install nuscenes-devkit
+      run: |
+        pip install -e ./data_loader/nuscenes-devkit/
+    - name: Install dependencies
+      run: |
         pip install flake8 pytest
         pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    - name: Install nuscenes-devkit
-      run: |
-        pip install -e ./data_loader/nuscenes-devkit
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
