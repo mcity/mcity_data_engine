@@ -25,6 +25,7 @@ jobs:
         python-version: "3.12"
     - name: Install dependencies
       run: |
+        git pull --recurse-submodules
         python -m pip install --upgrade pip
         pip install flake8 pytest
         pip install -e ./data_loader/nuscenes-devkit
