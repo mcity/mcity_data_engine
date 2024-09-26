@@ -32,6 +32,8 @@ Development System Specifications:
     ├── datasets                # Stores datasets and computed embeddings
         ├── datasets.yaml       # Dataset related parameters
     ├── data_loader             # Handles dataset loading
+        ├── nuscenes-devkit     # Modified devkit for python 3.12
+    ├── tests                   # Pytest cases
     ├── main.py                 # Core of the framework
     ├── brain.py                # V51 analysis of data
     └── config.py               # General config
