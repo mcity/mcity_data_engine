@@ -6,6 +6,8 @@ from datetime import datetime
 from nuscenes.nuscenes import NuScenes
 import fiftyone as fo
 
+from config import NUM_WORKERS
+
 
 def load_dataset_info(dataset_name):
     """
@@ -61,12 +63,12 @@ def load_mcity_fisheye_2000(dataset_info):
     dataset = fo.Dataset(dataset_name)
     for split in dataset_splits:
         dataset.add_dir(
-            dataset_dir="./datasets/" + dataset_dir,
+            dataset_dir=dataset_dir,
             dataset_type=dataset_type,
             split=split,
             tags=split,
         )
-    dataset.compute_metadata()
+    dataset.compute_metadata(num_workers=NUM_WORKERS)
 
     # Add dataset specific metedata based on filename
     view = dataset.view()
@@ -77,7 +79,7 @@ def load_mcity_fisheye_2000(dataset_info):
         sample["timestamp"] = metadata["timestamp"]
         sample.save()
 
-    dataset.persistent = False
+    dataset.persistent = True  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
     return dataset
 
 
