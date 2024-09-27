@@ -6,7 +6,9 @@ from datetime import datetime
 from nuscenes.nuscenes import NuScenes
 import fiftyone as fo
 
-from config import NUM_WORKERS
+import logging
+
+from config import NUM_WORKERS, PERSISTENT
 
 
 def load_dataset_info(dataset_name):
@@ -55,31 +57,38 @@ def load_mcity_fisheye_2000(dataset_info):
     dataset_type = getattr(fo.types, dataset_info["v51_type"])
     dataset_splits = dataset_info["v51_splits"]
 
-    try:
-        fo.delete_dataset(dataset_name)
-    except:
-        pass
+    if PERSISTENT == False:
+        try:
+            fo.delete_dataset(dataset_info["name"])
+        except:
+            pass
 
-    dataset = fo.Dataset(dataset_name)
-    for split in dataset_splits:
-        dataset.add_dir(
-            dataset_dir=dataset_dir,
-            dataset_type=dataset_type,
-            split=split,
-            tags=split,
-        )
-    dataset.compute_metadata(num_workers=NUM_WORKERS)
+    logging.info(f"Available V51 datasets: {fo.list_datasets()}")
 
-    # Add dataset specific metedata based on filename
-    view = dataset.view()
-    for sample in view:  # https://docs.voxel51.com/api/fiftyone.core.sample.html
-        metadata = process_mcity_fisheye_2000_filename(sample["filepath"])
-        sample["location"] = metadata["location"]
-        sample["name"] = metadata["name"]
-        sample["timestamp"] = metadata["timestamp"]
-        sample.save()
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = fo.Dataset(dataset_name)
+        for split in dataset_splits:
+            dataset.add_dir(
+                dataset_dir=dataset_dir,
+                dataset_type=dataset_type,
+                split=split,
+                tags=split,
+            )
+        dataset.compute_metadata(num_workers=NUM_WORKERS)
 
-    dataset.persistent = True  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
+        # Add dataset specific metedata based on filename
+        view = dataset.view()
+        for sample in view:  # https://docs.voxel51.com/api/fiftyone.core.sample.html
+            metadata = process_mcity_fisheye_2000_filename(sample["filepath"])
+            sample["location"] = metadata["location"]
+            sample["name"] = metadata["name"]
+            sample["timestamp"] = metadata["timestamp"]
+            sample.save()
+
+        dataset.persistent = PERSISTENT  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
     return dataset
 
 
