@@ -16,3 +16,6 @@ V51_EMBEDDING_MODELS = (
     "vgg19-imagenet-torch",
     "zero-shot-detection-transformer-torch",
 )
+
+PERSISTENT = False  # If V51 database is stored
+COMPUTE_BRAIN = True  # If computations are performed
