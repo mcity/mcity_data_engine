@@ -14,7 +14,10 @@ V51_EMBEDDING_MODELS = (
     "mobilenet-v2-imagenet-torch",
     "resnet152-imagenet-torch",
     "vgg19-imagenet-torch",
+    "classification-transformer-torch",
+    "detection-transformer-torch",
     "zero-shot-detection-transformer-torch",
+    "zero-shot-classification-transformer-torch",
 )
 
-PERSISTENT = True  # If V51 database is stored
+PERSISTENT = False  # If V51 database is stored
