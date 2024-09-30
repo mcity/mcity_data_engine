@@ -17,5 +17,4 @@ V51_EMBEDDING_MODELS = (
     "zero-shot-detection-transformer-torch",
 )
 
-PERSISTENT = False  # If V51 database is stored
-COMPUTE_BRAIN = True  # If computations are performed
+PERSISTENT = True  # If V51 database is stored
