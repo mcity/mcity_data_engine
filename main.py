@@ -74,7 +74,7 @@ def main():
     embeddings_panel = fo.Panel(
         type="Embeddings",
         state=dict(
-            brainResult=next(iter(v51_brain.embeddings_vis)), colorByField="tags"
+            brainResult=next(iter(v51_brain.embeddings_vis)), colorByField="unique"
         ),
     )
 

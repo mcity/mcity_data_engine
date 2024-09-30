@@ -1,7 +1,7 @@
-import fiftyone as fo
-from fiftyone import ViewField
 import fiftyone.brain as fob
 import fiftyone.zoo as foz
+
+import numpy as np
 
 from tqdm import tqdm
 
@@ -27,7 +27,6 @@ class Brain:
         self.embeddings_vis = {}
         self.embeddings_models = {}
         self.similarities = {}
-        self.unique_ids = {}
 
         # Generate folder to store all embedding-related results
         self.embeddings_root = embeddings_path + self.dataset_name + "/"
@@ -65,12 +64,13 @@ class Brain:
                             embedding_key, self.embeddings_models[model_name]
                         )
                     else:
-                        self.embeddings_models[model_name] = (
-                            self.dataset.compute_embeddings(
-                                model=model,
-                                embeddings_field=embedding_key,
-                            )
+                        self.dataset.compute_embeddings(
+                            model=model, embeddings_field=embedding_key
                         )
+                        self.embeddings_models[model_name] = self.dataset.values(
+                            embedding_key
+                        )
+
                         self.dataset.set_values(
                             embedding_key, self.embeddings_models[model_name]
                         )
@@ -145,39 +145,22 @@ class Brain:
                     num_workers=NUM_WORKERS,
                 )
 
-    def compute_unique_images(self, num_of_unique=500, DEBUG_VIS=False):
+    def compute_unique_images(self, perct_unique=0.01):
         # https://docs.voxel51.com/user_guide/brain.html#cifar-10-example
 
+        sample_count = len(self.dataset.view())
+        num_of_unique = perct_unique * sample_count
         tag_unique = "unique"
 
-        for sim_key in tqdm(self.similarities, desc="Computing unique images"):
-            embeddings_vis_subset = {
-                key: embedding
-                for key, embedding in self.embeddings_vis.items()
-                if sim_key[:-6] in key  # Remove _simil suffix
-            }
+        # Check if any sample has the label label_unique:
+        dataset_labels = self.dataset.count_sample_tags()
+        if tag_unique in dataset_labels:
+            pass
 
-            # Check if any sample has the label label_unique:
-            dataset_labels = self.dataset.count_sample_tags()
-            if tag_unique in dataset_labels:
-                pass
-                # self.unique_ids[sim_key] = self.similarities[sim_key].unique_ids
-
-            else:
+        else:
+            for sim_key in tqdm(self.similarities, desc="Computing unique images"):
                 self.similarities[sim_key].find_unique(num_of_unique)
-                self.unique_ids[sim_key] = self.similarities[sim_key].unique_ids
-
-                # Add V51 tag to unique labels
-                for unique_id in self.unique_ids[sim_key]:
+                for unique_id in self.similarities[sim_key].unique_ids:
                     sample = self.dataset[unique_id]
-                    if tag_unique not in sample.tags:
-                        sample.tags.append(tag_unique)
-                        sample.save()
-
-            if DEBUG_VIS:
-                for embedding_vis_key in embeddings_vis_subset:
-                    embedding_vis = embeddings_vis_subset[embedding_vis_key]
-                    plot = self.similarities[sim_key].visualize_unique(
-                        visualization=embedding_vis
-                    )
-                    plot.show(height=800, yaxis_scaleanchor="x")
+                    sample[tag_unique] = True
+                    sample.save()
