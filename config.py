@@ -20,4 +20,4 @@ V51_EMBEDDING_MODELS = (
     "zero-shot-classification-transformer-torch",
 )
 
-PERSISTENT = False  # If V51 database is stored
+PERSISTENT = True  # If V51 database is stored

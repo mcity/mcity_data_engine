@@ -1,5 +1,6 @@
 import fiftyone.brain as fob
 import fiftyone.zoo as foz
+from fiftyone import ViewField as F
 
 import numpy as np
 
@@ -16,6 +17,42 @@ from config import NUM_WORKERS
 
 
 class Brain:
+    """
+    A class used to represent the Brain, which handles the computation of embeddings,
+    similarities, unique images, and similar images for a given dataset.
+    Repository: https://github.com/voxel51/fiftyone-brain
+    Documentation: https://docs.voxel51.com/brain.html
+
+    Attributes
+    ----------
+    dataset : object
+        The dataset object containing the data to be processed.
+    brains : list
+        A list of brain runs available in the dataset.
+    dataset_name : str
+        The name of the dataset.
+    seed : int
+        The seed value for random operations.
+    embeddings_vis : dict
+        A dictionary to store visualization embeddings.
+    embeddings_models : dict
+        A dictionary to store model embeddings.
+    similarities : dict
+        A dictionary to store similarity computations.
+    embeddings_root : str
+        The root directory path to store all embedding-related results.
+
+    Methods
+    -------
+    compute_embeddings(embedding_model_names)
+        Computes embeddings for the given list of embedding model names.
+    compute_similarity()
+        Computes cosine similarity for the embeddings without dimensionality reduction.
+    compute_unique_images(perct_unique=0.01, n_neighbours=15)
+        Identifies unique images in the dataset based on the computed similarities.
+    compute_similar_images(n_neighbours=5)
+        Finds and tags images similar to the unique images in the dataset.
+    """
 
     def __init__(self, dataset, dataset_info, embeddings_path="./datasets/embeddings/"):
         self.dataset = dataset
@@ -31,6 +68,14 @@ class Brain:
         # Generate folder to store all embedding-related results
         self.embeddings_root = embeddings_path + self.dataset_name + "/"
         Path(self.embeddings_root).mkdir(parents=True, exist_ok=True)
+
+        self.unique_taxonomy = {
+            "field": "unique",
+            "value_find_unique": "greedy_center",
+            "value_compute_uniqueness": "deterministic_center",
+            "value_find_unique_neighbour": "greedy_neighbour",
+            "value_compute_uniqueness_neighbour": "deterministic_neighbour",
+        }
 
     def compute_embeddings(self, embedding_model_names):
         # Use V51 pre-defined dim. reduction methods
@@ -127,6 +172,8 @@ class Brain:
 
     def compute_similarity(self):
         # https://docs.voxel51.com/user_guide/brain.html#similarity
+        # Indexes dataset by similarity
+        # Calculates cosine distance for the embeddings without dimensionality reduction
 
         for embedding_name in tqdm(
             self.embeddings_models, desc="Computing similarities"
@@ -145,22 +192,85 @@ class Brain:
                     num_workers=NUM_WORKERS,
                 )
 
-    def compute_unique_images(self, perct_unique=0.01):
+    def compute_unique_images_greedy(self, perct_unique=0.01):
         # https://docs.voxel51.com/user_guide/brain.html#cifar-10-example
+        # find_unique(n) uses a greedy algorithm that, for a given n,
+        # finds a subset of your dataset whose embeddings are as far as possible
+        # from each other (= maximizes k=1 neighbor distance)
 
         sample_count = len(self.dataset.view())
         num_of_unique = perct_unique * sample_count
-        tag_unique = "unique"
+        field = self.unique_taxonomy["field"]
+        value = self.unique_taxonomy["value_find_unique"]
 
         # Check if any sample has the label label_unique:
         dataset_labels = self.dataset.count_sample_tags()
-        if tag_unique in dataset_labels:
+        center_view = self.dataset.match(F(field) == value)
+
+        if field in dataset_labels and len(center_view) > 0:
             pass
 
         else:
-            for sim_key in tqdm(self.similarities, desc="Computing unique images"):
+            for sim_key in tqdm(self.similarities, desc="Computing uniqueness greedy"):
                 self.similarities[sim_key].find_unique(num_of_unique)
                 for unique_id in self.similarities[sim_key].unique_ids:
                     sample = self.dataset[unique_id]
-                    sample[tag_unique] = True
+                    sample[field] = value
                     sample.save()
+
+    def compute_unique_images_deterministic(self, threshold=0.99):
+        # https://docs.voxel51.com/api/fiftyone.brain.html#fiftyone.brain.compute_uniqueness
+        # compute_uniqueness() computes a deterministic uniqueness score
+        # for each sample in [0, 1] (= weighted k-neighbors distances for each sample)
+
+        field = self.unique_taxonomy["field"]
+        value = self.unique_taxonomy["value_compute_uniqueness"]
+
+        for embedding_name in tqdm(
+            self.embeddings_models, desc="Computing uniqueness deterministic"
+        ):
+            embedding = self.embeddings_models[embedding_name]
+            key = re.sub(r"[\W-]+", "_", embedding_name) + "_uniqueness"
+
+            fob.compute_uniqueness(
+                self.dataset, embeddings=embedding, uniqueness_field=key
+            )
+
+            quant_threshold = self.dataset.quantiles(key, threshold)
+            view = self.dataset.match(F(key) >= quant_threshold)
+            for sample in view:
+                sample[field] = value
+                sample.save()
+
+    def compute_similar_images(self, dist_threshold=0.1):
+        tag = "unique"
+        tag_unique = "Center"
+        tag_unique_neighbour = "Neighbour"
+        tag_neighbour_distance = "distance"
+        neighbour_count = len(self.dataset.view()) - 1
+
+        # Check if
+        dataset_labels = self.dataset.count_sample_tags()
+        neighbour_view = self.dataset.match(F(tag) == tag_unique_neighbour)
+
+        if tag in dataset_labels and len(neighbour_view) > 0:
+            pass
+
+        else:
+            unique_view = self.dataset.match(F(tag) == tag_unique)
+            for sample in tqdm(unique_view, desc="Computing similar images"):
+                for sim_key in self.similarities:
+                    view = self.dataset.sort_by_similarity(
+                        sample.id,
+                        k=neighbour_count,
+                        brain_key=sim_key,
+                        dist_field=tag_neighbour_distance,
+                    )
+                    for sample_neighbour in view:
+                        distance = sample_neighbour[tag_neighbour_distance]
+                        if (
+                            sample_neighbour[tag] != tag_unique
+                            and distance < dist_threshold
+                        ):
+                            sample_neighbour[tag] = tag_unique_neighbour
+                            sample_neighbour.save()
