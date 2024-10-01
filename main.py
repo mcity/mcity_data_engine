@@ -66,7 +66,7 @@ def main():
     v51_brain.compute_similarity()
     v51_brain.compute_unique_images_greedy()
     v51_brain.compute_unique_images_deterministic()
-    # v51_brain.compute_similar_images()
+    v51_brain.compute_similar_images()
 
     dataset.save()
 

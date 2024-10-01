@@ -242,35 +242,90 @@ class Brain:
                 sample[field] = value
                 sample.save()
 
-    def compute_similar_images(self, dist_threshold=0.1):
-        tag = "unique"
-        tag_unique = "Center"
-        tag_unique_neighbour = "Neighbour"
-        tag_neighbour_distance = "distance"
-        neighbour_count = len(self.dataset.view()) - 1
+    def compute_duplicate_images(self, fraction=0.99):
+        # Find least similar images
+        # https://docs.voxel51.com/brain.html#finding-near-duplicate-images
+        for sim_key in tqdm(self.similarities, desc="Computing neighbors map"):
+            self.similarities[sim_key].find_duplicates(fraction=fraction)
+            logging.warning(len(self.similarities[sim_key].neighbors_map))
+            for sample_key in self.similarities[sim_key].neighbors_map:
+                sample = self.similarities[sim_key].neighbors_map[sample_key]
+                for duplicate in sample:
+                    id = duplicate[0]
+                    distance = duplicate[1]
+                    sample = self.dataset[id]
+                    sample["unique"] = "neighbour"
+                    sample.save()
 
-        # Check if
+    def find_samples_by_text(self, prompt, model_name):
+        # https://docs.voxel51.com/api/fiftyone.core.collections.html#fiftyone.core.collections.SampleCollection.sort_by_similarity
+        if model_name == "clip-vit-base32-torch":
+            view = self.dataset.sort_by_similarity(prompt, k=5)
+
+    def compute_similar_images(self, dist_threshold=0.03, neighbour_count=5):
+        field = self.unique_taxonomy["field"]
+        field_neighbour_distance = "distance"
+
+        value_find_unique = self.unique_taxonomy["value_find_unique"]
+        value_compute_uniqueness = self.unique_taxonomy["value_compute_uniqueness"]
+        value_find_unique_neighbour = self.unique_taxonomy[
+            "value_find_unique_neighbour"
+        ]
+        value_compute_uniqueness_neighbour = self.unique_taxonomy[
+            "value_compute_uniqueness_neighbour"
+        ]
+
+        # Check if samples have already assigned fields
         dataset_labels = self.dataset.count_sample_tags()
-        neighbour_view = self.dataset.match(F(tag) == tag_unique_neighbour)
+        neighbour_view_greedy = self.dataset.match(
+            F(field) == value_find_unique_neighbour
+        )
+        neighbour_view_deterministic = self.dataset.match(
+            F(field) == value_compute_uniqueness_neighbour
+        )
 
-        if tag in dataset_labels and len(neighbour_view) > 0:
+        if field in dataset_labels and (
+            len(neighbour_view_greedy) > 0 or len(neighbour_view_deterministic) > 0
+        ):
             pass
 
         else:
-            unique_view = self.dataset.match(F(tag) == tag_unique)
-            for sample in tqdm(unique_view, desc="Computing similar images"):
-                for sim_key in self.similarities:
+            unique_view_greedy = self.dataset.match(F(field) == value_find_unique)
+            unique_view_deterministic = self.dataset.match(
+                F(field) == value_compute_uniqueness
+            )
+
+            for sim_key in tqdm(self.similarities, desc="Finding similar images"):
+                for sample in unique_view_greedy:
                     view = self.dataset.sort_by_similarity(
                         sample.id,
                         k=neighbour_count,
                         brain_key=sim_key,
-                        dist_field=tag_neighbour_distance,
+                        dist_field=field_neighbour_distance,
                     )
                     for sample_neighbour in view:
-                        distance = sample_neighbour[tag_neighbour_distance]
+                        distance = sample_neighbour[field_neighbour_distance]
                         if (
-                            sample_neighbour[tag] != tag_unique
-                            and distance < dist_threshold
+                            distance < dist_threshold
+                            and sample_neighbour[field] == None
                         ):
-                            sample_neighbour[tag] = tag_unique_neighbour
+                            logging.debug("Distance Greedy: " + str(distance))
+                            sample_neighbour[field] = value_find_unique_neighbour
+                            sample_neighbour.save()
+
+                for sample in unique_view_deterministic:
+                    view = self.dataset.sort_by_similarity(
+                        sample.id,
+                        k=neighbour_count,
+                        brain_key=sim_key,
+                        dist_field=field_neighbour_distance,
+                    )
+                    for sample_neighbour in view:
+                        distance = sample_neighbour[field_neighbour_distance]
+                        if (
+                            distance < dist_threshold
+                            and sample_neighbour[field] == None
+                        ):
+                            logging.debug("Distance Deterministic: " + str(distance))
+                            sample_neighbour[field] = value_compute_uniqueness_neighbour
                             sample_neighbour.save()
