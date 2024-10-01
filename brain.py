@@ -238,8 +238,9 @@ class Brain:
                 self.dataset, embeddings=embedding, uniqueness_field=key
             )
 
-            quant_threshold = self.dataset.quantiles(key, threshold)
-            view = self.dataset.match(F(key) >= quant_threshold)
+            # quant_threshold = self.dataset.quantiles(key, threshold)
+            # view = self.dataset.match(F(key) >= quant_threshold)
+            view = self.dataset.match(F(key) >= threshold)
             for sample in view:
                 sample[field] = value
                 sample.save()
@@ -268,8 +269,9 @@ class Brain:
                     embeddings=embedding,
                 )
 
-                quant_threshold = self.dataset.quantiles(key, threshold)
-                view = self.dataset.match(F(key) >= quant_threshold)
+                # quant_threshold = self.dataset.quantiles(key, threshold)
+                # view = self.dataset.match(F(key) >= quant_threshold)
+                view = self.dataset.match(F(key) >= threshold)
                 for sample in view:
                     sample[field] = value
                     sample.save()
