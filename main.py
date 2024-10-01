@@ -64,7 +64,9 @@ def main():
     # Compute model embeddings
     v51_brain.compute_embeddings(V51_EMBEDDING_MODELS)
     v51_brain.compute_similarity()
-    v51_brain.compute_unique_images()
+    v51_brain.compute_unique_images_greedy()
+    v51_brain.compute_unique_images_deterministic()
+    # v51_brain.compute_similar_images()
 
     dataset.save()
 
