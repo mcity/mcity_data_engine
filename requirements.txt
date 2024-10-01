@@ -10,6 +10,7 @@ beautifulsoup4==4.12.3
 boto3==1.35.25
 botocore==1.35.25
 Brotli==1.1.0
+build==1.2.2
 cachetools==5.5.0
 certifi==2024.8.30
 charset-normalizer==3.3.2
@@ -75,7 +76,6 @@ multivolumefile==0.2.3
 networkx==3.3
 numba==0.60.0
 numpy==1.26.4
--e git+https://github.com/daniel-bogdoll/nuscenes-devkit@53d606f3b20af3ba90bc6b876ffbc567fa76893c#egg=nuscenes_devkit&subdirectory=../../../data_loader/nuscenes-devkit
 nvidia-cublas-cu12==12.4.2.65
 nvidia-cuda-cupti-cu12==12.4.99
 nvidia-cuda-nvrtc-cu12==12.4.99
@@ -115,6 +115,7 @@ pymongo==4.8.0
 pynndescent==0.5.13
 pyparsing==3.1.4
 pyppmd==1.1.0
+pyproject_hooks==1.2.0
 pyquaternion==0.9.9
 pytest==8.3.3
 python-dateutil==2.9.0.post0
@@ -165,6 +166,7 @@ universal-analytics-python3==1.1.1
 urllib3==2.2.3
 voxel51-eta==0.13.0
 wcwidth==0.2.13
+wheel==0.44.0
 widgetsnbextension==4.0.13
 wrapt==1.16.0
 wsproto==1.2.0
