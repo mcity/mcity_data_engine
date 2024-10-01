@@ -69,12 +69,14 @@ class Brain:
         self.embeddings_root = embeddings_path + self.dataset_name + "/"
         Path(self.embeddings_root).mkdir(parents=True, exist_ok=True)
 
-        self.unique_taxonomy = {
-            "field": "unique",
+        self.brain_taxonomy = {
+            "field": "brain_selection",
+            "value_compute_representativeness": "representativeness_center",
             "value_find_unique": "greedy_center",
             "value_compute_uniqueness": "deterministic_center",
             "value_find_unique_neighbour": "greedy_neighbour",
             "value_compute_uniqueness_neighbour": "deterministic_neighbour",
+            "value_compute_representativeness_neighbour": "representativeness_neighbour",
         }
 
     def compute_embeddings(self, embedding_model_names):
@@ -200,8 +202,8 @@ class Brain:
 
         sample_count = len(self.dataset.view())
         num_of_unique = perct_unique * sample_count
-        field = self.unique_taxonomy["field"]
-        value = self.unique_taxonomy["value_find_unique"]
+        field = self.brain_taxonomy["field"]
+        value = self.brain_taxonomy["value_find_unique"]
 
         # Check if any sample has the label label_unique:
         dataset_labels = self.dataset.count_sample_tags()
@@ -223,8 +225,8 @@ class Brain:
         # compute_uniqueness() computes a deterministic uniqueness score
         # for each sample in [0, 1] (= weighted k-neighbors distances for each sample)
 
-        field = self.unique_taxonomy["field"]
-        value = self.unique_taxonomy["value_compute_uniqueness"]
+        field = self.brain_taxonomy["field"]
+        value = self.brain_taxonomy["value_compute_uniqueness"]
 
         for embedding_name in tqdm(
             self.embeddings_models, desc="Computing uniqueness deterministic"
@@ -242,19 +244,34 @@ class Brain:
                 sample[field] = value
                 sample.save()
 
-    def compute_duplicate_images(self, fraction=0.99):
-        # Find least similar images
-        # https://docs.voxel51.com/brain.html#finding-near-duplicate-images
-        for sim_key in tqdm(self.similarities, desc="Computing neighbors map"):
-            self.similarities[sim_key].find_duplicates(fraction=fraction)
-            logging.warning(len(self.similarities[sim_key].neighbors_map))
-            for sample_key in self.similarities[sim_key].neighbors_map:
-                sample = self.similarities[sim_key].neighbors_map[sample_key]
-                for duplicate in sample:
-                    id = duplicate[0]
-                    distance = duplicate[1]
-                    sample = self.dataset[id]
-                    sample["unique"] = "neighbour"
+    def compute_representativeness(self, threshold=0.99):
+        # https://docs.voxel51.com/brain.html#image-representativeness
+
+        field = self.brain_taxonomy["field"]
+        value = self.brain_taxonomy["value_compute_representativeness"]
+
+        methods_cluster_center = ["cluster-center", "cluster-center-downweight"]
+        for embedding_name in tqdm(
+            self.embeddings_models, desc="Computing representative frames"
+        ):
+            embedding = self.embeddings_models[embedding_name]
+            for method in methods_cluster_center:
+                key = re.sub(
+                    r"[\W-]+",
+                    "_",
+                    embedding_name + "_" + method + "_representativeness",
+                )
+                fob.compute_representativeness(
+                    self.dataset,
+                    representativeness_field=key,
+                    method=method,
+                    embeddings=embedding,
+                )
+
+                quant_threshold = self.dataset.quantiles(key, threshold)
+                view = self.dataset.match(F(key) >= quant_threshold)
+                for sample in view:
+                    sample[field] = value
                     sample.save()
 
     def find_samples_by_text(self, prompt, model_name):
@@ -262,17 +279,27 @@ class Brain:
         if model_name == "clip-vit-base32-torch":
             view = self.dataset.sort_by_similarity(prompt, k=5)
 
-    def compute_similar_images(self, dist_threshold=0.03, neighbour_count=5):
-        field = self.unique_taxonomy["field"]
+    def compute_duplicate_images(self, fraction=0.99):
+        # Find duplicates of least similar images
+        # https://docs.voxel51.com/brain.html#finding-near-duplicate-images
+        pass
+
+    def compute_similar_images(self, dist_threshold=0.03, neighbour_count=3):
+        field = self.brain_taxonomy["field"]
         field_neighbour_distance = "distance"
 
-        value_find_unique = self.unique_taxonomy["value_find_unique"]
-        value_compute_uniqueness = self.unique_taxonomy["value_compute_uniqueness"]
-        value_find_unique_neighbour = self.unique_taxonomy[
-            "value_find_unique_neighbour"
+        value_find_unique = self.brain_taxonomy["value_find_unique"]
+        value_compute_uniqueness = self.brain_taxonomy["value_compute_uniqueness"]
+        value_compute_representativeness = self.brain_taxonomy[
+            "value_compute_representativeness"
         ]
-        value_compute_uniqueness_neighbour = self.unique_taxonomy[
+
+        value_find_unique_neighbour = self.brain_taxonomy["value_find_unique_neighbour"]
+        value_compute_uniqueness_neighbour = self.brain_taxonomy[
             "value_compute_uniqueness_neighbour"
+        ]
+        value_compute_representativeness_neighbour = self.brain_taxonomy[
+            "value_compute_representativeness_neighbour"
         ]
 
         # Check if samples have already assigned fields
@@ -283,9 +310,14 @@ class Brain:
         neighbour_view_deterministic = self.dataset.match(
             F(field) == value_compute_uniqueness_neighbour
         )
+        neighbour_view_representativeness = self.dataset.match(
+            F(field) == value_compute_representativeness_neighbour
+        )
 
         if field in dataset_labels and (
-            len(neighbour_view_greedy) > 0 or len(neighbour_view_deterministic) > 0
+            len(neighbour_view_greedy) > 0
+            and len(neighbour_view_deterministic) > 0
+            and len(neighbour_view_representativeness) > 0
         ):
             pass
 
@@ -294,38 +326,33 @@ class Brain:
             unique_view_deterministic = self.dataset.match(
                 F(field) == value_compute_uniqueness
             )
+            unique_view_representativeness = self.dataset.match(
+                F(field) == value_compute_representativeness
+            )
+
+            views_values = [
+                (unique_view_greedy, value_find_unique_neighbour),
+                (unique_view_deterministic, value_compute_uniqueness_neighbour),
+                (
+                    unique_view_representativeness,
+                    value_compute_representativeness_neighbour,
+                ),
+            ]
 
             for sim_key in tqdm(self.similarities, desc="Finding similar images"):
-                for sample in unique_view_greedy:
-                    view = self.dataset.sort_by_similarity(
-                        sample.id,
-                        k=neighbour_count,
-                        brain_key=sim_key,
-                        dist_field=field_neighbour_distance,
-                    )
-                    for sample_neighbour in view:
-                        distance = sample_neighbour[field_neighbour_distance]
-                        if (
-                            distance < dist_threshold
-                            and sample_neighbour[field] == None
-                        ):
-                            logging.debug("Distance Greedy: " + str(distance))
-                            sample_neighbour[field] = value_find_unique_neighbour
-                            sample_neighbour.save()
-
-                for sample in unique_view_deterministic:
-                    view = self.dataset.sort_by_similarity(
-                        sample.id,
-                        k=neighbour_count,
-                        brain_key=sim_key,
-                        dist_field=field_neighbour_distance,
-                    )
-                    for sample_neighbour in view:
-                        distance = sample_neighbour[field_neighbour_distance]
-                        if (
-                            distance < dist_threshold
-                            and sample_neighbour[field] == None
-                        ):
-                            logging.debug("Distance Deterministic: " + str(distance))
-                            sample_neighbour[field] = value_compute_uniqueness_neighbour
-                            sample_neighbour.save()
+                for unique_view, value in views_values:
+                    for sample in unique_view:
+                        view = self.dataset.sort_by_similarity(
+                            sample.id,
+                            k=neighbour_count,
+                            brain_key=sim_key,
+                            dist_field=field_neighbour_distance,
+                        )
+                        for sample_neighbour in view:
+                            distance = sample_neighbour[field_neighbour_distance]
+                            if (
+                                distance < dist_threshold
+                                and sample_neighbour[field] == None
+                            ):
+                                sample_neighbour[field] = value
+                                sample_neighbour.save()

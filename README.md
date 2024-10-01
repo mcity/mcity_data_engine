@@ -22,7 +22,6 @@ cd mcity_data_engine
 pip install -e ./data_loader/nuscenes-devkit
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements.txt
-fiftyone plugins download https://github.com/jacobmarks/clustering-plugin
 python main.py
 ```
 
