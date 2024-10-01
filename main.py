@@ -99,7 +99,7 @@ def main():
     time_stop = time.time()
     logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
     session = fo.launch_app(dataset, spaces=spaces)
-    session.wait()
+    session.wait(-1)
 
 
 if __name__ == "__main__":
