@@ -8,7 +8,7 @@ import fiftyone as fo
 
 import logging
 
-from config import NUM_WORKERS, PERSISTENT
+from config import NUM_WORKERS, PERSISTENT, SELECTED_SPLITS
 
 
 def load_dataset_info(dataset_name):
@@ -55,7 +55,10 @@ def load_mcity_fisheye_2000(dataset_info):
     dataset_name = dataset_info["name"]
     dataset_dir = dataset_info["local_path"]
     dataset_type = getattr(fo.types, dataset_info["v51_type"])
-    dataset_splits = dataset_info["v51_splits"]
+    if SELECTED_SPLITS:
+        dataset_splits = SELECTED_SPLITS
+    else:
+        dataset_splits = dataset_info["v51_splits"]  # Use all available splits
 
     if PERSISTENT == False:
         try:
