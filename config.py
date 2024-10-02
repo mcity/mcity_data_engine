@@ -1,12 +1,13 @@
 import os
 
-# Define the global variable
-NUM_WORKERS = os.cpu_count()
+WORKFLOW = "brain_selection"  # Selection from main.py
 
-# Selected dataset
 SELECTED_DATASET = "mcity_fisheye_2000"  # Choose from datasets.yaml
+SELECTED_SPLITS = ["train"]  # Choose from datasets.yaml
 
-# V51 embedding models
+PERSISTENT = True  # If V51 database is stored
+
+# Select from V51 embedding model zoo
 V51_EMBEDDING_MODELS = (
     "clip-vit-base32-torch",
     "open-clip-torch",
@@ -20,4 +21,5 @@ V51_EMBEDDING_MODELS = (
     "zero-shot-classification-transformer-torch",
 )
 
-PERSISTENT = True  # If V51 database is stored
+# Define the global variable
+NUM_WORKERS = os.cpu_count()

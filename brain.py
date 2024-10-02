@@ -17,43 +17,6 @@ from config import NUM_WORKERS
 
 
 class Brain:
-    """
-    A class used to represent the Brain, which handles the computation of embeddings,
-    similarities, unique images, and similar images for a given dataset.
-    Repository: https://github.com/voxel51/fiftyone-brain
-    Documentation: https://docs.voxel51.com/brain.html
-
-    Attributes
-    ----------
-    dataset : object
-        The dataset object containing the data to be processed.
-    brains : list
-        A list of brain runs available in the dataset.
-    dataset_name : str
-        The name of the dataset.
-    seed : int
-        The seed value for random operations.
-    embeddings_vis : dict
-        A dictionary to store visualization embeddings.
-    embeddings_models : dict
-        A dictionary to store model embeddings.
-    similarities : dict
-        A dictionary to store similarity computations.
-    embeddings_root : str
-        The root directory path to store all embedding-related results.
-
-    Methods
-    -------
-    compute_embeddings(embedding_model_names)
-        Computes embeddings for the given list of embedding model names.
-    compute_similarity()
-        Computes cosine similarity for the embeddings without dimensionality reduction.
-    compute_unique_images(perct_unique=0.01, n_neighbours=15)
-        Identifies unique images in the dataset based on the computed similarities.
-    compute_similar_images(n_neighbours=5)
-        Finds and tags images similar to the unique images in the dataset.
-    """
-
     def __init__(self, dataset, dataset_info, embeddings_path="./datasets/embeddings/"):
         self.dataset = dataset
         self.brains = dataset.list_brain_runs()
@@ -194,6 +157,41 @@ class Brain:
                     num_workers=NUM_WORKERS,
                 )
 
+    def compute_representativeness(self, threshold=0.99):
+        # https://docs.voxel51.com/brain.html#image-representativeness
+
+        field = self.brain_taxonomy["field"]
+        value = self.brain_taxonomy["value_compute_representativeness"]
+        methods_cluster_center = ["cluster-center", "cluster-center-downweight"]
+
+        for embedding_name in tqdm(
+            self.embeddings_models, desc="Computing representative frames"
+        ):
+            embedding = self.embeddings_models[embedding_name]
+            for method in methods_cluster_center:
+                key = re.sub(
+                    r"[\W-]+",
+                    "_",
+                    embedding_name + "_" + method + "_representativeness",
+                )
+
+                if key in self.brains:
+                    self.similarities[key] = self.dataset.load_brain_results(key)
+
+                fob.compute_representativeness(
+                    self.dataset,
+                    representativeness_field=key,
+                    method=method,
+                    embeddings=embedding,
+                )
+
+                # quant_threshold = self.dataset.quantiles(key, threshold)
+                # view = self.dataset.match(F(key) >= quant_threshold)
+                view = self.dataset.match(F(key) >= threshold)
+                for sample in view:
+                    sample[field] = value
+                    sample.save()
+
     def compute_unique_images_greedy(self, perct_unique=0.01):
         # https://docs.voxel51.com/user_guide/brain.html#cifar-10-example
         # find_unique(n) uses a greedy algorithm that, for a given n,
@@ -244,37 +242,6 @@ class Brain:
             for sample in view:
                 sample[field] = value
                 sample.save()
-
-    def compute_representativeness(self, threshold=0.99):
-        # https://docs.voxel51.com/brain.html#image-representativeness
-
-        field = self.brain_taxonomy["field"]
-        value = self.brain_taxonomy["value_compute_representativeness"]
-
-        methods_cluster_center = ["cluster-center", "cluster-center-downweight"]
-        for embedding_name in tqdm(
-            self.embeddings_models, desc="Computing representative frames"
-        ):
-            embedding = self.embeddings_models[embedding_name]
-            for method in methods_cluster_center:
-                key = re.sub(
-                    r"[\W-]+",
-                    "_",
-                    embedding_name + "_" + method + "_representativeness",
-                )
-                fob.compute_representativeness(
-                    self.dataset,
-                    representativeness_field=key,
-                    method=method,
-                    embeddings=embedding,
-                )
-
-                # quant_threshold = self.dataset.quantiles(key, threshold)
-                # view = self.dataset.match(F(key) >= quant_threshold)
-                view = self.dataset.match(F(key) >= threshold)
-                for sample in view:
-                    sample[field] = value
-                    sample.save()
 
     def find_samples_by_text(self, prompt, model_name):
         # https://docs.voxel51.com/api/fiftyone.core.collections.html#fiftyone.core.collections.SampleCollection.sort_by_similarity
