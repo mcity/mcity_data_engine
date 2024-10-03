@@ -63,45 +63,66 @@ selector    </h1>
 </span><span id="L-2"><a href="#L-2"><span class="linenos"> 2</span></a>
 </span><span id="L-3"><a href="#L-3"><span class="linenos"> 3</span></a>
 </span><span id="L-4"><a href="#L-4"><span class="linenos"> 4</span></a><span class="k">def</span> <span class="nf">select_random</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">n_samples</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-</span><span id="L-5"><a href="#L-5"><span class="linenos"> 5</span></a>    <span class="c1"># Pick random number of samples</span>
-</span><span id="L-6"><a href="#L-6"><span class="linenos"> 6</span></a>
-</span><span id="L-7"><a href="#L-7"><span class="linenos"> 7</span></a>    <span class="n">random_view</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="n">n_samples</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
-</span><span id="L-8"><a href="#L-8"><span class="linenos"> 8</span></a>    <span class="k">return</span> <span class="n">random_view</span>
-</span><span id="L-9"><a href="#L-9"><span class="linenos"> 9</span></a>
-</span><span id="L-10"><a href="#L-10"><span class="linenos">10</span></a>
-</span><span id="L-11"><a href="#L-11"><span class="linenos">11</span></a><span class="k">def</span> <span class="nf">select_by_class</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">classes_in</span><span class="p">,</span> <span class="n">classes_out</span><span class="p">):</span>
-</span><span id="L-12"><a href="#L-12"><span class="linenos">12</span></a>    <span class="n">incl_conditions</span> <span class="o">=</span> <span class="kc">None</span>
-</span><span id="L-13"><a href="#L-13"><span class="linenos">13</span></a>    <span class="n">excl_conditions</span> <span class="o">=</span> <span class="kc">None</span>
-</span><span id="L-14"><a href="#L-14"><span class="linenos">14</span></a>
-</span><span id="L-15"><a href="#L-15"><span class="linenos">15</span></a>    <span class="k">if</span> <span class="n">classes_in</span><span class="p">:</span>
-</span><span id="L-16"><a href="#L-16"><span class="linenos">16</span></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">classes_in</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-</span><span id="L-17"><a href="#L-17"><span class="linenos">17</span></a>            <span class="n">classes_in</span> <span class="o">=</span> <span class="p">[</span><span class="n">classes_in</span><span class="p">]</span>
-</span><span id="L-18"><a href="#L-18"><span class="linenos">18</span></a>        <span class="k">for</span> <span class="n">class_in</span> <span class="ow">in</span> <span class="n">classes_in</span><span class="p">:</span>
-</span><span id="L-19"><a href="#L-19"><span class="linenos">19</span></a>            <span class="n">condition</span> <span class="o">=</span> <span class="n">F</span><span class="p">(</span><span class="s2">&quot;ground_truth.detections.label&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">class_in</span><span class="p">)</span>
-</span><span id="L-20"><a href="#L-20"><span class="linenos">20</span></a>            <span class="n">incl_conditions</span> <span class="o">=</span> <span class="p">(</span>
-</span><span id="L-21"><a href="#L-21"><span class="linenos">21</span></a>                <span class="n">condition</span> <span class="k">if</span> <span class="n">incl_conditions</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">incl_conditions</span> <span class="o">|</span> <span class="n">condition</span>
-</span><span id="L-22"><a href="#L-22"><span class="linenos">22</span></a>            <span class="p">)</span>
-</span><span id="L-23"><a href="#L-23"><span class="linenos">23</span></a>
-</span><span id="L-24"><a href="#L-24"><span class="linenos">24</span></a>    <span class="k">if</span> <span class="n">classes_out</span><span class="p">:</span>
-</span><span id="L-25"><a href="#L-25"><span class="linenos">25</span></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">classes_out</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-</span><span id="L-26"><a href="#L-26"><span class="linenos">26</span></a>            <span class="n">classes_out</span> <span class="o">=</span> <span class="p">[</span><span class="n">classes_out</span><span class="p">]</span>
-</span><span id="L-27"><a href="#L-27"><span class="linenos">27</span></a>        <span class="k">for</span> <span class="n">class_out</span> <span class="ow">in</span> <span class="n">classes_out</span><span class="p">:</span>
-</span><span id="L-28"><a href="#L-28"><span class="linenos">28</span></a>            <span class="n">condition</span> <span class="o">=</span> <span class="o">~</span><span class="n">F</span><span class="p">(</span><span class="s2">&quot;ground_truth.detections.label&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">class_out</span><span class="p">)</span>
-</span><span id="L-29"><a href="#L-29"><span class="linenos">29</span></a>            <span class="n">excl_conditions</span> <span class="o">=</span> <span class="p">(</span>
-</span><span id="L-30"><a href="#L-30"><span class="linenos">30</span></a>                <span class="n">condition</span> <span class="k">if</span> <span class="n">excl_conditions</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">excl_conditions</span> <span class="o">&amp;</span> <span class="n">condition</span>
-</span><span id="L-31"><a href="#L-31"><span class="linenos">31</span></a>            <span class="p">)</span>
-</span><span id="L-32"><a href="#L-32"><span class="linenos">32</span></a>
-</span><span id="L-33"><a href="#L-33"><span class="linenos">33</span></a>    <span class="k">if</span> <span class="n">incl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">excl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="L-34"><a href="#L-34"><span class="linenos">34</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="n">incl_conditions</span> <span class="o">&amp;</span> <span class="n">excl_conditions</span>
-</span><span id="L-35"><a href="#L-35"><span class="linenos">35</span></a>    <span class="k">elif</span> <span class="n">incl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="L-36"><a href="#L-36"><span class="linenos">36</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="n">incl_conditions</span>
-</span><span id="L-37"><a href="#L-37"><span class="linenos">37</span></a>    <span class="k">elif</span> <span class="n">excl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="L-38"><a href="#L-38"><span class="linenos">38</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="n">excl_conditions</span>
-</span><span id="L-39"><a href="#L-39"><span class="linenos">39</span></a>    <span class="k">else</span><span class="p">:</span>
-</span><span id="L-40"><a href="#L-40"><span class="linenos">40</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="kc">None</span>
-</span><span id="L-41"><a href="#L-41"><span class="linenos">41</span></a>
-</span><span id="L-42"><a href="#L-42"><span class="linenos">42</span></a>    <span class="n">view</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">conditions</span><span class="p">)</span> <span class="k">if</span> <span class="n">conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dataset</span>
-</span><span id="L-43"><a href="#L-43"><span class="linenos">43</span></a>    <span class="k">return</span> <span class="n">view</span>
+</span><span id="L-5"><a href="#L-5"><span class="linenos"> 5</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="L-6"><a href="#L-6"><span class="linenos"> 6</span></a><span class="sd">    Select a random subset of samples from the dataset.</span>
+</span><span id="L-7"><a href="#L-7"><span class="linenos"> 7</span></a>
+</span><span id="L-8"><a href="#L-8"><span class="linenos"> 8</span></a><span class="sd">    Parameters:</span>
+</span><span id="L-9"><a href="#L-9"><span class="linenos"> 9</span></a><span class="sd">    dataset (Dataset): The dataset from which to select samples.</span>
+</span><span id="L-10"><a href="#L-10"><span class="linenos">10</span></a><span class="sd">    n_samples (int): The number of samples to select.</span>
+</span><span id="L-11"><a href="#L-11"><span class="linenos">11</span></a><span class="sd">    seed (int, optional): The seed for the random number generator. Default is 0.</span>
+</span><span id="L-12"><a href="#L-12"><span class="linenos">12</span></a>
+</span><span id="L-13"><a href="#L-13"><span class="linenos">13</span></a><span class="sd">    Returns:</span>
+</span><span id="L-14"><a href="#L-14"><span class="linenos">14</span></a><span class="sd">    Dataset: A dataset containing the randomly selected samples.</span>
+</span><span id="L-15"><a href="#L-15"><span class="linenos">15</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="L-16"><a href="#L-16"><span class="linenos">16</span></a>
+</span><span id="L-17"><a href="#L-17"><span class="linenos">17</span></a>    <span class="n">random_view</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="n">n_samples</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+</span><span id="L-18"><a href="#L-18"><span class="linenos">18</span></a>    <span class="k">return</span> <span class="n">random_view</span>
+</span><span id="L-19"><a href="#L-19"><span class="linenos">19</span></a>
+</span><span id="L-20"><a href="#L-20"><span class="linenos">20</span></a>
+</span><span id="L-21"><a href="#L-21"><span class="linenos">21</span></a><span class="k">def</span> <span class="nf">select_by_class</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">classes_in</span><span class="p">,</span> <span class="n">classes_out</span><span class="p">):</span>
+</span><span id="L-22"><a href="#L-22"><span class="linenos">22</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="L-23"><a href="#L-23"><span class="linenos">23</span></a><span class="sd">    Filters a dataset based on inclusion and exclusion of specified classes.</span>
+</span><span id="L-24"><a href="#L-24"><span class="linenos">24</span></a>
+</span><span id="L-25"><a href="#L-25"><span class="linenos">25</span></a><span class="sd">    Args:</span>
+</span><span id="L-26"><a href="#L-26"><span class="linenos">26</span></a><span class="sd">        dataset: The dataset to be filtered.</span>
+</span><span id="L-27"><a href="#L-27"><span class="linenos">27</span></a><span class="sd">        classes_in (str or list of str): Classes to include in the filtered dataset.</span>
+</span><span id="L-28"><a href="#L-28"><span class="linenos">28</span></a><span class="sd">        classes_out (str or list of str): Classes to exclude from the filtered dataset.</span>
+</span><span id="L-29"><a href="#L-29"><span class="linenos">29</span></a>
+</span><span id="L-30"><a href="#L-30"><span class="linenos">30</span></a><span class="sd">    Returns:</span>
+</span><span id="L-31"><a href="#L-31"><span class="linenos">31</span></a><span class="sd">        A filtered view of the dataset based on the specified inclusion and exclusion conditions.</span>
+</span><span id="L-32"><a href="#L-32"><span class="linenos">32</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="L-33"><a href="#L-33"><span class="linenos">33</span></a>    <span class="n">incl_conditions</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="L-34"><a href="#L-34"><span class="linenos">34</span></a>    <span class="n">excl_conditions</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="L-35"><a href="#L-35"><span class="linenos">35</span></a>
+</span><span id="L-36"><a href="#L-36"><span class="linenos">36</span></a>    <span class="k">if</span> <span class="n">classes_in</span><span class="p">:</span>
+</span><span id="L-37"><a href="#L-37"><span class="linenos">37</span></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">classes_in</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+</span><span id="L-38"><a href="#L-38"><span class="linenos">38</span></a>            <span class="n">classes_in</span> <span class="o">=</span> <span class="p">[</span><span class="n">classes_in</span><span class="p">]</span>
+</span><span id="L-39"><a href="#L-39"><span class="linenos">39</span></a>        <span class="k">for</span> <span class="n">class_in</span> <span class="ow">in</span> <span class="n">classes_in</span><span class="p">:</span>
+</span><span id="L-40"><a href="#L-40"><span class="linenos">40</span></a>            <span class="n">condition</span> <span class="o">=</span> <span class="n">F</span><span class="p">(</span><span class="s2">&quot;ground_truth.detections.label&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">class_in</span><span class="p">)</span>
+</span><span id="L-41"><a href="#L-41"><span class="linenos">41</span></a>            <span class="n">incl_conditions</span> <span class="o">=</span> <span class="p">(</span>
+</span><span id="L-42"><a href="#L-42"><span class="linenos">42</span></a>                <span class="n">condition</span> <span class="k">if</span> <span class="n">incl_conditions</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">incl_conditions</span> <span class="o">|</span> <span class="n">condition</span>
+</span><span id="L-43"><a href="#L-43"><span class="linenos">43</span></a>            <span class="p">)</span>
+</span><span id="L-44"><a href="#L-44"><span class="linenos">44</span></a>
+</span><span id="L-45"><a href="#L-45"><span class="linenos">45</span></a>    <span class="k">if</span> <span class="n">classes_out</span><span class="p">:</span>
+</span><span id="L-46"><a href="#L-46"><span class="linenos">46</span></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">classes_out</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+</span><span id="L-47"><a href="#L-47"><span class="linenos">47</span></a>            <span class="n">classes_out</span> <span class="o">=</span> <span class="p">[</span><span class="n">classes_out</span><span class="p">]</span>
+</span><span id="L-48"><a href="#L-48"><span class="linenos">48</span></a>        <span class="k">for</span> <span class="n">class_out</span> <span class="ow">in</span> <span class="n">classes_out</span><span class="p">:</span>
+</span><span id="L-49"><a href="#L-49"><span class="linenos">49</span></a>            <span class="n">condition</span> <span class="o">=</span> <span class="o">~</span><span class="n">F</span><span class="p">(</span><span class="s2">&quot;ground_truth.detections.label&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">class_out</span><span class="p">)</span>
+</span><span id="L-50"><a href="#L-50"><span class="linenos">50</span></a>            <span class="n">excl_conditions</span> <span class="o">=</span> <span class="p">(</span>
+</span><span id="L-51"><a href="#L-51"><span class="linenos">51</span></a>                <span class="n">condition</span> <span class="k">if</span> <span class="n">excl_conditions</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">excl_conditions</span> <span class="o">&amp;</span> <span class="n">condition</span>
+</span><span id="L-52"><a href="#L-52"><span class="linenos">52</span></a>            <span class="p">)</span>
+</span><span id="L-53"><a href="#L-53"><span class="linenos">53</span></a>
+</span><span id="L-54"><a href="#L-54"><span class="linenos">54</span></a>    <span class="k">if</span> <span class="n">incl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">excl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="L-55"><a href="#L-55"><span class="linenos">55</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="n">incl_conditions</span> <span class="o">&amp;</span> <span class="n">excl_conditions</span>
+</span><span id="L-56"><a href="#L-56"><span class="linenos">56</span></a>    <span class="k">elif</span> <span class="n">incl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="L-57"><a href="#L-57"><span class="linenos">57</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="n">incl_conditions</span>
+</span><span id="L-58"><a href="#L-58"><span class="linenos">58</span></a>    <span class="k">elif</span> <span class="n">excl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="L-59"><a href="#L-59"><span class="linenos">59</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="n">excl_conditions</span>
+</span><span id="L-60"><a href="#L-60"><span class="linenos">60</span></a>    <span class="k">else</span><span class="p">:</span>
+</span><span id="L-61"><a href="#L-61"><span class="linenos">61</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="L-62"><a href="#L-62"><span class="linenos">62</span></a>
+</span><span id="L-63"><a href="#L-63"><span class="linenos">63</span></a>    <span class="n">view</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">conditions</span><span class="p">)</span> <span class="k">if</span> <span class="n">conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dataset</span>
+</span><span id="L-64"><a href="#L-64"><span class="linenos">64</span></a>    <span class="k">return</span> <span class="n">view</span>
 </span></pre></div>
 
 
@@ -117,15 +138,35 @@ selector    </h1>
 
     </div>
     <a class="headerlink" href="#select_random"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="select_random-5"><a href="#select_random-5"><span class="linenos">5</span></a><span class="k">def</span> <span class="nf">select_random</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">n_samples</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-</span><span id="select_random-6"><a href="#select_random-6"><span class="linenos">6</span></a>    <span class="c1"># Pick random number of samples</span>
-</span><span id="select_random-7"><a href="#select_random-7"><span class="linenos">7</span></a>
-</span><span id="select_random-8"><a href="#select_random-8"><span class="linenos">8</span></a>    <span class="n">random_view</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="n">n_samples</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
-</span><span id="select_random-9"><a href="#select_random-9"><span class="linenos">9</span></a>    <span class="k">return</span> <span class="n">random_view</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="select_random-5"><a href="#select_random-5"><span class="linenos"> 5</span></a><span class="k">def</span> <span class="nf">select_random</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">n_samples</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+</span><span id="select_random-6"><a href="#select_random-6"><span class="linenos"> 6</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="select_random-7"><a href="#select_random-7"><span class="linenos"> 7</span></a><span class="sd">    Select a random subset of samples from the dataset.</span>
+</span><span id="select_random-8"><a href="#select_random-8"><span class="linenos"> 8</span></a>
+</span><span id="select_random-9"><a href="#select_random-9"><span class="linenos"> 9</span></a><span class="sd">    Parameters:</span>
+</span><span id="select_random-10"><a href="#select_random-10"><span class="linenos">10</span></a><span class="sd">    dataset (Dataset): The dataset from which to select samples.</span>
+</span><span id="select_random-11"><a href="#select_random-11"><span class="linenos">11</span></a><span class="sd">    n_samples (int): The number of samples to select.</span>
+</span><span id="select_random-12"><a href="#select_random-12"><span class="linenos">12</span></a><span class="sd">    seed (int, optional): The seed for the random number generator. Default is 0.</span>
+</span><span id="select_random-13"><a href="#select_random-13"><span class="linenos">13</span></a>
+</span><span id="select_random-14"><a href="#select_random-14"><span class="linenos">14</span></a><span class="sd">    Returns:</span>
+</span><span id="select_random-15"><a href="#select_random-15"><span class="linenos">15</span></a><span class="sd">    Dataset: A dataset containing the randomly selected samples.</span>
+</span><span id="select_random-16"><a href="#select_random-16"><span class="linenos">16</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="select_random-17"><a href="#select_random-17"><span class="linenos">17</span></a>
+</span><span id="select_random-18"><a href="#select_random-18"><span class="linenos">18</span></a>    <span class="n">random_view</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">take</span><span class="p">(</span><span class="n">n_samples</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+</span><span id="select_random-19"><a href="#select_random-19"><span class="linenos">19</span></a>    <span class="k">return</span> <span class="n">random_view</span>
 </span></pre></div>
 
 
-    
+            <div class="docstring"><p>Select a random subset of samples from the dataset.</p>
+
+<p>Parameters:
+dataset (Dataset): The dataset from which to select samples.
+n_samples (int): The number of samples to select.
+seed (int, optional): The seed for the random number generator. Default is 0.</p>
+
+<p>Returns:
+Dataset: A dataset containing the randomly selected samples.</p>
+</div>
+
 
                 </section>
                 <section id="select_by_class">
@@ -139,43 +180,64 @@ selector    </h1>
 
     </div>
     <a class="headerlink" href="#select_by_class"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="select_by_class-12"><a href="#select_by_class-12"><span class="linenos">12</span></a><span class="k">def</span> <span class="nf">select_by_class</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">classes_in</span><span class="p">,</span> <span class="n">classes_out</span><span class="p">):</span>
-</span><span id="select_by_class-13"><a href="#select_by_class-13"><span class="linenos">13</span></a>    <span class="n">incl_conditions</span> <span class="o">=</span> <span class="kc">None</span>
-</span><span id="select_by_class-14"><a href="#select_by_class-14"><span class="linenos">14</span></a>    <span class="n">excl_conditions</span> <span class="o">=</span> <span class="kc">None</span>
-</span><span id="select_by_class-15"><a href="#select_by_class-15"><span class="linenos">15</span></a>
-</span><span id="select_by_class-16"><a href="#select_by_class-16"><span class="linenos">16</span></a>    <span class="k">if</span> <span class="n">classes_in</span><span class="p">:</span>
-</span><span id="select_by_class-17"><a href="#select_by_class-17"><span class="linenos">17</span></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">classes_in</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-</span><span id="select_by_class-18"><a href="#select_by_class-18"><span class="linenos">18</span></a>            <span class="n">classes_in</span> <span class="o">=</span> <span class="p">[</span><span class="n">classes_in</span><span class="p">]</span>
-</span><span id="select_by_class-19"><a href="#select_by_class-19"><span class="linenos">19</span></a>        <span class="k">for</span> <span class="n">class_in</span> <span class="ow">in</span> <span class="n">classes_in</span><span class="p">:</span>
-</span><span id="select_by_class-20"><a href="#select_by_class-20"><span class="linenos">20</span></a>            <span class="n">condition</span> <span class="o">=</span> <span class="n">F</span><span class="p">(</span><span class="s2">&quot;ground_truth.detections.label&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">class_in</span><span class="p">)</span>
-</span><span id="select_by_class-21"><a href="#select_by_class-21"><span class="linenos">21</span></a>            <span class="n">incl_conditions</span> <span class="o">=</span> <span class="p">(</span>
-</span><span id="select_by_class-22"><a href="#select_by_class-22"><span class="linenos">22</span></a>                <span class="n">condition</span> <span class="k">if</span> <span class="n">incl_conditions</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">incl_conditions</span> <span class="o">|</span> <span class="n">condition</span>
-</span><span id="select_by_class-23"><a href="#select_by_class-23"><span class="linenos">23</span></a>            <span class="p">)</span>
-</span><span id="select_by_class-24"><a href="#select_by_class-24"><span class="linenos">24</span></a>
-</span><span id="select_by_class-25"><a href="#select_by_class-25"><span class="linenos">25</span></a>    <span class="k">if</span> <span class="n">classes_out</span><span class="p">:</span>
-</span><span id="select_by_class-26"><a href="#select_by_class-26"><span class="linenos">26</span></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">classes_out</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-</span><span id="select_by_class-27"><a href="#select_by_class-27"><span class="linenos">27</span></a>            <span class="n">classes_out</span> <span class="o">=</span> <span class="p">[</span><span class="n">classes_out</span><span class="p">]</span>
-</span><span id="select_by_class-28"><a href="#select_by_class-28"><span class="linenos">28</span></a>        <span class="k">for</span> <span class="n">class_out</span> <span class="ow">in</span> <span class="n">classes_out</span><span class="p">:</span>
-</span><span id="select_by_class-29"><a href="#select_by_class-29"><span class="linenos">29</span></a>            <span class="n">condition</span> <span class="o">=</span> <span class="o">~</span><span class="n">F</span><span class="p">(</span><span class="s2">&quot;ground_truth.detections.label&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">class_out</span><span class="p">)</span>
-</span><span id="select_by_class-30"><a href="#select_by_class-30"><span class="linenos">30</span></a>            <span class="n">excl_conditions</span> <span class="o">=</span> <span class="p">(</span>
-</span><span id="select_by_class-31"><a href="#select_by_class-31"><span class="linenos">31</span></a>                <span class="n">condition</span> <span class="k">if</span> <span class="n">excl_conditions</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">excl_conditions</span> <span class="o">&amp;</span> <span class="n">condition</span>
-</span><span id="select_by_class-32"><a href="#select_by_class-32"><span class="linenos">32</span></a>            <span class="p">)</span>
-</span><span id="select_by_class-33"><a href="#select_by_class-33"><span class="linenos">33</span></a>
-</span><span id="select_by_class-34"><a href="#select_by_class-34"><span class="linenos">34</span></a>    <span class="k">if</span> <span class="n">incl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">excl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="select_by_class-35"><a href="#select_by_class-35"><span class="linenos">35</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="n">incl_conditions</span> <span class="o">&amp;</span> <span class="n">excl_conditions</span>
-</span><span id="select_by_class-36"><a href="#select_by_class-36"><span class="linenos">36</span></a>    <span class="k">elif</span> <span class="n">incl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="select_by_class-37"><a href="#select_by_class-37"><span class="linenos">37</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="n">incl_conditions</span>
-</span><span id="select_by_class-38"><a href="#select_by_class-38"><span class="linenos">38</span></a>    <span class="k">elif</span> <span class="n">excl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="select_by_class-39"><a href="#select_by_class-39"><span class="linenos">39</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="n">excl_conditions</span>
-</span><span id="select_by_class-40"><a href="#select_by_class-40"><span class="linenos">40</span></a>    <span class="k">else</span><span class="p">:</span>
-</span><span id="select_by_class-41"><a href="#select_by_class-41"><span class="linenos">41</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="kc">None</span>
-</span><span id="select_by_class-42"><a href="#select_by_class-42"><span class="linenos">42</span></a>
-</span><span id="select_by_class-43"><a href="#select_by_class-43"><span class="linenos">43</span></a>    <span class="n">view</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">conditions</span><span class="p">)</span> <span class="k">if</span> <span class="n">conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dataset</span>
-</span><span id="select_by_class-44"><a href="#select_by_class-44"><span class="linenos">44</span></a>    <span class="k">return</span> <span class="n">view</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="select_by_class-22"><a href="#select_by_class-22"><span class="linenos">22</span></a><span class="k">def</span> <span class="nf">select_by_class</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">classes_in</span><span class="p">,</span> <span class="n">classes_out</span><span class="p">):</span>
+</span><span id="select_by_class-23"><a href="#select_by_class-23"><span class="linenos">23</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="select_by_class-24"><a href="#select_by_class-24"><span class="linenos">24</span></a><span class="sd">    Filters a dataset based on inclusion and exclusion of specified classes.</span>
+</span><span id="select_by_class-25"><a href="#select_by_class-25"><span class="linenos">25</span></a>
+</span><span id="select_by_class-26"><a href="#select_by_class-26"><span class="linenos">26</span></a><span class="sd">    Args:</span>
+</span><span id="select_by_class-27"><a href="#select_by_class-27"><span class="linenos">27</span></a><span class="sd">        dataset: The dataset to be filtered.</span>
+</span><span id="select_by_class-28"><a href="#select_by_class-28"><span class="linenos">28</span></a><span class="sd">        classes_in (str or list of str): Classes to include in the filtered dataset.</span>
+</span><span id="select_by_class-29"><a href="#select_by_class-29"><span class="linenos">29</span></a><span class="sd">        classes_out (str or list of str): Classes to exclude from the filtered dataset.</span>
+</span><span id="select_by_class-30"><a href="#select_by_class-30"><span class="linenos">30</span></a>
+</span><span id="select_by_class-31"><a href="#select_by_class-31"><span class="linenos">31</span></a><span class="sd">    Returns:</span>
+</span><span id="select_by_class-32"><a href="#select_by_class-32"><span class="linenos">32</span></a><span class="sd">        A filtered view of the dataset based on the specified inclusion and exclusion conditions.</span>
+</span><span id="select_by_class-33"><a href="#select_by_class-33"><span class="linenos">33</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="select_by_class-34"><a href="#select_by_class-34"><span class="linenos">34</span></a>    <span class="n">incl_conditions</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="select_by_class-35"><a href="#select_by_class-35"><span class="linenos">35</span></a>    <span class="n">excl_conditions</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="select_by_class-36"><a href="#select_by_class-36"><span class="linenos">36</span></a>
+</span><span id="select_by_class-37"><a href="#select_by_class-37"><span class="linenos">37</span></a>    <span class="k">if</span> <span class="n">classes_in</span><span class="p">:</span>
+</span><span id="select_by_class-38"><a href="#select_by_class-38"><span class="linenos">38</span></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">classes_in</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+</span><span id="select_by_class-39"><a href="#select_by_class-39"><span class="linenos">39</span></a>            <span class="n">classes_in</span> <span class="o">=</span> <span class="p">[</span><span class="n">classes_in</span><span class="p">]</span>
+</span><span id="select_by_class-40"><a href="#select_by_class-40"><span class="linenos">40</span></a>        <span class="k">for</span> <span class="n">class_in</span> <span class="ow">in</span> <span class="n">classes_in</span><span class="p">:</span>
+</span><span id="select_by_class-41"><a href="#select_by_class-41"><span class="linenos">41</span></a>            <span class="n">condition</span> <span class="o">=</span> <span class="n">F</span><span class="p">(</span><span class="s2">&quot;ground_truth.detections.label&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">class_in</span><span class="p">)</span>
+</span><span id="select_by_class-42"><a href="#select_by_class-42"><span class="linenos">42</span></a>            <span class="n">incl_conditions</span> <span class="o">=</span> <span class="p">(</span>
+</span><span id="select_by_class-43"><a href="#select_by_class-43"><span class="linenos">43</span></a>                <span class="n">condition</span> <span class="k">if</span> <span class="n">incl_conditions</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">incl_conditions</span> <span class="o">|</span> <span class="n">condition</span>
+</span><span id="select_by_class-44"><a href="#select_by_class-44"><span class="linenos">44</span></a>            <span class="p">)</span>
+</span><span id="select_by_class-45"><a href="#select_by_class-45"><span class="linenos">45</span></a>
+</span><span id="select_by_class-46"><a href="#select_by_class-46"><span class="linenos">46</span></a>    <span class="k">if</span> <span class="n">classes_out</span><span class="p">:</span>
+</span><span id="select_by_class-47"><a href="#select_by_class-47"><span class="linenos">47</span></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">classes_out</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+</span><span id="select_by_class-48"><a href="#select_by_class-48"><span class="linenos">48</span></a>            <span class="n">classes_out</span> <span class="o">=</span> <span class="p">[</span><span class="n">classes_out</span><span class="p">]</span>
+</span><span id="select_by_class-49"><a href="#select_by_class-49"><span class="linenos">49</span></a>        <span class="k">for</span> <span class="n">class_out</span> <span class="ow">in</span> <span class="n">classes_out</span><span class="p">:</span>
+</span><span id="select_by_class-50"><a href="#select_by_class-50"><span class="linenos">50</span></a>            <span class="n">condition</span> <span class="o">=</span> <span class="o">~</span><span class="n">F</span><span class="p">(</span><span class="s2">&quot;ground_truth.detections.label&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">class_out</span><span class="p">)</span>
+</span><span id="select_by_class-51"><a href="#select_by_class-51"><span class="linenos">51</span></a>            <span class="n">excl_conditions</span> <span class="o">=</span> <span class="p">(</span>
+</span><span id="select_by_class-52"><a href="#select_by_class-52"><span class="linenos">52</span></a>                <span class="n">condition</span> <span class="k">if</span> <span class="n">excl_conditions</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">excl_conditions</span> <span class="o">&amp;</span> <span class="n">condition</span>
+</span><span id="select_by_class-53"><a href="#select_by_class-53"><span class="linenos">53</span></a>            <span class="p">)</span>
+</span><span id="select_by_class-54"><a href="#select_by_class-54"><span class="linenos">54</span></a>
+</span><span id="select_by_class-55"><a href="#select_by_class-55"><span class="linenos">55</span></a>    <span class="k">if</span> <span class="n">incl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">excl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="select_by_class-56"><a href="#select_by_class-56"><span class="linenos">56</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="n">incl_conditions</span> <span class="o">&amp;</span> <span class="n">excl_conditions</span>
+</span><span id="select_by_class-57"><a href="#select_by_class-57"><span class="linenos">57</span></a>    <span class="k">elif</span> <span class="n">incl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="select_by_class-58"><a href="#select_by_class-58"><span class="linenos">58</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="n">incl_conditions</span>
+</span><span id="select_by_class-59"><a href="#select_by_class-59"><span class="linenos">59</span></a>    <span class="k">elif</span> <span class="n">excl_conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="select_by_class-60"><a href="#select_by_class-60"><span class="linenos">60</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="n">excl_conditions</span>
+</span><span id="select_by_class-61"><a href="#select_by_class-61"><span class="linenos">61</span></a>    <span class="k">else</span><span class="p">:</span>
+</span><span id="select_by_class-62"><a href="#select_by_class-62"><span class="linenos">62</span></a>        <span class="n">conditions</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="select_by_class-63"><a href="#select_by_class-63"><span class="linenos">63</span></a>
+</span><span id="select_by_class-64"><a href="#select_by_class-64"><span class="linenos">64</span></a>    <span class="n">view</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">conditions</span><span class="p">)</span> <span class="k">if</span> <span class="n">conditions</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dataset</span>
+</span><span id="select_by_class-65"><a href="#select_by_class-65"><span class="linenos">65</span></a>    <span class="k">return</span> <span class="n">view</span>
 </span></pre></div>
 
 
-    
+            <div class="docstring"><p>Filters a dataset based on inclusion and exclusion of specified classes.</p>
+
+<p>Args:
+    dataset: The dataset to be filtered.
+    classes_in (str or list of str): Classes to include in the filtered dataset.
+    classes_out (str or list of str): Classes to exclude from the filtered dataset.</p>
+
+<p>Returns:
+    A filtered view of the dataset based on the specified inclusion and exclusion conditions.</p>
+</div>
+
 
                 </section>
     </main>
