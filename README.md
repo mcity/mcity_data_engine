@@ -25,6 +25,13 @@ pip install -r requirements.txt
 python main.py
 ```
 
+To exclude the output of jupyter notebooks from git tracking, add the following lines to your ```.git/config```:
+
+```
+[filter "strip-notebook-output"]
+clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --to=notebook --stdin --stdout --log-level=ERROR
+```
+
 In case there are issues with MongoDB, use ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
 
 Development System Specifications:
