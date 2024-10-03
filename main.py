@@ -3,13 +3,11 @@ import time
 from colorlog import ColoredFormatter
 import logging
 
-from config import WORKFLOW, SELECTED_DATASET, V51_EMBEDDING_MODELS
+from config import SELECTED_WORKFLOW, SELECTED_DATASET, V51_EMBEDDING_MODELS, WORKFLOWS
 
 from data_loader.data_loader import *
 from brain import Brain
 from ano_dec import Anodec
-
-WORKFLOWS = ["brain_selection", "learn_normality"]
 
 
 def configure_logging():
@@ -94,8 +92,8 @@ def main():
             + " is not a valid dataset name. Check _datasets_ in datasets.yaml."
         )
 
-    if WORKFLOW == WORKFLOWS[0]:
-
+    if SELECTED_WORKFLOW == "brain_selection":
+        logging.info("Running WORKFLO " + SELECTED_WORKFLOW)
         v51_brain = Brain(dataset, dataset_info)
         # Compute model embeddings and index for similarity
         v51_brain.compute_embeddings(V51_EMBEDDING_MODELS)
@@ -110,12 +108,14 @@ def main():
         v51_brain.compute_similar_images()
         dataset.save()
 
-    elif WORKFLOW == WORKFLOWS[1]:
+    elif SELECTED_WORKFLOW == "learn_normality":
+        logging.info("Running WORKFLO " + SELECTED_WORKFLOW)
         ano_dec = Anodec(dataset, dataset_info)
 
     else:
         logging.error(
-            str(WORKFLOW) + " is not a valid workflow. Check _WORKFLOWS_ in main.py."
+            str(SELECTED_WORKFLOW)
+            + " is not a valid workflow. Check _WORKFLOWS_ in main.py."
         )
     #
 

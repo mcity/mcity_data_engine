@@ -1,6 +1,6 @@
 import os
 
-WORKFLOW = "brain_selection"  # Selection from main.py
+SELECTED_WORKFLOW = "learn_normality"  # Selection from WORKFLOWS
 
 SELECTED_DATASET = "mcity_fisheye_2000"  # Choose from datasets.yaml
 SELECTED_SPLITS = ["train"]  # Choose from datasets.yaml
@@ -20,6 +20,12 @@ V51_EMBEDDING_MODELS = (
     "zero-shot-detection-transformer-torch",
     "zero-shot-classification-transformer-torch",
 )
+
+# Workflows and associated parameters
+WORKFLOWS = {
+    "brain_selection": {},
+    "learn_normality": {},
+}
 
 # Define the global variable
 NUM_WORKERS = os.cpu_count()
