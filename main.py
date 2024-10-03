@@ -1,50 +1,13 @@
 import time
 
-from colorlog import ColoredFormatter
+from utils.logging import configure_logging
 import logging
 
 from config import SELECTED_WORKFLOW, SELECTED_DATASET, V51_EMBEDDING_MODELS, WORKFLOWS
 
-from data_loader.data_loader import *
+from utils.data_loader import *
 from brain import Brain
 from ano_dec import Anodec
-
-
-def configure_logging():
-
-    # Configure logging
-    if not os.path.exists("logs"):
-        os.makedirs("logs")
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = f"logs/{timestamp}_dataengine.log"
-
-    formatter = ColoredFormatter(
-        "%(log_color)s%(asctime)s - %(levelname)s - %(message)s",
-        datefmt=None,
-        reset=True,
-        log_colors={
-            "DEBUG": "cyan",
-            "INFO": "",
-            "WARNING": "yellow",
-            "ERROR": "red",
-            "CRITICAL": "red,bg_white",
-        },
-        secondary_log_colors={},
-        style="%",
-    )
-
-    handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[
-            handler,  # Log to console with colors
-            logging.FileHandler(log_filename),
-        ],
-    )
 
 
 def panel_embeddings(v51_brain, color_field="unique"):
