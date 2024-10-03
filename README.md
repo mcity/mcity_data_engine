@@ -51,6 +51,10 @@ Development System Specifications:
     ├── brain.py                # V51 analysis of data
     └── config.py               # General config
 
+## Documentation
+
+Open the ```docs/index.html``` file to see the API documentation. It can be updated by running ```pdoc ./brain.py ./ano_dec.py ./utils/* -o docs```.
+
 ## Datasets
 
 ### [MARS](https://ai4ce.github.io/MARS/)
