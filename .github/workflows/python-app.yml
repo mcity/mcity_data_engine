@@ -32,6 +32,8 @@ jobs:
       run: |
         ls
         pip install -e ./data_loader/nuscenes-devkit/
+    - name: Remove nuscenes-devkit from requirements
+      run: python scripts/cleanup_requirements.py 
     - name: Install dependencies
       run: |
         pip install flake8 pytest

@@ -125,6 +125,8 @@ omegaconf==2.3.0
 open_clip_torch==2.26.1
 opencv-python==4.10.0.84
 opencv-python-headless==4.10.0.84
+openvino==2024.4.0
+openvino-telemetry==2024.1.0
 packaging==24.1
 pandas==2.2.3
 pandocfilters==1.5.1
