@@ -36,9 +36,6 @@ def panel_embeddings(v51_brain, color_field="unique"):
     return spaces
 
 
-# TODO Generate documentation https://docs.python.org/3/library/pydoc.html
-
-
 def main():
     time_start = time.time()
     configure_logging()
