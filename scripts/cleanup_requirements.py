@@ -1,4 +1,14 @@
 def remove_line_from_file(file_path, line_to_remove):
+    """
+    Removes a specific line from a file. Necessary, as Github Actions cannot install the local dependency and automation would fail.
+
+    Args:
+        file_path (str): The path to the file from which the line should be removed.
+        line_to_remove (str): The line content that needs to be removed from the file.
+
+    Returns:
+        None
+    """
     with open(file_path, "r") as file:
         lines = file.readlines()
 
