@@ -41,15 +41,23 @@ Development System Specifications:
 
 ## Structure
 
-    .
-    ├── datasets                # Stores datasets and computed embeddings
-        ├── datasets.yaml       # Dataset related parameters
-    ├── data_loader             # Handles dataset loading
-        ├── nuscenes-devkit     # Modified devkit for python 3.12
-    ├── tests                   # Pytest cases
+.
+    ├── ano_dec.py              # Anolib: Pixel-wise anomaly detection
+    ├── brain.py                # Voxel51: Frame-wise analysis of data
+    ├── config.py               # General config
+    ├── data_loader/            # Handles dataset loading
+    │   └── nuscenes-devkit     # Modified devkit for python 3.12
+    ├── datasets/               # Stores datasets and computed embeddings
+    │   ├── datasets.yaml       # Dataset related parameters
+    │   ├── embeddings/         # Default storage for computed embeddings
+    ├── docs/
+    │   ├── index.html          # Documentation entry point
+    ├── logs/                   # Default storage for logs
     ├── main.py                 # Core of the framework
-    ├── brain.py                # V51 analysis of data
-    └── config.py               # General config
+    ├── requirements.txt        # pip install -r requirements.txt
+    ├── scripts/                # Isolated scripts for experiments and one-time operations
+    ├── tests/                  # Pytest cases
+    └── utils/                  # Utility functions
 
 ## Documentation
 
