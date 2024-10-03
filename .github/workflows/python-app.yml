@@ -55,11 +55,16 @@ jobs:
       with:
         path: docs/
 
-    - name: Pull request for updates documentation
+    - name: Pull request for updated documentation
+      id: cpr
       uses: peter-evans/create-pull-request@v7
       with:
-          add-paths: |
-            docs/*
+        title: '[pdoc] Updated documentation'
+        commit-message: Update documentation
+        labels: |
+          documentation
+        add-paths: |
+          docs/*
 
   # Deploy the artifact to GitHub pages PUBLICLY.
   # This is a separate job so that only actions/deploy-pages has the necessary permissions.
