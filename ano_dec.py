@@ -31,6 +31,10 @@ class Anodec:
 
     def create_datamodule(self, transform=None):
         ## Build transform
+        # We create subsets of our data containing only the “good” training images and “anomalous” images for validation.
+        # We symlink the images and masks to the directory Anomalib expects.
+        # We instantiate and setup a datamodule from Anomalib’s Folder, which is the general-purpose class for custom datasets.
+        #  It is also possible to create a torch DataLoader from scratch and pass it to the engine’s fit() method
         if transform is None:
             transform = Resize(self.IMAGE_SIZE, antialias=True)
 
@@ -73,3 +77,31 @@ class Anodec:
         )
         datamodule.setup()
         return datamodule
+
+    def train_and_export_model(self, model=Padim(), transform=None):
+        # Now we can put it all together. The train_and_export_model() function
+        # below trains an anomaly detection model using Anomalib’s Engine class,
+        # exports the model to OpenVINO, and returns the model “inferencer” object.
+        # The inferencer object is used to make predictions on new images.
+
+        engine = Engine(task=self.TASK)
+        datamodule = self.create_datamodule(transform=transform)
+        engine.fit(model=model, datamodule=datamodule)
+
+        engine.export(
+            model=model,
+            export_type=ExportType.OPENVINO,
+        )
+        output_path = Path(
+            "/home/dbogdoll/mcity_data_engine/output"
+        )  # FIXME Make generic
+
+        openvino_model_path = output_path / "weights" / "openvino" / "model.bin"
+        metadata = output_path / "weights" / "openvino" / "metadata.json"
+
+        inferencer = OpenVINOInferencer(
+            path=openvino_model_path,
+            metadata=metadata,
+            device="CPU",
+        )
+        return inferencer
