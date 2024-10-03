@@ -1,3 +1,4 @@
+import fiftyone as fo
 from fiftyone import ViewField as F
 
 from anomalib import TaskType
@@ -12,6 +13,8 @@ from pathlib import Path
 from PIL import Image
 from torchvision.transforms.v2 import Resize
 
+import logging
+
 # https://docs.voxel51.com/tutorials/anomaly_detection.html
 # https://github.com/openvinotoolkit/anomalib
 # https://anomalib.readthedocs.io/en/v1.1.1/
@@ -24,49 +27,47 @@ class Anodec:
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
         self.IMAGE_SIZE = (256, 256)  ## preprocess image size for uniformity
+        self.filepath_masks = dataset_info["anomalib_masks_path"]
 
-        # TODO Get train and val dir paths from V51 splits
-
-    def create_datamodule(self, object_type, transform=None):
+    def create_datamodule(self, transform=None):
         ## Build transform
         if transform is None:
             transform = Resize(self.IMAGE_SIZE, antialias=True)
 
-        normal_data = self.dataset.match(F("category.label") == object_type).match(
-            F("split") == "train"
-        )
-        abnormal_data = (
-            self.dataset.match(F("category.label") == object_type)
-            .match(F("split") == "test")
-            .match(F("defect.label") != "good")
-        )
+        normal_data = self.dataset.match_tags("train")
+        abnormal_data = self.dataset.match_tags("val")
 
-        normal_dir = Path(ROOT_DIR) / object_type / "normal"  # FIXME
-        abnormal_dir = ROOT_DIR / object_type / "abnormal"  # FIXME
+        filepath_train = normal_data.take(1).first().filepath
+        filepath_val = abnormal_data.take(1).first().filepath
 
-        # create directories if they do not exist
-        os.makedirs(normal_dir, exist_ok=True)
-        os.makedirs(abnormal_dir, exist_ok=True)
+        normal_dir = os.path.dirname(filepath_train)
+        abnormal_dir = os.path.dirname(filepath_val)
+        mask_dir = os.path.dirname(self.filepath_masks)
 
-        if not os.path.exists(str(normal_dir)):
-            normal_data.export(
-                export_dir=str(normal_dir),
-                dataset_type=fo.types.ImageDirectory,
-                export_media="symlink",
-            )
-
+        # Symlink the images and masks to the directory Anomalib expects.
         for sample in abnormal_data.iter_samples():
+            # Add mask groundtruth
             base_filename = sample.filename
+            mask_filename = os.path.basename(base_filename).replace(".jpg", ".png")
+            mask_path = os.path.join(mask_dir, mask_filename)
+            sample["anomaly_mask"] = fo.Segmentation(mask_path=mask_path)
+            sample.save()
+
             dir_name = os.path.dirname(sample.filepath).split("/")[-1]
             new_filename = f"{dir_name}_{base_filename}"
-            if not os.path.exists(str(abnormal_dir / new_filename)):
-                os.symlink(sample.filepath, str(abnormal_dir / new_filename))
+            if not os.path.exists(os.path.join(abnormal_dir, new_filename)):
+                os.symlink(sample.filepath, os.path.join(abnormal_dir, new_filename))
+
+            if not os.path.exists(os.path.join(mask_dir, new_filename)):
+                os.symlink(
+                    sample.anomaly_mask.mask_path, os.path.join(mask_dir, new_filename)
+                )
 
         datamodule = Folder(
-            name=object_type,
-            root=ROOT_DIR,  # FIXME
+            name="pedestrians",
             normal_dir=normal_dir,
             abnormal_dir=abnormal_dir,
+            mask_dir=mask_dir,
             task=self.TASK,
             transform=transform,
         )

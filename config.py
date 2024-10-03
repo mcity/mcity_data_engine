@@ -1,11 +1,10 @@
 import os
 
 SELECTED_WORKFLOW = "learn_normality"  # Selection from WORKFLOWS
+SELECTED_DATASET = "mcity_fisheye_ano_ped"  # Choose from datasets.yaml
+SELECTED_SPLITS = ["train", "val"]  # Choose from datasets.yaml
 
-SELECTED_DATASET = "mcity_fisheye_2000"  # Choose from datasets.yaml
-SELECTED_SPLITS = ["train"]  # Choose from datasets.yaml
-
-PERSISTENT = True  # If V51 database is stored
+PERSISTENT = False  # If V51 database is stored
 
 # Select from V51 embedding model zoo
 V51_EMBEDDING_MODELS = (

@@ -92,8 +92,9 @@ def main():
             + " is not a valid dataset name. Check _datasets_ in datasets.yaml."
         )
 
+    spaces = None
     if SELECTED_WORKFLOW == "brain_selection":
-        logging.info("Running WORKFLO " + SELECTED_WORKFLOW)
+        logging.info("Running WORKFLOW " + SELECTED_WORKFLOW)
         v51_brain = Brain(dataset, dataset_info)
         # Compute model embeddings and index for similarity
         v51_brain.compute_embeddings(V51_EMBEDDING_MODELS)
@@ -106,11 +107,13 @@ def main():
 
         # Select samples similar to the center points to enlarge the dataset
         v51_brain.compute_similar_images()
+        spaces = panel_embeddings(v51_brain)
         dataset.save()
 
     elif SELECTED_WORKFLOW == "learn_normality":
-        logging.info("Running WORKFLO " + SELECTED_WORKFLOW)
+        logging.info("Running WORKFLOW " + SELECTED_WORKFLOW)
         ano_dec = Anodec(dataset, dataset_info)
+        ano_dec.create_datamodule()
 
     else:
         logging.error(
@@ -126,7 +129,7 @@ def main():
     fo.pprint(dataset.stats(include_media=True))
     time_stop = time.time()
     logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
-    session = fo.launch_app(dataset, spaces=panel_embeddings(v51_brain))
+    session = fo.launch_app(dataset, spaces=spaces)
     session.wait(-1)
 
 
