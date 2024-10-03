@@ -13,14 +13,14 @@ from config import NUM_WORKERS, PERSISTENT, SELECTED_SPLITS
 
 def load_dataset_info(dataset_name, config_path="datasets/datasets.yaml"):
     """
-    Load the information for a specific dataset from the datasets configuration file.
+    Load dataset information from a YAML configuration file.
 
     Args:
-        dataset_name (str): The name of the dataset to load information for.
+        dataset_name (str): The name of the dataset to retrieve information for.
+        config_path (str, optional): The path to the YAML configuration file. Defaults to "datasets/datasets.yaml".
 
     Returns:
-        dict or None: A dictionary containing the dataset information if found,
-                      otherwise None.
+        dict or None: A dictionary containing the dataset information if found, otherwise None.
     """
     with open(config_path) as f:
         datasets_config = yaml.safe_load(f)

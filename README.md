@@ -53,7 +53,7 @@ Development System Specifications:
 
 ## Documentation
 
-Open the ```docs/index.html``` file to see the API documentation. It can be updated by running ```pdoc ./brain.py ./ano_dec.py ./utils/* -o docs```.
+Open the ```docs/index.html``` file to see the API documentation. They are updated automatically with Github Actions, which generates pull requests.
 
 ## Datasets
 
