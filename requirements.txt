@@ -123,6 +123,7 @@ nvidia-nccl-cu12==2.20.5
 nvidia-nvjitlink-cu12==12.4.99
 nvidia-nvtx-cu12==12.4.99
 omegaconf==2.3.0
+onnx==1.17.0
 open_clip_torch==2.26.1
 opencv-python==4.10.0.84
 opencv-python-headless==4.10.0.84
@@ -141,6 +142,7 @@ pluggy==1.5.0
 pprintpp==0.4.0
 priority==2.0.0
 prompt_toolkit==3.0.48
+protobuf==5.28.2
 psutil==6.0.0
 ptyprocess==0.7.0
 pure_eval==0.2.3
