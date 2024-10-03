@@ -11,7 +11,7 @@ import logging
 from config import NUM_WORKERS, PERSISTENT, SELECTED_SPLITS
 
 
-def load_dataset_info(dataset_name):
+def load_dataset_info(dataset_name, config_path="datasets/datasets.yaml"):
     """
     Load the information for a specific dataset from the datasets configuration file.
 
@@ -22,7 +22,7 @@ def load_dataset_info(dataset_name):
         dict or None: A dictionary containing the dataset information if found,
                       otherwise None.
     """
-    with open("datasets/datasets.yaml") as f:
+    with open(config_path) as f:
         datasets_config = yaml.safe_load(f)
 
     datasets = datasets_config["datasets"]
