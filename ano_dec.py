@@ -92,9 +92,7 @@ class Anodec:
             model=model,
             export_type=ExportType.OPENVINO,
         )
-        output_path = Path(
-            "/home/dbogdoll/mcity_data_engine/output"
-        )  # FIXME Make generic
+        output_path = Path(engine.trainer.default_root_dir)  # FIXME Make generic
 
         openvino_model_path = output_path / "weights" / "openvino" / "model.bin"
         metadata = output_path / "weights" / "openvino" / "metadata.json"
