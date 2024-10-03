@@ -73,7 +73,7 @@ def main():
     elif SELECTED_WORKFLOW == "learn_normality":
         logging.info("Running WORKFLOW " + SELECTED_WORKFLOW)
         ano_dec = Anodec(dataset, dataset_info)
-        ano_dec.create_datamodule()
+        inferencer = ano_dec.train_and_export_model()
 
     else:
         logging.error(

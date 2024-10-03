@@ -1,7 +1,7 @@
 from colorlog import ColoredFormatter
 import os
 import logging
-import datetime
+from datetime import datetime
 
 
 def configure_logging():
