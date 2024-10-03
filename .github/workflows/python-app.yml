@@ -66,6 +66,8 @@ jobs:
     
     - name: Pull Request Automerge
       run: gh pr merge --merge --auto "1"
+      env:
+        GH_TOKEN: GITHUB_TOKEN
 
   # Deploy the artifact to GitHub pages PUBLICLY.
   # This is a separate job so that only actions/deploy-pages has the necessary permissions.
