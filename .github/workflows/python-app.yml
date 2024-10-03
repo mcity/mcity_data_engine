@@ -1,7 +1,7 @@
 # This workflow will install Python dependencies, run tests and lint with a single version of Python
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
-name: Basic validation
+name: Build Validation and Documentation
 
 on:
   push:
@@ -27,8 +27,7 @@ jobs:
         python-version: "3.12"
         cache: 'pip'
     - name: Upgrade pip
-      run: |
-        python -m pip install --upgrade pip
+      run: python -m pip install --upgrade pip
     - name: Install nuscenes-devkit
       run: |
         ls
@@ -45,5 +44,26 @@ jobs:
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude data_loader/nuscenes-devkit
     - name: Test with pytest
-      run: |
-        pytest --ignore=data_loader/nuscenes-devkit
+      run: pytest --ignore=data_loader/nuscenes-devkit
+
+    - name: Documentation with pdoc
+      run: doc -o docs
+    - uses: actions/upload-pages-artifact@v3
+      with:
+        path: docs/
+
+  # Deploy the artifact to GitHub pages PUBLICLY.
+  # This is a separate job so that only actions/deploy-pages has the necessary permissions.
+  # deploy:
+  #  needs: build
+  #  runs-on: ubuntu-latest
+  #  permissions:
+  #    pages: write
+  #    id-token: write
+  #  environment:
+  #    name: github-pages
+  #    url: ${{ steps.deployment.outputs.page_url }}
+  #  steps:
+  #    - id: deployment
+  #      uses: actions/deploy-pages@v4
+        
