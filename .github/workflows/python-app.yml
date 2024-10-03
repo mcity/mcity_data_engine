@@ -54,6 +54,12 @@ jobs:
       with:
         path: docs/
 
+    - name: Pull request for updates documentation
+      uses: peter-evans/create-pull-request@v7
+      with:
+          add-paths: |
+            docs/*
+
   # Deploy the artifact to GitHub pages PUBLICLY.
   # This is a separate job so that only actions/deploy-pages has the necessary permissions.
   # https://github.com/mitmproxy/pdoc/blob/main/.github/workflows/docs.yml

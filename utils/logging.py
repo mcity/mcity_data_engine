@@ -5,8 +5,28 @@ import datetime
 
 
 def configure_logging():
+    """
+    Configures the logging for the application.
 
-    # Configure logging
+    This function sets up logging to both the console and a file. Console logs
+    are color-coded based on the log level, while file logs are plain text.
+    Log files are stored in a "logs" directory, and each log file is named
+    with a timestamp to ensure uniqueness.
+
+    The log format includes the timestamp, log level, and the log message.
+
+    Log levels and their corresponding colors:
+    - DEBUG: cyan
+    - INFO: default
+    - WARNING: yellow
+    - ERROR: red
+    - CRITICAL: red with white background
+
+    If the "logs" directory does not exist, it will be created.
+
+    Raises:
+        OSError: If the directory creation fails.
+    """
     if not os.path.exists("logs"):
         os.makedirs("logs")
 
