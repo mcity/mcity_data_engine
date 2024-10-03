@@ -53,7 +53,7 @@ Development System Specifications:
 
 ## Documentation
 
-Open the ```docs/index.html``` file to see the API documentation. They are updated automatically with Github Actions, which generates pull requests.
+Open the [docs/index.html](./docs/index.html) file locally with your browser to see the API documentation. The documentation is updated automatically with Github Actions via pull requests and auto-merges.
 
 ## Datasets
 
