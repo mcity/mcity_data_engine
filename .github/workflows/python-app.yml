@@ -56,15 +56,16 @@ jobs:
         path: docs/
 
     - name: Pull request for updated documentation
-      id: cpr
       uses: peter-evans/create-pull-request@v7
       with:
         title: '[pdoc] Updated documentation'
         commit-message: Update documentation
-        labels: |
-          documentation
-        add-paths: |
-          docs/*
+        delete-branch: true
+        labels: documentation
+        add-paths: docs/*
+    
+    - name: Pull Request Automerge
+      run: gh pr merge --merge --auto "1"
 
   # Deploy the artifact to GitHub pages PUBLICLY.
   # This is a separate job so that only actions/deploy-pages has the necessary permissions.
