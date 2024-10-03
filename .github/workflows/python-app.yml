@@ -50,7 +50,7 @@ jobs:
       run: pytest --ignore=data_loader/nuscenes-devkit
 
     - name: Documentation with pdoc
-      run: pdoc ./main.py ./brain.py ./ano_dec.py ./utils/* -o docs
+      run: pdoc ./*.py ./utils/*.py -o docs
     - uses: actions/upload-pages-artifact@v3
       with:
         path: docs/
