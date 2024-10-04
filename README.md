@@ -63,6 +63,10 @@ Development System Specifications:
 
 Open the [docs/index.html](./docs/index.html) file locally with your browser to see the API documentation. The documentation is updated automatically with Github Actions, generating pull requests.
 
+## Training
+
+Training runs are logged with [Weights and Biases](https://wandb.ai/mcity/mcity-data-engine).
+
 ## Datasets
 
 ### [MARS](https://ai4ce.github.io/MARS/)
