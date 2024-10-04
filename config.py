@@ -28,3 +28,4 @@ WORKFLOWS = {
 
 # Define the global variable
 NUM_WORKERS = os.cpu_count()
+GLOBAL_SEED = 0

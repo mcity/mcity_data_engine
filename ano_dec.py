@@ -16,7 +16,7 @@ from torchvision.transforms.v2 import Resize
 import torch
 import logging
 
-from config import NUM_WORKERS
+from config import NUM_WORKERS, GLOBAL_SEED
 
 # https://docs.voxel51.com/tutorials/anomaly_detection.html
 # https://github.com/openvinotoolkit/anomalib
@@ -93,6 +93,7 @@ class Anodec:
             train_batch_size=batch_size,
             eval_batch_size=batch_size,
             num_workers=NUM_WORKERS,
+            seed=GLOBAL_SEED,
         )
         datamodule.setup()
         return datamodule
@@ -124,7 +125,9 @@ class Anodec:
 
         if not (os.path.exists(openvino_model_path) or os.path.exists(metadata_path)):
             os.makedirs(self.models_path, exist_ok=True)
-            wandb_logger = AnomalibWandbLogger()
+            wandb_logger = AnomalibWandbLogger(
+                name="anomalib_" + self.dataset_name + "_" + self.model_key
+            )
             engine = Engine(
                 task=self.TASK, default_root_dir=self.models_path, logger=wandb_logger
             )  # FIXME No normal test images found
