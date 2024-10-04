@@ -53,6 +53,9 @@
             <li>
                     <a class="variable" href="#NUM_WORKERS">NUM_WORKERS</a>
             </li>
+            <li>
+                    <a class="variable" href="#GLOBAL_SEED">GLOBAL_SEED</a>
+            </li>
     </ul>
 
 
@@ -104,6 +107,7 @@ config    </h1>
 </span><span id="L-28"><a href="#L-28"><span class="linenos">28</span></a>
 </span><span id="L-29"><a href="#L-29"><span class="linenos">29</span></a><span class="c1"># Define the global variable</span>
 </span><span id="L-30"><a href="#L-30"><span class="linenos">30</span></a><span class="n">NUM_WORKERS</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">()</span>
+</span><span id="L-31"><a href="#L-31"><span class="linenos">31</span></a><span class="n">GLOBAL_SEED</span> <span class="o">=</span> <span class="mi">0</span>
 </span></pre></div>
 
 
@@ -184,11 +188,23 @@ config    </h1>
                 <section id="NUM_WORKERS">
                     <div class="attr variable">
             <span class="name">NUM_WORKERS</span>        =
-<span class="default_value">32</span>
+<span class="default_value">2</span>
 
         
     </div>
     <a class="headerlink" href="#NUM_WORKERS"></a>
+    
+    
+
+                </section>
+                <section id="GLOBAL_SEED">
+                    <div class="attr variable">
+            <span class="name">GLOBAL_SEED</span>        =
+<span class="default_value">0</span>
+
+        
+    </div>
+    <a class="headerlink" href="#GLOBAL_SEED"></a>
     
     
 
