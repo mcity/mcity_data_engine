@@ -1,7 +1,9 @@
 from fiftyone import ViewField as F
 
+from config import GLOBAL_SEED
 
-def select_random(dataset, n_samples, seed=0):
+
+def select_random(dataset, n_samples):
     """
     Select a random subset of samples from the dataset.
 
@@ -14,7 +16,7 @@ def select_random(dataset, n_samples, seed=0):
     Dataset: A dataset containing the randomly selected samples.
     """
 
-    random_view = dataset.take(n_samples, seed=seed)
+    random_view = dataset.take(n_samples, seed=GLOBAL_SEED)
     return random_view
 
 

@@ -13,7 +13,7 @@ import pickle
 
 import logging
 
-from config import NUM_WORKERS
+from config import NUM_WORKERS, GLOBAL_SEED
 
 """
 Implementing Voxel51 brain methods.
@@ -25,7 +25,6 @@ class Brain:
         self.dataset = dataset
         self.brains = dataset.list_brain_runs()
         self.dataset_name = dataset_info["name"]
-        self.seed = 0
 
         # Storing variables
         self.embeddings_vis = {}
@@ -128,7 +127,7 @@ class Brain:
                                 method=method,
                                 points=points,
                                 embeddings=embedding_key,
-                                seed=self.seed,
+                                seed=GLOBAL_SEED,
                                 brain_key=key,
                                 num_workers=NUM_WORKERS,
                             )
@@ -141,7 +140,7 @@ class Brain:
                                 self.dataset,
                                 method=method,
                                 embeddings=embedding_key,
-                                seed=self.seed,
+                                seed=GLOBAL_SEED,
                                 brain_key=key,
                                 num_workers=NUM_WORKERS,
                             )
