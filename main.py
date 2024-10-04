@@ -11,9 +11,6 @@ from ano_dec import Anodec
 
 import wandb
 
-# TODO Improve wandb integration https://voxel51.com/blog/ml-menu-for-model-selection-hugging-face-weights-and-biases-fiftyone/
-wandb.init(project="mcity-data-engine")
-
 
 def panel_embeddings(v51_brain, color_field="unique"):
     samples_panel = fo.Panel(type="Samples", pinned=True)
@@ -44,6 +41,8 @@ def panel_embeddings(v51_brain, color_field="unique"):
 def main():
     time_start = time.time()
     configure_logging()
+    # TODO Improve wandb integration https://voxel51.com/blog/ml-menu-for-model-selection-hugging-face-weights-and-biases-fiftyone/
+    wandb.init(project="mcity-data-engine")
 
     # Load the selected dataset
     dataset_info = load_dataset_info(SELECTED_DATASET)
