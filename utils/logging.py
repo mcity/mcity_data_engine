@@ -34,7 +34,7 @@ def configure_logging():
     log_filename = f"logs/{timestamp}_dataengine.log"
 
     formatter = ColoredFormatter(
-        "%(log_color)s%(asctime)s - %(levelname)s - %(message)s",
+        "%(log_color)s%(asctime)s - %(levelname)s - %(name)s - %(funcName)s - %(message)s",
         datefmt=None,
         reset=True,
         log_colors={
@@ -53,7 +53,7 @@ def configure_logging():
 
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
+        format="%(asctime)s - %(levelname)s - %(name)s - %(funcName)s - %(message)s",
         handlers=[
             handler,  # Log to console with colors
             logging.FileHandler(log_filename),

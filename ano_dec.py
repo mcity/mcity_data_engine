@@ -5,15 +5,18 @@ from anomalib import TaskType
 from anomalib.data.image.folder import Folder
 from anomalib.deploy import ExportType, OpenVINOInferencer
 from anomalib.engine import Engine
-from anomalib.models import Padim, Patchcore
+from anomalib.models import Padim, Patchcore, Draem
+from anomalib.loggers import AnomalibWandbLogger
 
 import numpy as np
 import os
 from pathlib import Path
 from PIL import Image
 from torchvision.transforms.v2 import Resize
-
+import torch
 import logging
+
+from config import NUM_WORKERS
 
 # https://docs.voxel51.com/tutorials/anomaly_detection.html
 # https://github.com/openvinotoolkit/anomalib
@@ -21,13 +24,24 @@ import logging
 
 
 class Anodec:
-    def __init__(self, dataset, dataset_info, embeddings_path="./datasets/embeddings/"):
+    def __init__(
+        self, dataset, dataset_info, models_path="./models/anomalib/", model=Draem()
+    ):
+        torch.set_float32_matmul_precision(
+            "medium"
+        )  # Utilize Tensor core, came in warning
         self.dataset = dataset
+        self.normal_data = dataset.match_tags("train")
+        self.abnormal_data = dataset.match_tags("val")
         self.brains = dataset.list_brain_runs()
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
         self.IMAGE_SIZE = (256, 256)  ## preprocess image size for uniformity
         self.filepath_masks = dataset_info["anomalib_masks_path"]
+        self.model = model
+        self.model_key = type(model).__name__
+        self.models_path = models_path
+        self.inferencer = None
 
     def create_datamodule(self, transform=None):
         ## Build transform
@@ -38,18 +52,15 @@ class Anodec:
         if transform is None:
             transform = Resize(self.IMAGE_SIZE, antialias=True)
 
-        normal_data = self.dataset.match_tags("train")
-        abnormal_data = self.dataset.match_tags("val")
-
-        filepath_train = normal_data.take(1).first().filepath
-        filepath_val = abnormal_data.take(1).first().filepath
+        filepath_train = self.normal_data.take(1).first().filepath
+        filepath_val = self.abnormal_data.take(1).first().filepath
 
         normal_dir = os.path.dirname(filepath_train)
         abnormal_dir = os.path.dirname(filepath_val)
         mask_dir = os.path.dirname(self.filepath_masks)
 
         # Symlink the images and masks to the directory Anomalib expects.
-        for sample in abnormal_data.iter_samples():
+        for sample in self.abnormal_data.iter_samples():
             # Add mask groundtruth
             base_filename = sample.filename
             mask_filename = os.path.basename(base_filename).replace(".jpg", ".png")
@@ -67,39 +78,95 @@ class Anodec:
                     sample.anomaly_mask.mask_path, os.path.join(mask_dir, new_filename)
                 )
 
+        if self.model_key == "Draem":
+            batch_size = 16
+        else:
+            batch_size = 32
+
         datamodule = Folder(
-            name="pedestrians",
+            name=self.dataset_name,
             normal_dir=normal_dir,
             abnormal_dir=abnormal_dir,
             mask_dir=mask_dir,
             task=self.TASK,
             transform=transform,
+            train_batch_size=batch_size,
+            eval_batch_size=batch_size,
+            num_workers=NUM_WORKERS,
         )
         datamodule.setup()
         return datamodule
 
-    def train_and_export_model(self, model=Padim(), transform=None):
+    def train_and_export_model(self, transform=None):
         # Now we can put it all together. The train_and_export_model() function
         # below trains an anomaly detection model using Anomalib’s Engine class,
         # exports the model to OpenVINO, and returns the model “inferencer” object.
         # The inferencer object is used to make predictions on new images.
 
-        engine = Engine(task=self.TASK)
-        datamodule = self.create_datamodule(transform=transform)
-        engine.fit(model=model, datamodule=datamodule)
-
-        engine.export(
-            model=model,
-            export_type=ExportType.OPENVINO,
+        openvino_model_path = os.path.join(
+            self.models_path,
+            self.model_key,
+            self.dataset_name,  # datamodule.name
+            "latest",
+            "weights",
+            "openvino",
+            "model.bin",
         )
-        output_path = Path(engine.trainer.default_root_dir)  # FIXME Make generic
+        metadata_path = os.path.join(
+            self.models_path,
+            self.model_key,
+            self.dataset_name,
+            "latest",
+            "weights",
+            "openvino",
+            "metadata.json",
+        )
 
-        openvino_model_path = output_path / "weights" / "openvino" / "model.bin"
-        metadata = output_path / "weights" / "openvino" / "metadata.json"
+        if not (os.path.exists(openvino_model_path) or os.path.exists(metadata_path)):
+            os.makedirs(self.models_path, exist_ok=True)
+            wandb_logger = AnomalibWandbLogger()
+            engine = Engine(
+                task=self.TASK, default_root_dir=self.models_path, logger=wandb_logger
+            )  # FIXME No normal test images found
+            datamodule = self.create_datamodule(transform=transform)
+            engine.fit(model=self.model, datamodule=datamodule)
+
+            engine.export(
+                model=self.model,
+                export_type=ExportType.OPENVINO,
+            )
 
         inferencer = OpenVINOInferencer(
             path=openvino_model_path,
-            metadata=metadata,
-            device="CPU",
+            metadata=metadata_path,
+            device="CPU",  # TODO: Just use pytorch model, OpenVINO does not support Nvidia GPUs https://anomalib.readthedocs.io/en/v0.3.7/tutorials/inference.html
         )
-        return inferencer
+        self.inferencer = inferencer
+
+    def run_inference(self, threshold=0.5):
+        # Take a FiftyOne sample collection (e.g. our test set) as input, along with the inferencer object,
+        # and a key for storing the results in the samples. It will run the model on each sample in the collection
+        # and store the results. The threshold argument acts as a cutoff for the anomaly score.
+        # If the score is above the threshold, the sample is considered anomalous
+        for sample in self.abnormal_data.iter_samples(autosave=True, progress=True):
+            output = self.inferencer.predict(image=Image.open(sample.filepath))
+
+            conf = output.pred_score
+            anomaly = "normal" if conf < threshold else "anomaly"
+
+            sample[f"pred_anomaly_score_{self.model_key}"] = conf
+            sample[f"pred_anomaly_{self.model_key}"] = fo.Classification(label=anomaly)
+            sample[f"pred_anomaly_map_{self.model_key}"] = fo.Heatmap(
+                map=output.anomaly_map
+            )
+            sample[f"pred_defect_mask_{self.model_key}"] = fo.Segmentation(
+                mask=output.pred_mask
+            )
+
+    def eval(self):
+        eval_seg = self.abnormal_data.evaluate_segmentations(
+            f"pred_defect_mask_{self.model_key}",
+            gt_field="anomaly_mask",
+            eval_key=f"eval_seg_{self.model_key}",
+        )
+        eval_seg.print_report(classes=[0, 255])

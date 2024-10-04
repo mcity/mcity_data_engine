@@ -9,6 +9,13 @@ from utils.data_loader import *
 from brain import Brain
 from ano_dec import Anodec
 
+import wandb
+
+wandb.init(
+    # set the wandb project where this run will be logged
+    project="mcity-data-engine"
+)
+
 
 def panel_embeddings(v51_brain, color_field="unique"):
     samples_panel = fo.Panel(type="Samples", pinned=True)
@@ -53,8 +60,8 @@ def main():
         )
 
     spaces = None
+    logging.info("Running workflow " + SELECTED_WORKFLOW.upper())
     if SELECTED_WORKFLOW == "brain_selection":
-        logging.info("Running WORKFLOW " + SELECTED_WORKFLOW)
         v51_brain = Brain(dataset, dataset_info)
         # Compute model embeddings and index for similarity
         v51_brain.compute_embeddings(V51_EMBEDDING_MODELS)
@@ -68,12 +75,12 @@ def main():
         # Select samples similar to the center points to enlarge the dataset
         v51_brain.compute_similar_images()
         spaces = panel_embeddings(v51_brain)
-        dataset.save()
 
     elif SELECTED_WORKFLOW == "learn_normality":
-        logging.info("Running WORKFLOW " + SELECTED_WORKFLOW)
         ano_dec = Anodec(dataset, dataset_info)
-        inferencer = ano_dec.train_and_export_model()
+        ano_dec.train_and_export_model()
+        ano_dec.run_inference()
+        ano_dec.eval()
 
     else:
         logging.error(
@@ -85,10 +92,12 @@ def main():
     # Create layout for the web interface
 
     # Launch V51 session
+    dataset.save()
     logging.info(dataset)
     fo.pprint(dataset.stats(include_media=True))
     time_stop = time.time()
     logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
+    wandb.finish()
     session = fo.launch_app(dataset, spaces=spaces)
     session.wait(-1)
 

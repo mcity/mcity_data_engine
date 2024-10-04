@@ -26,9 +26,13 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Self-defined
+/cache
 /logs
 /datasets/*
 !/datasets/datasets.yaml
+/models
+/wandb
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
