@@ -82,7 +82,6 @@ In order to execute jobs, the [following tools](https://catalog.ngc.nvidia.com/o
 
 - [Docker](https://docs.docker.com/engine/install/ubuntu/)
 - [CUDA](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#ubuntu) and [Post-Installation](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions)
-- [Nvidia Container Toolkit]() 
 
 ## Datasets
 
