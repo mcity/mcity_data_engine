@@ -7,6 +7,8 @@ from anomalib.deploy import ExportType, OpenVINOInferencer
 from anomalib.engine import Engine
 from anomalib.models import Padim, Patchcore, Draem
 from anomalib.loggers import AnomalibWandbLogger
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+
 
 import numpy as np
 import os
@@ -16,9 +18,10 @@ from torchvision.transforms.v2 import Resize
 import torch
 import logging
 
-from config import NUM_WORKERS, GLOBAL_SEED
+from config.config import NUM_WORKERS, GLOBAL_SEED
 
 # https://docs.voxel51.com/tutorials/anomaly_detection.html
+# https://medium.com/@enrico.randellini/anomalib-a-library-for-image-anomaly-detection-and-localization-fb363639104f
 # https://github.com/openvinotoolkit/anomalib
 # https://anomalib.readthedocs.io/en/v1.1.1/
 
@@ -98,41 +101,83 @@ class Anodec:
         datamodule.setup()
         return datamodule
 
-    def train_and_export_model(self, transform=None):
+    def train_and_export_model(
+        self, transform=None, max_epochs=100, early_stop_patience=5
+    ):
         # Now we can put it all together. The train_and_export_model() function
         # below trains an anomaly detection model using Anomalib’s Engine class,
         # exports the model to OpenVINO, and returns the model “inferencer” object.
         # The inferencer object is used to make predictions on new images.
 
+        openvino_root = os.path.join(
+            self.models_path, self.model_key, self.dataset_name
+        )
         openvino_model_path = os.path.join(
-            self.models_path,
-            self.model_key,
-            self.dataset_name,  # datamodule.name
-            "latest",
-            "weights",
-            "openvino",
-            "model.bin",
+            openvino_root,
+            "latest/weights/openvino/model.bin",
         )
         metadata_path = os.path.join(
-            self.models_path,
-            self.model_key,
-            self.dataset_name,
-            "latest",
-            "weights",
-            "openvino",
-            "metadata.json",
+            openvino_root,
+            "latest/weights/openvino/metadata.json",
         )
 
         if not (os.path.exists(openvino_model_path) or os.path.exists(metadata_path)):
             os.makedirs(self.models_path, exist_ok=True)
+            datamodule = self.create_datamodule(transform=transform)
             wandb_logger = AnomalibWandbLogger(
                 name="anomalib_" + self.dataset_name + "_" + self.model_key
             )
+
+            # Callbacks
+            callbacks = [
+                ModelCheckpoint(
+                    mode="max",
+                    monitor="pixel_AUROC",
+                    save_last=True,
+                    verbose=True,
+                    auto_insert_metric_name=True,
+                    every_n_epochs=1,
+                ),
+                EarlyStopping(
+                    monitor="pixel_AUROC", mode="max", patience=early_stop_patience
+                ),
+            ]
+            kwargs = {
+                "default_root_dir": os.path.join(openvino_root, "lightning")
+            }  # Custom log directory path
             engine = Engine(
-                task=self.TASK, default_root_dir=self.models_path, logger=wandb_logger
-            )  # FIXME No normal test images found
-            datamodule = self.create_datamodule(transform=transform)
+                task=self.TASK,
+                default_root_dir=self.models_path,
+                logger=wandb_logger,
+                max_epochs=max_epochs,
+                callbacks=callbacks,
+                pixel_metrics=[  # https://anomalib.readthedocs.io/en/latest/markdown/guides/reference/metrics/index.html
+                    "AUPIMO",
+                    "AUPR",
+                    "AUPRO",
+                    "AUROC",
+                    "AnomalyScoreDistribution",
+                    "BinaryPrecisionRecallCurve",
+                    "F1AdaptiveThreshold",
+                    "F1Max",
+                    "F1Score",
+                    "ManualThreshold",
+                    "MinMax",
+                    "PIMO",
+                    "PRO",
+                ],
+                accelerator="auto",
+                **kwargs,
+            )
             engine.fit(model=self.model, datamodule=datamodule)
+
+            test_results = engine.test(
+                model=self.model,
+                datamodule=datamodule,
+                ckpt_path=engine.trainer.checkpoint_callback.best_model_path,
+            )
+
+            logging.info(test_results)
 
             engine.export(
                 model=self.model,
