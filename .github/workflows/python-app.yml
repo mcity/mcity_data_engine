@@ -35,7 +35,7 @@ jobs:
     - name: Install nuscenes-devkit
       run: |
         ls
-        pip install -e ./data_loader/nuscenes-devkit/
+        pip install -e ./utils/nuscenes-devkit/
     - name: Remove nuscenes-devkit from requirements
       run: python scripts/cleanup_requirements.py 
     - name: Install dependencies
@@ -46,11 +46,11 @@ jobs:
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude data_loader/nuscenes-devkit
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude utils/nuscenes-devkit
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude data_loader/nuscenes-devkit
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude utils/nuscenes-devkit
     - name: Test with pytest
-      run: pytest --ignore=data_loader/nuscenes-devkit
+      run: pytest --ignore=utils/nuscenes-devkit
 
     - name: Documentation with pdoc
       run: pdoc ./*.py ./utils/*.py -o docs
