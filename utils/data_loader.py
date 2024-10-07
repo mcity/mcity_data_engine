@@ -8,10 +8,10 @@ import fiftyone as fo
 
 import logging
 
-from config import NUM_WORKERS, PERSISTENT, SELECTED_SPLITS
+from config.config import NUM_WORKERS, PERSISTENT, SELECTED_SPLITS
 
 
-def load_dataset_info(dataset_name, config_path="datasets/datasets.yaml"):
+def load_dataset_info(dataset_name, config_path="config/datasets.yaml"):
     """
     Load dataset information from a YAML configuration file.
 

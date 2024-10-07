@@ -1,15 +1,22 @@
 import time
+import signal
 
 from utils.logging import configure_logging
 import logging
 
-from config import SELECTED_WORKFLOW, SELECTED_DATASET, V51_EMBEDDING_MODELS, WORKFLOWS
+from config.config import (
+    SELECTED_WORKFLOW,
+    SELECTED_DATASET,
+    V51_EMBEDDING_MODELS,
+    WORKFLOWS,
+)
 
 from utils.data_loader import *
 from brain import Brain
 from ano_dec import Anodec
 
 import wandb
+import sys
 
 
 def panel_embeddings(v51_brain, color_field="unique"):
@@ -38,11 +45,22 @@ def panel_embeddings(v51_brain, color_field="unique"):
     return spaces
 
 
+def signal_handler(sig, frame):
+    print("You pressed Ctrl+C!")
+    # Perform any cleanup or final actions here
+    try:
+        wandb.finish()
+    except:
+        pass
+    sys.exit(0)
+
+
 def main():
     time_start = time.time()
+    signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
     configure_logging()
     # TODO Improve wandb integration https://voxel51.com/blog/ml-menu-for-model-selection-hugging-face-weights-and-biases-fiftyone/
-    wandb.init(project="mcity-data-engine")
+    wandb.init(project="mcity-data-engine", dir="./logs/wandb")
 
     # Load the selected dataset
     dataset_info = load_dataset_info(SELECTED_DATASET)

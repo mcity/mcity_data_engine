@@ -27,11 +27,10 @@ def configure_logging():
     Raises:
         OSError: If the directory creation fails.
     """
-    if not os.path.exists("logs"):
-        os.makedirs("logs")
+    os.makedirs("logs/dataengine", exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = f"logs/{timestamp}_dataengine.log"
+    log_filename = f"logs/dataengine/{timestamp}_dataengine.log"
 
     formatter = ColoredFormatter(
         "%(log_color)s%(asctime)s - %(levelname)s - %(name)s - %(funcName)s - %(message)s",

@@ -13,7 +13,7 @@ import pickle
 
 import logging
 
-from config import NUM_WORKERS, GLOBAL_SEED
+from config.config import NUM_WORKERS, GLOBAL_SEED
 
 """
 Implementing Voxel51 brain methods.

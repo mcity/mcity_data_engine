@@ -1,29 +1,29 @@
 datasets:
   - name: mars_multitraversal
     loader_fct: load_mars_multitraversal
-    local_path: /home/dbogdoll/mcity_data_engine/datasets/MARS/Multitraversal_2023_10_04-2024_03_08/
+    local_path: /media/dbogdoll/Datasets/MARS/Multitraversal_2023_10_04-2024_03_08/
     hf_dataset_name: ai4ce/MARS
     hf_path: Multitraversal_2023_10_04-2024_03_08
   - name: mars_multiagent
     loader_fct: load_mars_multiagent
     local_path: Multiagent_53scene
     hf_dataset_name: ai4ce/MARS
-    hf_path: /home/dbogdoll/mcity_data_engine/datasets/MARS/Multiagent_53scene/
+    hf_path: /media/dbogdoll/Datasets/MARS/Multiagent_53scene/
     v51_config: mars_multiagent.yaml
   - name: mcity_fisheye_2000
     loader_fct: load_mcity_fisheye_2000
     hf_dataset_name: dbogdollumich/mcity_fisheye
-    local_path: /home/dbogdoll/mcity_data_engine/datasets/midadvrb_2000/
+    local_path: /media/dbogdoll/Datasets/midadvrb_2000/
     v51_type: YOLOv5Dataset
     v51_splits: ["train", "val"]
   - name: mcity_fisheye_ano_ped
     loader_fct: load_mcity_fisheye_2000
-    local_path: /home/dbogdoll/mcity_data_engine/datasets/midadvrb_ano_ped/
+    local_path: /media/dbogdoll/Datasets/midadvrb_ano_ped/
     v51_type: YOLOv5Dataset
     v51_splits: ["train", "val"]
-    anomalib_masks_path: /home/dbogdoll/mcity_data_engine/datasets/midadvrb_ano_ped_masks/
+    anomalib_masks_path: /media/dbogdoll/Datasets/midadvrb_ano_ped_masks/
   - name: mcity_fisheye_3_months
     loader_fct: load_mcity_fisheye_3_months
-    local_path: /home/dbogdoll/mcity_data_engine/datasets/midadv_swinl_label_veh_0p3_ped_0p3_2023q4_yolov8_format_v2/
+    local_path: /media/dbogdoll/Datasets/midadv_swinl_label_veh_0p3_ped_0p3_2023q4_yolov8_format_v2/
     v51_type: YOLOv5Dataset
     v51_splits: ["train", "val"]

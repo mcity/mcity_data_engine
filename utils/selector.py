@@ -1,6 +1,6 @@
 from fiftyone import ViewField as F
 
-from config import GLOBAL_SEED
+from config.config import GLOBAL_SEED
 
 
 def select_random(dataset, n_samples):
