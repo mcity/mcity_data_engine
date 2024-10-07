@@ -80,7 +80,7 @@ export WANDB_DIR="/home/dbogdoll/mcity_data_engine/logs/wandb"
 
 In order to execute jobs, the [following tools](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch) need to be installed:
 
-- [Docker](https://docs.docker.com/engine/install/ubuntu/)
+- [Docker](https://docs.docker.com/engine/install/ubuntu/) incl. [post-installation](https://docs.docker.com/engine/install/linux-postinstall/)
 - [CUDA](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#ubuntu) and [Post-Installation](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions)
 
 ## Datasets
