@@ -148,7 +148,7 @@ nest-asyncio==1.6.0
 networkx==3.3
 numba==0.60.0
 numpy==1.26.4
-nuscenes-devkit @ git+https://github.com/daniel-bogdoll/nuscenes-devkit.git@3bec3a175623bbdd2f56798b0b270e52b828b786
+nuscenes-devkit @ file:///home/dbogdoll/mcity_data_engine/utils/nuscenes-devkit-master
 nvidia-cublas-cu12==12.4.2.65
 nvidia-cuda-cupti-cu12==12.4.99
 nvidia-cuda-nvrtc-cu12==12.4.99
