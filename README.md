@@ -78,6 +78,8 @@ In order to change the standard WandB directory, add the following line to the b
 export WANDB_DIR="/home/dbogdoll/mcity_data_engine/logs/wandb"
 ```
 
+In order to execute jobs, follow the online instructions to install [Docker](https://docs.docker.com/engine/install/ubuntu/) on your machine. 
+
 ## Datasets
 
 ### [MARS](https://ai4ce.github.io/MARS/)
