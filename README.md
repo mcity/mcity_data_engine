@@ -65,7 +65,18 @@ Open the [docs/index.html](./docs/index.html) file locally with your browser to 
 
 ## Training
 
-Training runs are logged with [Weights and Biases](https://wandb.ai/mcity/mcity-data-engine).
+Training runs are logged with [Weights and Biases (WandB)](https://wandb.ai/mcity/mcity-data-engine). To fill queues with your local machine, you need to setup an [agent](https://docs.wandb.ai/guides/launch/setup-launch-docker):
+
+```
+wandb.login()
+wandb launch-agent -q <queue-name> --max-jobs <n>
+```
+
+In order to change the standard WandB directory, add the following line to the bottom of your ```~/.profile``` file:
+
+```
+export WANDB_DIR = "<Your Path>/mcity_data_engine/logs/wandb"
+```
 
 ## Datasets
 
