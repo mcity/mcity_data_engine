@@ -32,12 +32,6 @@ jobs:
         cache: 'pip'
     - name: Upgrade pip
       run: python -m pip install --upgrade pip
-    - name: Install nuscenes-devkit
-      run: |
-        ls
-        pip install -e ./utils/nuscenes-devkit/
-    - name: Remove nuscenes-devkit from requirements
-      run: python scripts/cleanup_requirements.py 
     - name: Install dependencies
       run: |
         pip install flake8 pytest
