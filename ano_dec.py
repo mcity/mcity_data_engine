@@ -44,11 +44,22 @@ class Anodec:
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
         self.IMAGE_SIZE = (256, 256)  ## preprocess image size for uniformity
-        self.filepath_masks = dataset_info["anomalib_masks_path"]
         self.model = model
         self.model_key = type(model).__name__
         self.models_path = models_path
+
+        filepath_masks = dataset_info["anomalib_masks_path"]
+        filepath_train = self.normal_data.take(1).first().filepath
+        filepath_val = self.abnormal_data.take(1).first().filepath
+
+        self.normal_dir = os.path.dirname(filepath_train)
+        self.abnormal_dir = os.path.dirname(filepath_val)
+        self.mask_dir = os.path.dirname(filepath_masks)
+
         self.inferencer = None
+
+    def __del__(self):
+        self.unlink_symlinks()
 
     def create_datamodule(self, transform=None):
         ## Build transform
@@ -59,30 +70,26 @@ class Anodec:
         if transform is None:
             transform = Resize(self.IMAGE_SIZE, antialias=True)
 
-        filepath_train = self.normal_data.take(1).first().filepath
-        filepath_val = self.abnormal_data.take(1).first().filepath
-
-        normal_dir = os.path.dirname(filepath_train)
-        abnormal_dir = os.path.dirname(filepath_val)
-        mask_dir = os.path.dirname(self.filepath_masks)
-
         # Symlink the images and masks to the directory Anomalib expects.
         for sample in self.abnormal_data.iter_samples():
             # Add mask groundtruth
             base_filename = sample.filename
             mask_filename = os.path.basename(base_filename).replace(".jpg", ".png")
-            mask_path = os.path.join(mask_dir, mask_filename)
+            mask_path = os.path.join(self.mask_dir, mask_filename)
             sample["anomaly_mask"] = fo.Segmentation(mask_path=mask_path)
             sample.save()
 
             dir_name = os.path.dirname(sample.filepath).split("/")[-1]
             new_filename = f"{dir_name}_{base_filename}"
-            if not os.path.exists(os.path.join(abnormal_dir, new_filename)):
-                os.symlink(sample.filepath, os.path.join(abnormal_dir, new_filename))
-
-            if not os.path.exists(os.path.join(mask_dir, new_filename)):
+            if not os.path.exists(os.path.join(self.abnormal_dir, new_filename)):
                 os.symlink(
-                    sample.anomaly_mask.mask_path, os.path.join(mask_dir, new_filename)
+                    sample.filepath, os.path.join(self.abnormal_dir, new_filename)
+                )
+
+            if not os.path.exists(os.path.join(self.mask_dir, new_filename)):
+                os.symlink(
+                    sample.anomaly_mask.mask_path,
+                    os.path.join(self.mask_dir, new_filename),
                 )
 
         if self.model_key == "Draem":
@@ -92,9 +99,9 @@ class Anodec:
 
         datamodule = Folder(
             name=self.dataset_name,
-            normal_dir=normal_dir,
-            abnormal_dir=abnormal_dir,
-            mask_dir=mask_dir,
+            normal_dir=self.normal_dir,
+            abnormal_dir=self.abnormal_dir,
+            mask_dir=self.mask_dir,
             task=self.TASK,
             transform=transform,
             train_batch_size=batch_size,
@@ -104,6 +111,22 @@ class Anodec:
         )
         datamodule.setup()
         return datamodule
+
+    def unlink_symlinks(self):
+        for sample in self.abnormal_data.iter_samples():
+            base_filename = sample.filename
+            dir_name = os.path.dirname(sample.filepath).split("/")[-1]
+            new_filename = f"{dir_name}_{base_filename}"
+
+            try:
+                os.unlink(os.path.join(self.abnormal_dir, new_filename))
+            except:
+                pass
+
+            try:
+                os.unlink(os.path.join(self.mask_dir, new_filename))
+            except:
+                pass
 
     def train_and_export_model(
         self, transform=None, max_epochs=100, early_stop_patience=5
@@ -127,6 +150,7 @@ class Anodec:
 
         if not (os.path.exists(openvino_model_path) or os.path.exists(metadata_path)):
             os.makedirs(self.models_path, exist_ok=True)
+            self.unlink_symlinks()
             datamodule = self.create_datamodule(transform=transform)
             wandb_logger = AnomalibWandbLogger(
                 name="anomalib_" + self.dataset_name + "_" + self.model_key
@@ -146,9 +170,6 @@ class Anodec:
                     monitor="pixel_AUROC", mode="max", patience=early_stop_patience
                 ),
             ]
-            kwargs = {
-                "default_root_dir": os.path.join(openvino_root, "lightning")
-            }  # Custom log directory path
             engine = Engine(
                 task=self.TASK,
                 default_root_dir=self.models_path,
@@ -171,7 +192,6 @@ class Anodec:
                     "PRO",
                 ],
                 accelerator="auto",
-                **kwargs,
             )
             engine.fit(model=self.model, datamodule=datamodule)
 
