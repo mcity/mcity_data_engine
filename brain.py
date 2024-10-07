@@ -21,7 +21,7 @@ Implementing Voxel51 brain methods.
 
 
 class Brain:
-    def __init__(self, dataset, dataset_info, embeddings_path="./datasets/embeddings/"):
+    def __init__(self, dataset, dataset_info, embeddings_path="./output/embeddings/"):
         self.dataset = dataset
         self.brains = dataset.list_brain_runs()
         self.dataset_name = dataset_info["name"]

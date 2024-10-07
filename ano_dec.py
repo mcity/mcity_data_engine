@@ -28,7 +28,11 @@ from config.config import NUM_WORKERS, GLOBAL_SEED
 
 class Anodec:
     def __init__(
-        self, dataset, dataset_info, models_path="./models/anomalib/", model=Draem()
+        self,
+        dataset,
+        dataset_info,
+        models_path="./output/models/anomalib/",
+        model=Draem(),
     ):
         torch.set_float32_matmul_precision(
             "medium"
