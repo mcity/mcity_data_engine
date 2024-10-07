@@ -78,7 +78,11 @@ In order to change the standard WandB directory, add the following line to the b
 export WANDB_DIR="/home/dbogdoll/mcity_data_engine/logs/wandb"
 ```
 
-In order to execute jobs, follow the online instructions to install [Docker](https://docs.docker.com/engine/install/ubuntu/) on your machine. 
+In order to execute jobs, the [following tools](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch) need to be installed:
+
+- [Docker](https://docs.docker.com/engine/install/ubuntu/)
+- [CUDA](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#ubuntu) and [Post-Installation](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions)
+- [Nvidia Container Toolkit]() 
 
 ## Datasets
 
