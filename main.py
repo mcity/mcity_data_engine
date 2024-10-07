@@ -8,7 +8,6 @@ from config.config import (
     SELECTED_WORKFLOW,
     SELECTED_DATASET,
     V51_EMBEDDING_MODELS,
-    WORKFLOWS,
 )
 
 from utils.data_loader import *
@@ -96,6 +95,7 @@ def main():
         ano_dec.train_and_export_model()
         ano_dec.run_inference()
         ano_dec.eval()
+        ano_dec.unlink_symlinks()
 
     else:
         logging.error(
