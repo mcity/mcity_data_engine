@@ -148,8 +148,7 @@ nest-asyncio==1.6.0
 networkx==3.3
 numba==0.60.0
 numpy==1.26.4
-# Editable install with no version control (nuscenes-devkit==1.1.9)
--e /home/dbogdoll/mcity_data_engine/data_loader/nuscenes-devkit
+-e git+https://github.com/daniel-bogdoll/nuscenes-devkit@53d606f3b20af3ba90bc6b876ffbc567fa76893c#egg=nuscenes_devkit&subdirectory=../../../utils/nuscenes-devkit
 nvidia-cublas-cu12==12.4.2.65
 nvidia-cuda-cupti-cu12==12.4.99
 nvidia-cuda-nvrtc-cu12==12.4.99

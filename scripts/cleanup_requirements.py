@@ -19,6 +19,6 @@ def remove_line_from_file(file_path, line_to_remove):
 
 
 requirements_file = "requirements.txt"
-line_to_remove = "-e git+https://github.com/daniel-bogdoll/nuscenes-devkit@53d606f3b20af3ba90bc6b876ffbc567fa76893c#egg=nuscenes_devkit&subdirectory=../../../data_loader/nuscenes-devkit"
+line_to_remove = "-e git+https://github.com/daniel-bogdoll/nuscenes-devkit@53d606f3b20af3ba90bc6b876ffbc567fa76893c#egg=nuscenes_devkit&subdirectory=../../../utils/nuscenes-devkit"
 
 remove_line_from_file(requirements_file, line_to_remove)
