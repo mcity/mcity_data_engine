@@ -1,5 +1,5 @@
 {
     "rm": true,
     "gpus": "all",
-    "volume": "/media/dbogdoll/Datasets:/media/dbogdoll/Datasets"
+    "volume": "/media/dbogdoll/Datasets1:/media/dbogdoll/Datasets"
 }
