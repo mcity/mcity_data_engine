@@ -11,5 +11,5 @@ WORKDIR /launch
 COPY --link requirements.txt ./
 RUN pip install -r requirements.txt
 
-COPY --link main.py configs/ ./
+COPY --link main.py config/ ./
 ENTRYPOINT ["python", "main.py"]
