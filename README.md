@@ -19,6 +19,7 @@ Download, install requirements, and run:
 ```
 git clone --recurse-submodules git@github.com:daniel-bogdoll/mcity_data_engine.git
 cd mcity_data_engine
+pip install --upgrade pip
 pip install -r requirements.txt
 python main.py
 ```
