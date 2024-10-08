@@ -9,6 +9,7 @@ from anomalib.models import Padim, Patchcore, Draem
 from anomalib.loggers import AnomalibWandbLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
+import wandb
 
 import numpy as np
 import os
@@ -46,6 +47,7 @@ class Anodec:
         self.IMAGE_SIZE = (256, 256)  ## preprocess image size for uniformity
         self.model = model
         self.model_key = type(model).__name__
+        wandb.config["anolib_model"] = self.model_key
         self.models_path = models_path
 
         filepath_masks = dataset_info["anomalib_masks_path"]
@@ -176,21 +178,20 @@ class Anodec:
                 logger=wandb_logger,
                 max_epochs=max_epochs,
                 callbacks=callbacks,
-                pixel_metrics=[  # https://anomalib.readthedocs.io/en/latest/markdown/guides/reference/metrics/index.html
-                    "AUPIMO",
-                    "AUPR",
-                    "AUPRO",
-                    "AUROC",
-                    "AnomalyScoreDistribution",
-                    "BinaryPrecisionRecallCurve",
-                    "F1AdaptiveThreshold",
-                    "F1Max",
-                    "F1Score",
-                    "ManualThreshold",
-                    "MinMax",
-                    "PIMO",
-                    "PRO",
-                ],
+                image_metrics=["AUROC"],
+                pixel_metrics=["AUROC"],
+                # pixel_metrics=[  # https://anomalib.readthedocs.io/en/latest/markdown/guides/reference/metrics/index.html
+                #    "AUPR",
+                #    "AUPRO",
+                #    "AUROC",
+                #    "AnomalyScoreDistribution",
+                #    "BinaryPrecisionRecallCurve",
+                #    "F1AdaptiveThreshold",
+                #    "F1Max",
+                #    "ManualThreshold",
+                #    "MinMax",
+                #    "PRO",
+                # ],
                 accelerator="auto",
             )
             engine.fit(model=self.model, datamodule=datamodule)
