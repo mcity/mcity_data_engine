@@ -19,8 +19,6 @@ Download, install requirements, and run:
 ```
 git clone --recurse-submodules git@github.com:daniel-bogdoll/mcity_data_engine.git
 cd mcity_data_engine
-pip install -e ./utils/nuscenes-devkit
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements.txt
 python main.py
 ```
