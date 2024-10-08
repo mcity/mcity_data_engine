@@ -2,5 +2,8 @@
     "rm": true,
     "gpus": "all",
     "volume": "/media/dbogdoll/Datasets:/media/dbogdoll/Datasets",
-    "shm-size": "48g"
+    "shm-size": "8g",
+    "cpus": "24",
+    "memory": "48g",
+    "memory-swap": "56g"
 }
