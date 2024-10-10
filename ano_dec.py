@@ -65,21 +65,11 @@ class Anodec:
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
         self.IMAGE_SIZE = (256, 256)  ## preprocess image size for uniformity
-        try:
-            # Setting wandb config allows for overwriting from the WandB interface for new runs
-            wandb.config["anomalib_model"] = model_name
-            self.model = getattr(anomalib.models, wandb.config["anomalib_model"])()
-            self.model_key = wandb.config["anomalib_model"]
-        except:
-            logging.error(
-                "Chosen anomalib model "
-                + model_name
-                + " is no valid model. Please select from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/models/image/index.html."
-            )
+        self.model_name = model_name
         self.anomalib_output_root = anomalib_output_root
         self.model_path = os.path.join(
             anomalib_output_root,
-            self.model_key,
+            self.model_name,
             self.dataset_name,
             "weights/torch/model.pt",
         )
@@ -98,11 +88,6 @@ class Anodec:
         self.datamodule = None
 
     def __del__(self):
-        logging.warning("UNLINKING SYMLINKS + CLOSING WANDB RUN")
-        try:
-            wandb.finish()
-        except:
-            pass
         try:
             self.unlink_symlinks()
         except:
@@ -139,7 +124,7 @@ class Anodec:
                     os.path.join(self.mask_dir, new_filename),
                 )
 
-        if self.model_key == "Draem":
+        if self.model_name == "Draem":
             wandb.config["batch_size"] = 16
         else:
             wandb.config["batch_size"] = 32
@@ -183,12 +168,33 @@ class Anodec:
         # The inferencer object is used to make predictions on new images.
 
         if not os.path.exists(self.model_path):
+            wandb_run = wandb.init(
+                entity="mcity",
+                project="mcity-data-engine",
+                dir="./logs/wandb",
+                sync_tensorboard=True,
+                name=self.model_name,
+            )
+
+            try:
+                # Setting wandb config allows for overwriting from the WandB interface for new runs
+                wandb.config["anomalib_model"] = self.model_name
+                self.model = getattr(anomalib.models, wandb.config["anomalib_model"])()
+                self.model_name = wandb.config["anomalib_model"]
+            except:
+                logging.error(
+                    "Chosen anomalib model "
+                    + self.model_name
+                    + " is no valid model. Please select from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/models/image/index.html."
+                )
+
             os.makedirs(self.anomalib_output_root, exist_ok=True)
+            os.makedirs("./logs/tensorboard", exist_ok=True)
             self.unlink_symlinks()
             self.create_datamodule(transform=transform)
             wandb_logger = AnomalibTensorBoardLogger(
-                save_dir="./output/tb_logs",
-                name="anomalib_" + self.dataset_name + "_" + self.model_key,
+                save_dir="./logs/tensorboard",
+                name="anomalib_" + self.dataset_name + "_" + self.model_name,
             )
 
             # Callbacks
@@ -233,6 +239,7 @@ class Anodec:
                 export_type=ExportType.TORCH,
                 ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
             )
+            wandb_run.finish()
 
         inferencer = TorchInferencer(
             path=os.path.join(self.model_path),
@@ -257,19 +264,19 @@ class Anodec:
             conf = output.pred_score
             anomaly = "normal" if conf < threshold else "anomaly"
 
-            sample[f"pred_anomaly_score_{self.model_key}"] = conf
-            sample[f"pred_anomaly_{self.model_key}"] = fo.Classification(label=anomaly)
-            sample[f"pred_anomaly_map_{self.model_key}"] = fo.Heatmap(
+            sample[f"pred_anomaly_score_{self.model_name}"] = conf
+            sample[f"pred_anomaly_{self.model_name}"] = fo.Classification(label=anomaly)
+            sample[f"pred_anomaly_map_{self.model_name}"] = fo.Heatmap(
                 map=output.anomaly_map
             )
-            sample[f"pred_defect_mask_{self.model_key}"] = fo.Segmentation(
+            sample[f"pred_defect_mask_{self.model_name}"] = fo.Segmentation(
                 mask=output.pred_mask
             )
 
     def eval_v51(self):
         eval_seg = self.abnormal_data.evaluate_segmentations(
-            f"pred_defect_mask_{self.model_key}",
+            f"pred_defect_mask_{self.model_name}",
             gt_field="anomaly_mask",
-            eval_key=f"eval_seg_{self.model_key}",
+            eval_key=f"eval_seg_{self.model_name}",
         )
         eval_seg.print_report(classes=[0, 255])

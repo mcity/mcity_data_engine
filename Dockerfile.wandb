@@ -8,6 +8,17 @@ RUN apt-get update && \
 
 ENV RUNNING_IN_DOCKER=true
 
+# Create a user with the specified UID and GID
+# Docker would take 'root' ownership of mounted volumes without
+ARG LOCAL_USER_ID
+ARG LOCAL_GROUP_ID
+RUN groupadd -g ${LOCAL_GROUP_ID} usergroup \
+    && useradd -u ${LOCAL_USER_ID} -g usergroup -m user \
+    && echo "user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Set the user
+USER user
+
 WORKDIR /launch
 
 COPY --link requirements.txt ./
