@@ -15,6 +15,9 @@ ENV TRANSFORMERS_CACHE=/launch/.cache/huggingface
 ENV FIFTYONE_DATABASE_DIR=/launch/.fiftyone
 ENV WANDB_DIR=/launch/.cache/wandb
 
+# Configure Git to recognize /launch as a safe directory
+RUN git config --global --add safe.directory /launch
+
 WORKDIR /launch
 
 COPY --link requirements.txt ./
@@ -33,8 +36,5 @@ RUN mkdir -p /launch/logs/dataengine && \
     mkdir -p /launch/artifacts && \
     mkdir -p /launch/wandb && \
     chmod -R 777 /launch/logs /launch/.config /launch/.cache /launch/.fiftyone /.cache/wandb /launch/artifacts /launch/wandb
-
-# Configure Git to recognize /launch as a safe directory
-RUN git config --global --add safe.directory /launch
 
 ENTRYPOINT ["python", "main.py"]
