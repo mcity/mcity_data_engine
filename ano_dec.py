@@ -26,7 +26,7 @@ from anomalib.models import (
     Uflow,
     WinClip,
 )
-from anomalib.loggers import AnomalibTensorBoardLogger
+from anomalib.loggers import AnomalibTensorBoardLogger, AnomalibWandbLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
 import wandb
@@ -168,32 +168,14 @@ class Anodec:
         # The inferencer object is used to make predictions on new images.
 
         if not os.path.exists(self.model_path):
-            wandb_run = wandb.init(
-                project="mcity-data-engine",
-                dir="./logs/wandb",
-                sync_tensorboard=True,
-                name=self.model_name,
-                tags=["anomalib"],
-            )
-
-            try:
-                # Setting wandb config allows for overwriting from the WandB interface for new runs
-                wandb.config["anomalib_model"] = self.model_name
-                self.model = getattr(anomalib.models, wandb.config["anomalib_model"])()
-                self.model_name = wandb.config["anomalib_model"]
-            except:
-                logging.error(
-                    "Chosen anomalib model "
-                    + self.model_name
-                    + " is no valid model. Please select from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/models/image/index.html."
-                )
+            self.model = getattr(anomalib.models, self.model_name)()
 
             os.makedirs(self.anomalib_output_root, exist_ok=True)
             os.makedirs("./logs/tensorboard", exist_ok=True)
             self.unlink_symlinks()
             self.create_datamodule(transform=transform)
-            wandb_logger = AnomalibTensorBoardLogger(
-                save_dir="./logs/tensorboard",
+            wandb_logger = AnomalibWandbLogger(
+                save_dir="./logs/wandb",
                 name="anomalib_" + self.dataset_name + "_" + self.model_name,
             )
 
@@ -239,7 +221,6 @@ class Anodec:
                 export_type=ExportType.TORCH,
                 ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
             )
-            wandb_run.finish()
 
         inferencer = TorchInferencer(
             path=os.path.join(self.model_path),
