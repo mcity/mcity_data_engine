@@ -33,7 +33,7 @@ ANOMALIB_IMAGE_MODELS = [
     # "Fastflow",
     # "Ganomaly",
     "Padim",
-    "Patchcore",
+    # "Patchcore",
     # "ReverseDistillation",
     # "Rkde",
     # "Stfpm",
