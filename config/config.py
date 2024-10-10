@@ -22,18 +22,18 @@ V51_EMBEDDING_MODELS = [
 
 # Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/models/image/index.html
 ANOMALIB_IMAGE_MODELS = [
+    "Padim",
+    "Patchcore",
+    "Draem",
     "Cfa",
     "Cflow",
     "Csflow",
     "Dfkde",
     "Dfm",
-    "Draem",
     "Dsr",
     "EfficientAd",
     "Fastflow",
     "Ganomaly",
-    "Padim",
-    "Patchcore",
     "ReverseDistillation",
     "Rkde",
     "Stfpm",
