@@ -26,6 +26,7 @@ from anomalib.models import (
     Uflow,
     WinClip,
 )
+import wandb
 from anomalib.loggers import AnomalibTensorBoardLogger, AnomalibWandbLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
@@ -219,6 +220,8 @@ class Anodec:
                 export_type=ExportType.TORCH,
                 ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
             )
+
+            wandb_logger.finalize()
 
         inferencer = TorchInferencer(
             path=os.path.join(self.model_path),
