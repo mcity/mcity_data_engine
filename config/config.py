@@ -1,6 +1,6 @@
 import os
 
-SELECTED_WORKFLOW = "learning_noramlity"  # Selection from WORKFLOWS
+SELECTED_WORKFLOW = "learn_normality"  # Selection from WORKFLOWS
 SELECTED_DATASET = "mcity_fisheye_ano_ped"  # Choose from datasets.yaml
 SELECTED_SPLITS = ["train", "val"]  # Choose from datasets.yaml
 
