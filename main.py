@@ -104,9 +104,14 @@ def signal_handler(sig, frame):
 
 def main():
     time_start = time.time()
-
+    wandb_run = wandb.init(
+        entity="mcity",
+        project="mcity-data-engine",
+        dir="./logs/wandb",
+        sync_tensorboard=True,
+    )
     if not os.getenv("RUNNING_IN_DOCKER"):
-        change_folder_owner(".output")
+        change_folder_owner("output")
 
     signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
     configure_logging()
@@ -145,7 +150,7 @@ def main():
             pbar.set_description("Training/Loading Anomalib model " + MODEL_NAME)
 
             ano_dec = Anodec(dataset, dataset_info, model_name=MODEL_NAME)
-            ano_dec.train_and_export_model()
+            ano_dec.train_and_export_model(wandb_run=wandb_run)
             ano_dec.run_inference()
             # ano_dec.eval_v51()
             ano_dec.unlink_symlinks()
@@ -163,9 +168,9 @@ def main():
     dataset.save()
     logging.info(dataset)
     fo.pprint(dataset.stats(include_media=True))
+    wandb_run.finish()
     time_stop = time.time()
     logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
-    wandb.finish()
     if not os.getenv("RUNNING_IN_DOCKER"):  # ENV variable set in Dockerfile only
         session = fo.launch_app(dataset, spaces=spaces)
         session.wait(-1)
