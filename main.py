@@ -144,7 +144,7 @@ def main():
             pbar.set_description("Training/Loading Anomalib model " + MODEL_NAME)
 
             ano_dec = Anodec(dataset, dataset_info, model_name=MODEL_NAME)
-            ano_dec.train_and_export_model(wandb_run=wandb_run)
+            ano_dec.train_and_export_model()
             ano_dec.run_inference()
             # ano_dec.eval_v51()
             ano_dec.unlink_symlinks()
