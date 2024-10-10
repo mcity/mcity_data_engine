@@ -169,7 +169,6 @@ class Anodec:
 
         if not os.path.exists(self.model_path):
             wandb_run = wandb.init(
-                entity="mcity",
                 project="mcity-data-engine",
                 dir="./logs/wandb",
                 sync_tensorboard=True,
