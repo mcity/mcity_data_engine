@@ -9,15 +9,6 @@ RUN apt-get update && \
 
 ENV RUNNING_IN_DOCKER=true
 
-# Set environment variables for writable directories
-ENV MPLCONFIGDIR=/launch/.config/matplotlib
-ENV TRANSFORMERS_CACHE=/launch/.cache/huggingface
-ENV FIFTYONE_DATABASE_DIR=/launch/.fiftyone
-ENV WANDB_DIR=/launch/.cache/wandb
-
-# Configure Git to recognize /launch as a safe directory
-RUN git config --global --add safe.directory /launch
-
 WORKDIR /launch
 
 COPY --link requirements.txt ./
@@ -25,16 +16,5 @@ RUN pip install -r requirements.txt
 
 # Copy the entire repository
 COPY --link . ./
-
-# Create necessary directories and set permissions
-RUN mkdir -p /launch/logs/dataengine && \
-    mkdir -p /launch/.config/matplotlib && \
-    mkdir -p /launch/.cache/huggingface && \
-    mkdir -p /launch/.fiftyone && \
-    mkdir -p /launch/.cache/wandb && \
-    mkdir -p /.cache/wandb/artifacts && \
-    mkdir -p /launch/artifacts && \
-    mkdir -p /launch/wandb && \
-    chmod -R 777 /launch/logs /launch/.config /launch/.cache /launch/.fiftyone /.cache/wandb /launch/artifacts /launch/wandb
 
 ENTRYPOINT ["python", "main.py"]
