@@ -19,9 +19,54 @@ from ano_dec import Anodec
 
 import wandb
 import sys
+import pwd
+
+
+def change_folder_owner(folder_path):
+    """
+    Change the owner of a specified folder if the current owner is 'root'.
+
+    This function checks the owner of the given folder. If the owner is 'root',
+    it changes the ownership to the current user. This is useful in scenarios
+    where the folder is mounted via Docker and the owner is set to 'root'.
+
+    Args:
+        folder_path (str): The path to the folder whose ownership needs to be changed.
+
+    Returns:
+        None
+
+    Raises:
+        OSError: If there is an error accessing the folder or changing its ownership.
+    """
+    folder_stat = os.stat(folder_path)
+    uid = folder_stat.st_uid
+    current_owner = pwd.getpwuid(uid).pw_name
+
+    if current_owner == "root":
+        current_uid = os.getuid()
+        current_user_info = pwd.getpwuid(current_uid)
+        new_uid = current_user_info.pw_uid
+        new_gid = current_user_info.pw_gid
+
+        # Change the ownership of the folder
+        os.chown(folder_path, new_uid, new_gid)
+        logging.info(
+            f"Changed ownership of '{folder_path}' from 'root' to '{current_user_info.pw_name}'"
+        )
 
 
 def panel_embeddings(v51_brain, color_field="unique"):
+    """
+    Creates a layout of panels for visualizing sample embeddings.
+
+    Args:
+        v51_brain: An object containing the embeddings visualization data.
+        color_field (str, optional): The field used to color the embeddings. Defaults to "unique".
+
+    Returns:
+        fo.Space: A layout space containing the samples panel and embeddings panel.
+    """
     samples_panel = fo.Panel(type="Samples", pinned=True)
 
     embeddings_panel = fo.Panel(
@@ -59,6 +104,10 @@ def signal_handler(sig, frame):
 
 def main():
     time_start = time.time()
+
+    if not os.getenv("RUNNING_IN_DOCKER"):
+        change_folder_owner(".output")
+
     signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
     configure_logging()
 
