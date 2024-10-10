@@ -26,7 +26,7 @@ from anomalib.models import (
     Uflow,
     WinClip,
 )
-from anomalib.loggers import AnomalibWandbLogger
+from anomalib.loggers import AnomalibTensorBoardLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
 import wandb
@@ -55,13 +55,6 @@ class Anodec:
         anomalib_output_root="./output/models/anomalib/",
         model_name="Padim",
     ):
-        wandb.init(
-            entity="mcity",
-            project="mcity-data-engine",
-            dir="./logs/wandb",
-            sync_tensorboard=True,  # Use Tensorboard to avoid WandB integration
-        )
-
         torch.set_float32_matmul_precision(
             "medium"
         )  # Utilize Tensor core, came in warning
@@ -193,8 +186,9 @@ class Anodec:
             os.makedirs(self.anomalib_output_root, exist_ok=True)
             self.unlink_symlinks()
             self.create_datamodule(transform=transform)
-            wandb_logger = AnomalibWandbLogger(
-                name="anomalib_" + self.dataset_name + "_" + self.model_key
+            wandb_logger = AnomalibTensorBoardLogger(
+                save_dir="./output/tb_logs",
+                name="anomalib_" + self.dataset_name + "_" + self.model_key,
             )
 
             # Callbacks
