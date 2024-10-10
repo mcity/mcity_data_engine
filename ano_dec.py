@@ -175,6 +175,8 @@ class Anodec:
                 sync_tensorboard=True,
                 name=self.model_name,
             )
+            config = wandb.config  # FIXME Just a test
+            logging.error(config)
 
             try:
                 # Setting wandb config allows for overwriting from the WandB interface for new runs
