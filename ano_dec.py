@@ -29,8 +29,6 @@ from anomalib.models import (
 from anomalib.loggers import AnomalibTensorBoardLogger, AnomalibWandbLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
-import wandb
-
 import numpy as np
 import os
 from pathlib import Path
@@ -125,9 +123,9 @@ class Anodec:
                 )
 
         if self.model_name == "Draem":
-            wandb.config["batch_size"] = 16
+            batch_size = 16
         else:
-            wandb.config["batch_size"] = 32
+            batch_size = 32
 
         self.datamodule = Folder(
             name=self.dataset_name,
@@ -136,8 +134,8 @@ class Anodec:
             mask_dir=self.mask_dir,
             task=self.TASK,
             transform=transform,
-            train_batch_size=wandb.config["batch_size"],
-            eval_batch_size=wandb.config["batch_size"],
+            train_batch_size=batch_size,
+            eval_batch_size=batch_size,
             num_workers=NUM_WORKERS,
             seed=GLOBAL_SEED,
         )
