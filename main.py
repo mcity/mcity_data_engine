@@ -61,13 +61,6 @@ def main():
     time_start = time.time()
     signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
     configure_logging()
-    # TODO Improve wandb integration https://voxel51.com/blog/ml-menu-for-model-selection-hugging-face-weights-and-biases-fiftyone/
-    wandb.init(
-        entity="mcity",
-        project="mcity-data-engine",
-        dir="./logs/wandb",
-        sync_tensorboard=True,  # Use Tensorboard to avoid WandB integration
-    )
 
     # Load the selected dataset
     dataset_info = load_dataset_info(SELECTED_DATASET)
@@ -104,7 +97,7 @@ def main():
             ano_dec = Anodec(dataset, dataset_info, model_name=MODEL_NAME)
             ano_dec.train_and_export_model()
             ano_dec.run_inference()
-            ano_dec.eval_v51()
+            # ano_dec.eval_v51()
             ano_dec.unlink_symlinks()
 
     else:
@@ -123,8 +116,9 @@ def main():
     time_stop = time.time()
     logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
     wandb.finish()
-    session = fo.launch_app(dataset, spaces=spaces)
-    # session.wait(-1) #TODO Only if local
+    if not os.getenv("RUNNING_IN_DOCKER"):  # ENV variable set in Dockerfile only
+        session = fo.launch_app(dataset, spaces=spaces)
+        session.wait(-1)
 
 
 if __name__ == "__main__":
