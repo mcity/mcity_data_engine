@@ -1,0 +1,8 @@
+# Standard config loaded by WandB
+# https://docs.wandb.ai/guides/track/config/
+epochs:
+  desc: Number of epochs to train over
+  value: 100
+batch_size:
+  desc: Size of each mini-batch
+  value: 32
