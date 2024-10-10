@@ -174,7 +174,7 @@ class Anodec:
                 dir="./logs/wandb",
                 sync_tensorboard=True,
                 name=self.model_name,
-                tag="anomalib",
+                tags=["anomalib"],
             )
 
             try:
