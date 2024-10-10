@@ -221,7 +221,7 @@ class Anodec:
                 ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
             )
 
-            wandb_logger.finalize()
+            wandb_logger.finalize("success")
 
         inferencer = TorchInferencer(
             path=os.path.join(self.model_path),
