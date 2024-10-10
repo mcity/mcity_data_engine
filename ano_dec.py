@@ -160,7 +160,7 @@ class Anodec:
                 pass
 
     def train_and_export_model(
-        self, transform=None, max_epochs=100, early_stop_patience=5
+        self, transform=None, max_epochs=100, early_stop_patience=10
     ):
         # Now we can put it all together. The train_and_export_model() function
         # below trains an anomaly detection model using Anomalib’s Engine class,
@@ -175,8 +175,6 @@ class Anodec:
                 sync_tensorboard=True,
                 name=self.model_name,
             )
-            config = wandb.config  # FIXME Just a test
-            logging.error(config)
 
             try:
                 # Setting wandb config allows for overwriting from the WandB interface for new runs
