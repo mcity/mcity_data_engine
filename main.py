@@ -8,7 +8,10 @@ from config.config import (
     SELECTED_WORKFLOW,
     SELECTED_DATASET,
     V51_EMBEDDING_MODELS,
+    ANOMALIB_IMAGE_MODELS,
 )
+
+from tqdm import tqdm
 
 from utils.data_loader import *
 from brain import Brain
@@ -59,7 +62,12 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
     configure_logging()
     # TODO Improve wandb integration https://voxel51.com/blog/ml-menu-for-model-selection-hugging-face-weights-and-biases-fiftyone/
-    wandb.init(project="mcity-data-engine", dir="./logs/wandb")
+    wandb.init(
+        entity="mcity",
+        project="mcity-data-engine",
+        dir="./logs/wandb",
+        sync_tensorboard=True,  # Use Tensorboard to avoid WandB integration
+    )
 
     # Load the selected dataset
     dataset_info = load_dataset_info(SELECTED_DATASET)
@@ -91,16 +99,18 @@ def main():
         spaces = panel_embeddings(v51_brain)
 
     elif SELECTED_WORKFLOW == "learn_normality":
-        ano_dec = Anodec(dataset, dataset_info)
-        ano_dec.train_and_export_model()
-        ano_dec.run_inference()
-        ano_dec.eval()
-        ano_dec.unlink_symlinks()
+        for MODEL_NAME in tqdm(ANOMALIB_IMAGE_MODELS):
+            logging.info("Anomalib Model " + MODEL_NAME)
+            ano_dec = Anodec(dataset, dataset_info, model_name=MODEL_NAME)
+            ano_dec.train_and_export_model()
+            ano_dec.run_inference()
+            ano_dec.eval_v51()
+            ano_dec.unlink_symlinks()
 
     else:
         logging.error(
             str(SELECTED_WORKFLOW)
-            + " is not a valid workflow. Check _WORKFLOWS_ in main.py."
+            + " is not a valid workflow. Check _WORKFLOWS_ in config.py."
         )
     #
 
@@ -114,7 +124,7 @@ def main():
     logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
     wandb.finish()
     session = fo.launch_app(dataset, spaces=spaces)
-    session.wait(-1)
+    # session.wait(-1) #TODO Only if local
 
 
 if __name__ == "__main__":

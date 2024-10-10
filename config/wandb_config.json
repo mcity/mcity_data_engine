@@ -1,9 +1,9 @@
 {
     "rm": true,
-    "gpus": "all",
-    "volume": "/media/dbogdoll/Datasets:/media/dbogdoll/Datasets",
-    "shm-size": "8g",
     "cpus": "24",
+    "gpus": "all",
     "memory": "48g",
+    "volume": "/media/dbogdoll/Datasets:/media/dbogdoll/Datasets,/home/dbogdoll/mcity_data_engine/output:/launch/output",
+    "shm-size": "8g",
     "memory-swap": "56g"
 }

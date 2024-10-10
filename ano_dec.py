@@ -1,11 +1,31 @@
 import fiftyone as fo
 from fiftyone import ViewField as F
 
+import anomalib.models
 from anomalib import TaskType
 from anomalib.data.image.folder import Folder
-from anomalib.deploy import ExportType, OpenVINOInferencer
+from anomalib.data.utils import read_image
+from anomalib.deploy import ExportType, TorchInferencer
 from anomalib.engine import Engine
-from anomalib.models import Padim, Patchcore, Draem
+from anomalib.models import (
+    Cfa,
+    Cflow,
+    Csflow,
+    Dfkde,
+    Dfm,
+    Draem,
+    Dsr,
+    EfficientAd,
+    Fastflow,
+    Ganomaly,
+    Padim,
+    Patchcore,
+    ReverseDistillation,
+    Rkde,
+    Stfpm,
+    Uflow,
+    WinClip,
+)
 from anomalib.loggers import AnomalibWandbLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
@@ -19,7 +39,7 @@ from torchvision.transforms.v2 import Resize
 import torch
 import logging
 
-from config.config import NUM_WORKERS, GLOBAL_SEED
+from config.config import NUM_WORKERS, GLOBAL_SEED, ANOMALIB_EVAL_METRICS
 
 # https://docs.voxel51.com/tutorials/anomaly_detection.html
 # https://medium.com/@enrico.randellini/anomalib-a-library-for-image-anomaly-detection-and-localization-fb363639104f
@@ -32,8 +52,8 @@ class Anodec:
         self,
         dataset,
         dataset_info,
-        models_path="./output/models/anomalib/",
-        model=Draem(),
+        anomalib_output_root="./output/models/anomalib/",
+        model_name="Padim",
     ):
         torch.set_float32_matmul_precision(
             "medium"
@@ -45,10 +65,24 @@ class Anodec:
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
         self.IMAGE_SIZE = (256, 256)  ## preprocess image size for uniformity
-        self.model = model
-        self.model_key = type(model).__name__
-        wandb.config["anolib_model"] = self.model_key
-        self.models_path = models_path
+        try:
+            # Setting wandb config allows for overwriting from the WandB interface for new runs
+            wandb.config["anomalib_model"] = model_name
+            self.model = getattr(anomalib.models, wandb.config["anomalib_model"])()
+            self.model_key = wandb.config["anomalib_model"]
+        except:
+            logging.error(
+                "Chosen anomalib model "
+                + model_name
+                + " is no valid model. Please select from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/models/image/index.html."
+            )
+        self.anomalib_output_root = anomalib_output_root
+        self.model_path = os.path.join(
+            anomalib_output_root,
+            self.model_key,
+            self.dataset_name,
+            "weights/torch/model.pt",
+        )
 
         filepath_masks = dataset_info["anomalib_masks_path"]
         filepath_train = self.normal_data.take(1).first().filepath
@@ -58,10 +92,21 @@ class Anodec:
         self.abnormal_dir = os.path.dirname(filepath_val)
         self.mask_dir = os.path.dirname(filepath_masks)
 
+        # Anomalib objects
         self.inferencer = None
+        self.engine = None
+        self.datamodule = None
 
     def __del__(self):
-        self.unlink_symlinks()
+        logging.warning("UNLINKING SYMLINKS + CLOSING WANDB RUN")
+        try:
+            wandb.finish()
+        except:
+            pass
+        try:
+            self.unlink_symlinks()
+        except:
+            pass
 
     def create_datamodule(self, transform=None):
         ## Build transform
@@ -95,24 +140,23 @@ class Anodec:
                 )
 
         if self.model_key == "Draem":
-            batch_size = 16
+            wandb.config["batch_size"] = 16
         else:
-            batch_size = 32
+            wandb.config["batch_size"] = 32
 
-        datamodule = Folder(
+        self.datamodule = Folder(
             name=self.dataset_name,
             normal_dir=self.normal_dir,
             abnormal_dir=self.abnormal_dir,
             mask_dir=self.mask_dir,
             task=self.TASK,
             transform=transform,
-            train_batch_size=batch_size,
-            eval_batch_size=batch_size,
+            train_batch_size=wandb.config["batch_size"],
+            eval_batch_size=wandb.config["batch_size"],
             num_workers=NUM_WORKERS,
             seed=GLOBAL_SEED,
         )
-        datamodule.setup()
-        return datamodule
+        self.datamodule.setup()
 
     def unlink_symlinks(self):
         for sample in self.abnormal_data.iter_samples():
@@ -138,83 +182,61 @@ class Anodec:
         # exports the model to OpenVINO, and returns the model “inferencer” object.
         # The inferencer object is used to make predictions on new images.
 
-        openvino_root = os.path.join(
-            self.models_path, self.model_key, self.dataset_name
-        )
-        openvino_model_path = os.path.join(
-            openvino_root,
-            "latest/weights/openvino/model.bin",
-        )
-        metadata_path = os.path.join(
-            openvino_root,
-            "latest/weights/openvino/metadata.json",
+        os.makedirs(self.anomalib_output_root, exist_ok=True)
+        self.unlink_symlinks()
+        self.create_datamodule(transform=transform)
+        wandb_logger = AnomalibWandbLogger(
+            name="anomalib_" + self.dataset_name + "_" + self.model_key
         )
 
-        if not (os.path.exists(openvino_model_path) or os.path.exists(metadata_path)):
-            os.makedirs(self.models_path, exist_ok=True)
-            self.unlink_symlinks()
-            datamodule = self.create_datamodule(transform=transform)
-            wandb_logger = AnomalibWandbLogger(
-                name="anomalib_" + self.dataset_name + "_" + self.model_key
-            )
+        # Callbacks
+        callbacks = [
+            ModelCheckpoint(
+                mode="max",
+                monitor="pixel_AUROC",
+                save_last=True,
+                verbose=True,
+                auto_insert_metric_name=True,
+                every_n_epochs=1,
+            ),
+            EarlyStopping(
+                monitor="pixel_AUROC", mode="max", patience=early_stop_patience
+            ),
+        ]
+        self.engine = Engine(
+            task=self.TASK,
+            default_root_dir=self.anomalib_output_root,
+            logger=wandb_logger,
+            max_epochs=max_epochs,
+            callbacks=callbacks,
+            image_metrics=ANOMALIB_EVAL_METRICS,
+            pixel_metrics=ANOMALIB_EVAL_METRICS,
+            accelerator="auto",
+        )
+        self.engine.fit(model=self.model, datamodule=self.datamodule)
 
-            # Callbacks
-            callbacks = [
-                ModelCheckpoint(
-                    mode="max",
-                    monitor="pixel_AUROC",
-                    save_last=True,
-                    verbose=True,
-                    auto_insert_metric_name=True,
-                    every_n_epochs=1,
-                ),
-                EarlyStopping(
-                    monitor="pixel_AUROC", mode="max", patience=early_stop_patience
-                ),
-            ]
-            engine = Engine(
-                task=self.TASK,
-                default_root_dir=self.models_path,
-                logger=wandb_logger,
-                max_epochs=max_epochs,
-                callbacks=callbacks,
-                image_metrics=["AUROC"],
-                pixel_metrics=["AUROC"],
-                # pixel_metrics=[  # https://anomalib.readthedocs.io/en/latest/markdown/guides/reference/metrics/index.html
-                #    "AUPR",
-                #    "AUPRO",
-                #    "AUROC",
-                #    "AnomalyScoreDistribution",
-                #    "BinaryPrecisionRecallCurve",
-                #    "F1AdaptiveThreshold",
-                #    "F1Max",
-                #    "ManualThreshold",
-                #    "MinMax",
-                #    "PRO",
-                # ],
-                accelerator="auto",
-            )
-            engine.fit(model=self.model, datamodule=datamodule)
+        # Export and generate inferencer
+        export_root = self.model_path.replace("weights/torch/model.pt", "")
+        self.engine.export(
+            model=self.model,
+            export_root=export_root,
+            export_type=ExportType.TORCH,
+            ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
+        )
 
-            test_results = engine.test(
-                model=self.model,
-                datamodule=datamodule,
-                ckpt_path=engine.trainer.checkpoint_callback.best_model_path,
-            )
-
-            logging.info(test_results)
-
-            engine.export(
-                model=self.model,
-                export_type=ExportType.OPENVINO,
-            )
-
-        inferencer = OpenVINOInferencer(
-            path=openvino_model_path,
-            metadata=metadata_path,
-            device="CPU",  # TODO: Just use pytorch model, OpenVINO does not support Nvidia GPUs https://anomalib.readthedocs.io/en/v0.3.7/tutorials/inference.html
+        inferencer = TorchInferencer(
+            path=os.path.join(self.model_path),
+            device="cuda",
         )
         self.inferencer = inferencer
+
+        # Test model
+        test_results = self.engine.test(
+            model=self.model,
+            datamodule=self.datamodule,
+            ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
+        )
+        logging.info(test_results)
 
     def run_inference(self, threshold=0.5):
         # Take a FiftyOne sample collection (e.g. our test set) as input, along with the inferencer object,
@@ -222,8 +244,14 @@ class Anodec:
         # and store the results. The threshold argument acts as a cutoff for the anomaly score.
         # If the score is above the threshold, the sample is considered anomalous
         for sample in self.abnormal_data.iter_samples(autosave=True, progress=True):
-            output = self.inferencer.predict(image=Image.open(sample.filepath))
-
+            # output = self.engine.predict(
+            #    datamodule=self.datamodule,
+            #    model=self.model,
+            #    ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
+            # )
+            # image = Image.open(sample.filepath)
+            image = read_image(sample.filepath, as_tensor=True)
+            output = self.inferencer.predict(image)
             conf = output.pred_score
             anomaly = "normal" if conf < threshold else "anomaly"
 
@@ -236,7 +264,7 @@ class Anodec:
                 mask=output.pred_mask
             )
 
-    def eval(self):
+    def eval_v51(self):
         eval_seg = self.abnormal_data.evaluate_segmentations(
             f"pred_defect_mask_{self.model_key}",
             gt_field="anomaly_mask",
