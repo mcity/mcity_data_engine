@@ -29,6 +29,7 @@ RUN mkdir -p /launch/logs/dataengine && \
     mkdir -p /launch/.cache/huggingface && \
     mkdir -p /launch/.fiftyone && \
     mkdir -p /launch/.cache/wandb && \
-    chmod -R 777 /launch/logs /launch/.config /launch/.cache /launch/.fiftyone
+    mkdir -p /.cache/wandb/artifacts && \
+    chmod -R 777 /launch/logs /launch/.config /launch/.cache /launch/.fiftyone /.cache/wandb
 
 ENTRYPOINT ["python", "main.py"]
