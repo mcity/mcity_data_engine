@@ -104,12 +104,6 @@ def signal_handler(sig, frame):
 
 def main():
     time_start = time.time()
-    wandb_run = wandb.init(
-        entity="mcity",
-        project="mcity-data-engine",
-        dir="./logs/wandb",
-        sync_tensorboard=True,
-    )
     if not os.getenv("RUNNING_IN_DOCKER"):
         change_folder_owner("output")
 
