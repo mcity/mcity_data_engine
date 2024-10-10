@@ -163,62 +163,62 @@ class Anodec:
         # exports the model to OpenVINO, and returns the model “inferencer” object.
         # The inferencer object is used to make predictions on new images.
 
-        if not os.path.exists(self.model_path):
-            self.model = getattr(anomalib.models, self.model_name)()
+        # FIXME if not os.path.exists(self.model_path):
+        self.model = getattr(anomalib.models, self.model_name)()
 
-            os.makedirs(self.anomalib_output_root, exist_ok=True)
-            os.makedirs("./logs/tensorboard", exist_ok=True)
-            self.unlink_symlinks()
-            self.create_datamodule(transform=transform)
-            wandb_logger = AnomalibWandbLogger(
-                save_dir="./logs/wandb",
-                name="anomalib_" + self.dataset_name + "_" + self.model_name,
-            )
+        os.makedirs(self.anomalib_output_root, exist_ok=True)
+        os.makedirs("./logs/tensorboard", exist_ok=True)
+        self.unlink_symlinks()
+        self.create_datamodule(transform=transform)
+        wandb_logger = AnomalibWandbLogger(
+            save_dir="./logs/wandb",
+            name="anomalib_" + self.dataset_name + "_" + self.model_name,
+        )
 
-            # Callbacks
-            callbacks = [
-                ModelCheckpoint(
-                    mode="max",
-                    monitor="pixel_AUROC",
-                    save_last=True,
-                    verbose=True,
-                    auto_insert_metric_name=True,
-                    every_n_epochs=1,
-                ),
-                EarlyStopping(
-                    monitor="pixel_AUROC", mode="max", patience=early_stop_patience
-                ),
-            ]
-            self.engine = Engine(
-                task=self.TASK,
-                default_root_dir=self.anomalib_output_root,
-                logger=wandb_logger,
-                max_epochs=max_epochs,
-                callbacks=callbacks,
-                image_metrics=ANOMALIB_EVAL_METRICS,
-                pixel_metrics=ANOMALIB_EVAL_METRICS,
-                accelerator="auto",
-            )
-            self.engine.fit(model=self.model, datamodule=self.datamodule)
+        # Callbacks
+        callbacks = [
+            ModelCheckpoint(
+                mode="max",
+                monitor="pixel_AUROC",
+                save_last=True,
+                verbose=True,
+                auto_insert_metric_name=True,
+                every_n_epochs=1,
+            ),
+            EarlyStopping(
+                monitor="pixel_AUROC", mode="max", patience=early_stop_patience
+            ),
+        ]
+        self.engine = Engine(
+            task=self.TASK,
+            default_root_dir=self.anomalib_output_root,
+            logger=wandb_logger,
+            max_epochs=max_epochs,
+            callbacks=callbacks,
+            image_metrics=ANOMALIB_EVAL_METRICS,
+            pixel_metrics=ANOMALIB_EVAL_METRICS,
+            accelerator="auto",
+        )
+        self.engine.fit(model=self.model, datamodule=self.datamodule)
 
-            # Test model
-            test_results = self.engine.test(
-                model=self.model,
-                datamodule=self.datamodule,
-                ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
-            )
-            logging.info(test_results)
+        # Test model
+        test_results = self.engine.test(
+            model=self.model,
+            datamodule=self.datamodule,
+            ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
+        )
+        logging.info(test_results)
 
-            # Export and generate inferencer
-            export_root = self.model_path.replace("weights/torch/model.pt", "")
-            self.engine.export(
-                model=self.model,
-                export_root=export_root,
-                export_type=ExportType.TORCH,
-                ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
-            )
+        # Export and generate inferencer
+        export_root = self.model_path.replace("weights/torch/model.pt", "")
+        self.engine.export(
+            model=self.model,
+            export_root=export_root,
+            export_type=ExportType.TORCH,
+            ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
+        )
 
-            wandb_logger.finalize("success")
+        wandb_logger.finalize("success")
 
         inferencer = TorchInferencer(
             path=os.path.join(self.model_path),
