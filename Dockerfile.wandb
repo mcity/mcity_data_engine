@@ -16,4 +16,9 @@ RUN pip install -r requirements.txt
 
 # Copy the entire repository
 COPY --link . ./
+
+# Create necessary directories and set permissions
+RUN mkdir -p /launch/logs/dataengine && \
+    chmod -R 777 /launch/logs
+
 ENTRYPOINT ["python", "main.py"]
