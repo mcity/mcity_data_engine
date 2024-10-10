@@ -3,6 +3,7 @@ from wandb.sdk.launch import launch_add
 
 # https://docs.wandb.ai/ref/python/launch-library/launch_add/
 
+entity = "mcity"
 name = "API Test"
 project_uri = "https://github.com/daniel-bogdoll/mcity_data_engine"
 config = {"alpha": 0.5, "l1_ratio": 0.01}
@@ -13,6 +14,7 @@ queue = "data-engine"
 docker_image = "Dockerfile.wandb"
 launch_add(
     name=name,
+    entity=entity,
     uri=project_uri,
     config=config,
     docker_image=docker_image,
