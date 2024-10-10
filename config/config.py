@@ -1,6 +1,6 @@
 import os
 
-SELECTED_WORKFLOW = "learn_normality"  # Selection from WORKFLOWS
+SELECTED_WORKFLOW = "learning_noramlity"  # Selection from WORKFLOWS
 SELECTED_DATASET = "mcity_fisheye_ano_ped"  # Choose from datasets.yaml
 SELECTED_SPLITS = ["train", "val"]  # Choose from datasets.yaml
 
@@ -22,23 +22,23 @@ V51_EMBEDDING_MODELS = [
 
 # Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/models/image/index.html
 ANOMALIB_IMAGE_MODELS = [
-    # "Cfa",
-    # "Cflow",
-    # "Csflow",
-    # "Dfkde",
-    # "Dfm",
-    # "Draem",
-    # "Dsr",
-    # "EfficientAd",
-    # "Fastflow",
-    # "Ganomaly",
+    "Cfa",
+    "Cflow",
+    "Csflow",
+    "Dfkde",
+    "Dfm",
+    "Draem",
+    "Dsr",
+    "EfficientAd",
+    "Fastflow",
+    "Ganomaly",
     "Padim",
-    # "Patchcore",
-    # "ReverseDistillation",
-    # "Rkde",
-    # "Stfpm",
-    # "Uflow",
-    # "WinClip",
+    "Patchcore",
+    "ReverseDistillation",
+    "Rkde",
+    "Stfpm",
+    "Uflow",
+    "WinClip",
 ]
 
 # Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/metrics/index.html
