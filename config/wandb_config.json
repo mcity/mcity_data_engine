@@ -1,16 +1,13 @@
 {
     "rm": true,
+    "user": "${LOCAL_USER_ID}:${LOCAL_GROUP_ID}",
     "cpus": "24",
     "gpus": "all",
     "memory": "48g",
     "volume": [
-        "/media/dbogdoll/Datasets:/media/dbogdoll/Datasets:r",
+        "/media/dbogdoll/Datasets:/media/dbogdoll/Datasets:ro",
         "/home/dbogdoll/mcity_data_engine/output:/launch/output:rw"
     ],
     "shm-size": "8g",
-    "memory-swap": "56g",
-    "env": [
-        "LOCAL_USER_ID=${LOCAL_USER_ID}",
-        "LOCAL_GROUP_ID=${LOCAL_GROUP_ID}"
-    ]
+    "memory-swap": "56g"
 }

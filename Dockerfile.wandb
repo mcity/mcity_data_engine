@@ -1,4 +1,15 @@
 FROM pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
+
+# Setting up writable directories
+RUN mkdir -p /tmp/matplotlib && \
+    mkdir -p /tmp/huggingface && \
+    mkdir -p /tmp/openvino && \
+    mkdir -p /launch/logs/dataengine
+
+ENV MPLCONFIGDIR=/tmp/matplotlib
+ENV TRANSFORMERS_CACHE=/tmp/huggingface
+ENV OPENVINO_TELEMETRY=/tmp/openvino
+
 RUN apt-get update && \
     apt-get install -y \
     git \
