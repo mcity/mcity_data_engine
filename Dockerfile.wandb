@@ -1,14 +1,16 @@
 FROM pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
 
-# Setting up writable directories
-RUN mkdir -p /tmp/matplotlib && \
-    mkdir -p /tmp/huggingface && \
-    mkdir -p /tmp/openvino && \
-    mkdir -p /launch/logs/dataengine
+# Set environment variables for user IDs
+ARG LOCAL_USER_ID
+ARG LOCAL_GROUP_ID
 
-ENV MPLCONFIGDIR=/tmp/matplotlib
-ENV TRANSFORMERS_CACHE=/tmp/huggingface
-ENV OPENVINO_TELEMETRY=/tmp/openvino
+# Create a user with the same UID and GID as the host user
+RUN groupadd -g ${LOCAL_GROUP_ID} usergroup && \
+    useradd -u ${LOCAL_USER_ID} -g usergroup -m user && \
+    echo "user ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Switch to the new user
+USER user
 
 RUN apt-get update && \
     apt-get install -y \
