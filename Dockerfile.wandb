@@ -31,6 +31,10 @@ RUN mkdir -p /launch/logs/dataengine && \
     mkdir -p /launch/.cache/wandb && \
     mkdir -p /.cache/wandb/artifacts && \
     mkdir -p /launch/artifacts && \
-    chmod -R 777 /launch/logs /launch/.config /launch/.cache /launch/.fiftyone /.cache/wandb /launch/artifacts
+    mkdir -p /launch/wandb && \
+    chmod -R 777 /launch/logs /launch/.config /launch/.cache /launch/.fiftyone /.cache/wandb /launch/artifacts /launch/wandb
+
+# Configure Git to recognize /launch as a safe directory
+RUN git config --global --add safe.directory /launch
 
 ENTRYPOINT ["python", "main.py"]
