@@ -6,6 +6,8 @@ RUN apt-get update && \
     libglib2.0-0 \
     libcurl4
 
+ENV RUNNING_IN_DOCKER=true
+
 WORKDIR /launch
 
 COPY --link requirements.txt ./
