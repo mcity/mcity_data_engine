@@ -101,6 +101,8 @@ class Anodec:
         if transform is None:
             transform = Resize(self.IMAGE_SIZE, antialias=True)
 
+        BATCH_SIZE = 16
+
         # Symlink the images and masks to the directory Anomalib expects.
         for sample in self.abnormal_data.iter_samples():
             # Add mask groundtruth
@@ -123,11 +125,6 @@ class Anodec:
                     os.path.join(self.mask_dir, new_filename),
                 )
 
-        if self.model_name == "Draem":
-            batch_size = 16
-        else:
-            batch_size = 32
-
         self.datamodule = Folder(
             name=self.dataset_name,
             normal_dir=self.normal_dir,
@@ -135,8 +132,8 @@ class Anodec:
             mask_dir=self.mask_dir,
             task=self.TASK,
             transform=transform,
-            train_batch_size=batch_size,
-            eval_batch_size=batch_size,
+            train_batch_size=BATCH_SIZE,
+            eval_batch_size=BATCH_SIZE,
             num_workers=NUM_WORKERS,
             seed=GLOBAL_SEED,
         )
