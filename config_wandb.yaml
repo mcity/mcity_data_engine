@@ -2,7 +2,7 @@
 # https://docs.wandb.ai/guides/track/config/
 epochs:
   desc: Number of epochs to train over
-  value: 100
+  value: 200
 batch_size:
   desc: Size of each mini-batch
   value: 32
