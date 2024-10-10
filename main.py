@@ -92,21 +92,14 @@ def main():
         spaces = panel_embeddings(v51_brain)
 
     elif SELECTED_WORKFLOW == "learn_normality":
-        for MODEL_NAME in tqdm(ANOMALIB_IMAGE_MODELS):
-            wandb.init(
-                entity="mcity",
-                project="mcity-data-engine",
-                dir="./logs/wandb",
-                sync_tensorboard=True,
-                name=MODEL_NAME,
-            )
-            logging.info("Anomalib Model " + MODEL_NAME)
+        for MODEL_NAME in (pbar := tqdm(ANOMALIB_IMAGE_MODELS, desc="Anomalib")):
+            pbar.set_description("Training/Loading Anomalib model " + MODEL_NAME)
+
             ano_dec = Anodec(dataset, dataset_info, model_name=MODEL_NAME)
             ano_dec.train_and_export_model()
             ano_dec.run_inference()
             # ano_dec.eval_v51()
             ano_dec.unlink_symlinks()
-            wandb.finish()
 
     else:
         logging.error(

@@ -4,9 +4,13 @@
     "gpus": "all",
     "memory": "48g",
     "volume": [
-        "/media/dbogdoll/Datasets:/media/dbogdoll/Datasets",
-        "/home/dbogdoll/mcity_data_engine/output:/launch/output"
+        "/media/dbogdoll/Datasets:/media/dbogdoll/Datasets:r",
+        "/home/dbogdoll/mcity_data_engine/output:/launch/output:rw"
     ],
     "shm-size": "8g",
-    "memory-swap": "56g"
+    "memory-swap": "56g",
+    "env": [
+        "LOCAL_USER_ID=${LOCAL_USER_ID}",
+        "LOCAL_GROUP_ID=${LOCAL_GROUP_ID}"
+    ]
 }
