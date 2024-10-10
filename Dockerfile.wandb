@@ -13,6 +13,7 @@ ENV RUNNING_IN_DOCKER=true
 ENV MPLCONFIGDIR=/launch/.config/matplotlib
 ENV TRANSFORMERS_CACHE=/launch/.cache/huggingface
 ENV FIFTYONE_DATABASE_DIR=/launch/.fiftyone
+ENV WANDB_DIR=/launch/.cache/wandb
 
 WORKDIR /launch
 
@@ -27,6 +28,7 @@ RUN mkdir -p /launch/logs/dataengine && \
     mkdir -p /launch/.config/matplotlib && \
     mkdir -p /launch/.cache/huggingface && \
     mkdir -p /launch/.fiftyone && \
+    mkdir -p /launch/.cache/wandb && \
     chmod -R 777 /launch/logs /launch/.config /launch/.cache /launch/.fiftyone
 
 ENTRYPOINT ["python", "main.py"]
