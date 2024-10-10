@@ -223,6 +223,14 @@ class Anodec:
             )
             self.engine.fit(model=self.model, datamodule=self.datamodule)
 
+            # Test model
+            test_results = self.engine.test(
+                model=self.model,
+                datamodule=self.datamodule,
+                ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
+            )
+            logging.info(test_results)
+
             # Export and generate inferencer
             export_root = self.model_path.replace("weights/torch/model.pt", "")
             self.engine.export(
@@ -232,19 +240,11 @@ class Anodec:
                 ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
             )
 
-            inferencer = TorchInferencer(
-                path=os.path.join(self.model_path),
-                device="cuda",
-            )
-            self.inferencer = inferencer
-
-            # Test model
-            test_results = self.engine.test(
-                model=self.model,
-                datamodule=self.datamodule,
-                ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
-            )
-            logging.info(test_results)
+        inferencer = TorchInferencer(
+            path=os.path.join(self.model_path),
+            device="cuda",
+        )
+        self.inferencer = inferencer
 
     def run_inference(self, threshold=0.5):
         # Take a FiftyOne sample collection (e.g. our test set) as input, along with the inferencer object,
