@@ -9,6 +9,11 @@ RUN apt-get update && \
 
 ENV RUNNING_IN_DOCKER=true
 
+# Set environment variables for writable directories
+ENV MPLCONFIGDIR=/launch/.config/matplotlib
+ENV TRANSFORMERS_CACHE=/launch/.cache/huggingface
+ENV FIFTYONE_DATABASE_DIR=/launch/.fiftyone
+
 WORKDIR /launch
 
 COPY --link requirements.txt ./
@@ -19,6 +24,9 @@ COPY --link . ./
 
 # Create necessary directories and set permissions
 RUN mkdir -p /launch/logs/dataengine && \
-    chmod -R 777 /launch/logs
+    mkdir -p /launch/.config/matplotlib && \
+    mkdir -p /launch/.cache/huggingface && \
+    mkdir -p /launch/.fiftyone && \
+    chmod -R 777 /launch/logs /launch/.config /launch/.cache /launch/.fiftyone
 
 ENTRYPOINT ["python", "main.py"]
