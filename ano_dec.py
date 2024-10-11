@@ -54,15 +54,16 @@ class Anodec:
         dataset_info,
         anomalib_output_root="./output/models/anomalib/",
         config=None,
-        wandb_project="wandb_project",
+        wandb_project="Data Engine",
+        wandb_group="Anomalib",
     ):
         self.config = config
         torch.set_float32_matmul_precision(
             "medium"
         )  # Utilize Tensor core, came in warning
         self.dataset = dataset
-        self.wandb_project = "Data Engine"
-        self.wan
+        self.wandb_project = wandb_project
+        self.wandb_group = wandb_group
         self.normal_data = dataset.match_tags("train")
         self.abnormal_data = dataset.match_tags("val")
         self.brains = dataset.list_brain_runs()
@@ -96,7 +97,6 @@ class Anodec:
         try:
             self.unlink_symlinks()
             self.anomalib_logger.finalize("success")
-            wandb.finish()
         except:
             pass
 
@@ -108,8 +108,6 @@ class Anodec:
         #  It is also possible to create a torch DataLoader from scratch and pass it to the engine’s fit() method
         if transform is None:
             transform = Resize(self.IMAGE_SIZE, antialias=True)
-
-        BATCH_SIZE = 8
 
         # Symlink the images and masks to the directory Anomalib expects.
         for sample in self.abnormal_data.iter_samples():
@@ -140,8 +138,8 @@ class Anodec:
             mask_dir=self.mask_dir,
             task=self.TASK,
             transform=transform,
-            train_batch_size=BATCH_SIZE,
-            eval_batch_size=BATCH_SIZE,
+            train_batch_size=self.config["batch_size"],
+            eval_batch_size=self.config["batch_size"],
             num_workers=NUM_WORKERS,
             seed=GLOBAL_SEED,
         )
@@ -163,13 +161,14 @@ class Anodec:
             except:
                 pass
 
-    def train_and_export_model(
-        self, transform=None, max_epochs=100, early_stop_patience=10
-    ):
+    def train_and_export_model(self, transform=None):
         # Now we can put it all together. The train_and_export_model() function
         # below trains an anomaly detection model using Anomalib’s Engine class,
         # exports the model to OpenVINO, and returns the model “inferencer” object.
         # The inferencer object is used to make predictions on new images.
+
+        MAX_EPOCHS = self.config["epochs"]
+        PATIENCE = self.config["early_stop_patience"]
 
         # FIXME if not os.path.exists(self.model_path):
         wandb_run = wandb.init(
@@ -177,9 +176,10 @@ class Anodec:
             sync_tensorboard=True,
             config=self.config,
             entity=WANDB_CONFIG["entity"],
-            project="Data Engine",
-            group="Anomalib",
+            project=self.wandb_project,
+            group=self.wandb_group,
             job_type="train",
+            tags=[self.dataset_name, self.model_name],
         )
         self.model = getattr(anomalib.models, self.model_name)()
 
@@ -203,15 +203,13 @@ class Anodec:
                 auto_insert_metric_name=True,
                 every_n_epochs=1,
             ),
-            EarlyStopping(
-                monitor="pixel_AUROC", mode="max", patience=early_stop_patience
-            ),
+            EarlyStopping(monitor="pixel_AUROC", mode="max", patience=PATIENCE),
         ]
         self.engine = Engine(
             task=self.TASK,
             default_root_dir=self.anomalib_output_root,
-            logger=self.wandb_logger,
-            max_epochs=max_epochs,
+            logger=self.anomalib_logger,
+            max_epochs=MAX_EPOCHS,
             callbacks=callbacks,
             image_metrics=ANOMALIB_EVAL_METRICS,
             pixel_metrics=ANOMALIB_EVAL_METRICS,
@@ -230,13 +228,27 @@ class Anodec:
         wandb_run.finish
 
     def validate_model(self):
-        # Test model
-        test_results = self.engine.test(
-            model=self.model,
-            datamodule=self.datamodule,
-            ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
+        wandb_run = wandb.init(
+            allow_val_change=True,
+            sync_tensorboard=True,
+            config=self.config,
+            entity=WANDB_CONFIG["entity"],
+            project=self.wandb_project,
+            group=self.wandb_group,
+            job_type="eval",
+            tags=[self.dataset_name, self.model_name],
         )
-        logging.info(test_results)
+        # Test model
+        if self.engine:
+            test_results = self.engine.test(
+                model=self.model,
+                datamodule=self.datamodule,
+                ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
+            )
+            logging.info(test_results)
+        else:
+            pass  # TODO Load model from path like in inference mode
+        wandb_run.finish
 
     def run_inference(self, threshold=0.5):
         # Take a FiftyOne sample collection (e.g. our test set) as input, along with the inferencer object,

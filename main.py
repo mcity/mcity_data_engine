@@ -74,22 +74,23 @@ def signal_handler(sig, frame):
 def main(args):
     time_start = time.time()
 
-    signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
-    configure_logging()
+    if args.run_mode == "local":
+        signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
+        configure_logging()
 
-    # Load the selected dataset
-    dataset_info = load_dataset_info(SELECTED_DATASET)
+        # Load the selected dataset
+        dataset_info = load_dataset_info(SELECTED_DATASET)
 
-    if dataset_info:
-        loader_function = dataset_info.get("loader_fct")
-        dataset = globals()[loader_function](dataset_info)
-    else:
-        logging.error(
-            str(SELECTED_DATASET)
-            + " is not a valid dataset name. Check _datasets_ in datasets.yaml."
-        )
+        if dataset_info:
+            loader_function = dataset_info.get("loader_fct")
+            dataset = globals()[loader_function](dataset_info)
+        else:
+            logging.error(
+                str(SELECTED_DATASET)
+                + " is not a valid dataset name. Check _datasets_ in datasets.yaml."
+            )
+        spaces = None
 
-    spaces = None
     logging.info("Running workflow " + SELECTED_WORKFLOW.upper())
     if SELECTED_WORKFLOW == "brain_selection":
         v51_brain = Brain(dataset, dataset_info)
@@ -135,19 +136,19 @@ def main(args):
             str(SELECTED_WORKFLOW)
             + " is not a valid workflow. Check _WORKFLOWS_ in config.py."
         )
-    #
 
     # Create layout for the web interface
 
     # Launch V51 session
-    dataset.save()
-    logging.info(dataset)
-    fo.pprint(dataset.stats(include_media=True))
-    time_stop = time.time()
-    logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
-    if not os.getenv("RUNNING_IN_DOCKER"):  # ENV variable set in Dockerfile only
+    if args.run_mode == "local":
+        dataset.save()
+        logging.info(dataset)
+        fo.pprint(dataset.stats(include_media=True))
         session = fo.launch_app(dataset, spaces=spaces)
         session.wait(-1)
+
+    time_stop = time.time()
+    logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
 
 
 if __name__ == "__main__":

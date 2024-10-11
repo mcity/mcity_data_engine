@@ -2,6 +2,7 @@
     "overrides": {
         "batch_size": 8,
         "epochs": 100,
+        "early_stop_patience": 10,
         "entry_point": [
             "python",
             "wandb_runs/anomalib_run.py"

@@ -21,7 +21,9 @@ def get_wandb_conf(config, value):
 
 def launch_to_queue(name, project, config):
     """
-    Adds a launch configuration to the queue for execution.
+    Adds a launch configuration to the queue for execution. More info:
+    - https://docs.wandb.ai/ref/python/launch-library/launch_add/
+    - https://docs.wandb.ai/guides/launch/add-job-to-queue/
 
     Parameters:
     name (str): The name of the launch.
