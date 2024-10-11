@@ -109,9 +109,10 @@ def main(args):
 
     elif SELECTED_WORKFLOW == "learn_normality":
         config_file_path = "wandb_runs/anomalib_config.json"
-        with open(config_file_path, "r") as config_file:
-            config = json.load(config_file)
+        with open(config_file_path, "r") as file:
+            config = json.load(file)
         config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
+
         wandb_project = "Data Engine"
 
         for MODEL_NAME in (pbar := tqdm(ANOMALIB_IMAGE_MODELS, desc="Anomalib")):
@@ -127,7 +128,11 @@ def main(args):
                 del ano_dec
 
             elif args.run_mode == "wandb":
-                logging.warning(config)
+                # Update config file
+                with open(config_file_path, "w") as file:
+                    json.dump(config, file, indent=4)
+
+                # Add job to queue
                 launch_to_queue_terminal(
                     name="Anomalib_" + SELECTED_DATASET + "_" + MODEL_NAME,
                     project=wandb_project,

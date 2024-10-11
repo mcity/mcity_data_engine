@@ -1,5 +1,8 @@
 from ano_dec import Anodec
 from utils.data_loader import *
+from wandb.sdk import launch
+
+from config.config import WANDB_CONFIG
 
 import wandb
 import logging
@@ -7,11 +10,16 @@ import logging
 
 def main():
     # Get dataset with Voxel51
-    logging.warning(wandb.run)
-    wandb.init()
+    wandb_run = wandb.init(
+        allow_val_change=True,
+        sync_tensorboard=True,
+        entity=WANDB_CONFIG["entity"],
+        group="Anomalib",
+        job_type="train",
+    )
     config = wandb.config
-    logging.warning(config)
-    dataset_name = config["overrides"]["run_config"]["v51_dataset_name"]
+    wandb_run.tags = [config["v51_dataset_name"], config["model_name"]]
+    dataset_name = config["v51_dataset_name"]
     dataset_info = load_dataset_info(dataset_name)
     if dataset_info:
         loader_function = dataset_info.get("loader_fct")
