@@ -7,7 +7,9 @@ import logging
 
 def main():
     # Get dataset with Voxel51
-    config = wandb.run.config
+    logging.warning(wandb)
+    wandb.init()
+    config = wandb.config
     dataset_name = config["v51_dataset_name"]
     dataset_info = load_dataset_info(dataset_name)
     if dataset_info:
