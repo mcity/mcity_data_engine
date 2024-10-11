@@ -27,7 +27,6 @@ from anomalib.models import (
     WinClip,
 )
 import wandb
-from utils.wandb_helper import get_wandb_conf
 from anomalib.loggers import AnomalibTensorBoardLogger, AnomalibWandbLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
@@ -71,7 +70,7 @@ class Anodec:
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
         self.IMAGE_SIZE = (256, 256)  ## preprocess image size for uniformity
-        self.model_name = get_wandb_conf(self.config, "v51_dataset_name")
+        self.model_name = self.config["v51_dataset_name"]
         self.anomalib_output_root = anomalib_output_root
         self.model_path = os.path.join(
             anomalib_output_root,
@@ -172,11 +171,11 @@ class Anodec:
         PATIENCE = self.config["early_stop_patience"]
 
         # FIXME if not os.path.exists(self.model_path):
-        run = wandb.run
-        run.group = self.wandb_group
-        run.entity = WANDB_CONFIG["entity"]
-        run.job_type = "train"
-        run.tags = [self.dataset_name, self.model_name]
+        # run = wandb.run
+        # run.group = self.wandb_group
+        # run.entity = WANDB_CONFIG["entity"]
+        # run.job_type = "train"
+        # run.tags = [self.dataset_name, self.model_name]
 
         # wandb_run = wandb.init(
         #    allow_val_change=True,
