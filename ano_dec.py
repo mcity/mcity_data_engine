@@ -51,13 +51,13 @@ class Anodec:
         self,
         dataset,
         dataset_info,
+        config,
         anomalib_output_root="./output/models/anomalib/",
-        config=None,
         wandb_project="Data Engine",
         wandb_group="Anomalib",
     ):
         self.config = config
-        logging.warning(self.config)
+        logging.warning("CONFIG: ", self.config)
         torch.set_float32_matmul_precision(
             "medium"
         )  # Utilize Tensor core, came in warning

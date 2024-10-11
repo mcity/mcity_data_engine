@@ -64,7 +64,7 @@ def launch_to_queue_terminal(name, project, config_file):
         f"wandb launch "
         f"--uri {uri} "
         f"--entity {entity} "
-        f"--job-name {name} "
+        f"--name {name} "
         f'--project "{project}" '
         f'--entry-point "{entry_point}" '
         f"--dockerfile {docker} "
