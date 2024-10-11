@@ -4,7 +4,7 @@ import signal
 import json
 
 from utils.logging import configure_logging
-from utils.wandb_helper import launch_to_queue
+from utils.wandb_helper import launch_to_queue_terminal
 import logging
 
 from config.config import (
@@ -73,10 +73,10 @@ def signal_handler(sig, frame):
 
 def main(args):
     time_start = time.time()
+    configure_logging()
 
     if args.run_mode == "local":
         signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
-        configure_logging()
 
         # Load the selected dataset
         dataset_info = load_dataset_info(SELECTED_DATASET)
@@ -108,7 +108,8 @@ def main(args):
         spaces = panel_embeddings(v51_brain)
 
     elif SELECTED_WORKFLOW == "learn_normality":
-        with open("wandb_runs/anomalib_config.json", "r") as config_file:
+        config_file_path = "wandb_runs/anomalib_config.json"
+        with open(config_file_path, "r") as config_file:
             config = json.load(config_file)
         config["v51_dataset_name"] = SELECTED_DATASET
         wandb_project = "Data Engine"
@@ -125,10 +126,11 @@ def main(args):
                 del ano_dec
 
             elif args.run_mode == "wandb":
-                launch_to_queue(
+                logging.warning("Launching WandB")
+                launch_to_queue_terminal(
                     name="Anomalib_" + SELECTED_DATASET + "_" + MODEL_NAME,
                     project=wandb_project,
-                    config=config,
+                    config_file=config_file_path,
                 )
 
     else:
