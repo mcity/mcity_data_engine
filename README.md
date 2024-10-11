@@ -91,7 +91,7 @@ wandb launch --uri "git@github.com:daniel-bogdoll/mcity_data_engine.git" --job-n
 
 ### Docker Container
 
-To use the [```launch_add```](https://docs.wandb.ai/ref/python/launch-library/launch_add/) Python API of Weights and Biases, a docker image on [Docker Hub](https://hub.docker.com/r/dbogdollresearch/mcity_data_engine) is necessary. You can build and push the ```Dockerfile.wandb``` with the following commands, if you want to update it:
+To use the [```launch_add```](https://docs.wandb.ai/ref/python/launch-library/launch_add/) Python API of Weights and Biases, a docker image on [Docker Hub](https://hub.docker.com/r/dbogdollresearch/mcity_data_engine) is necessary. ```dbogdollresearch/mcity_data_engine:latest``` is already vaialble. You can build and push the ```Dockerfile.wandb``` with the following commands, if you want to update it:
 
 ```
 docker build -t mcity_data_engine -f Dockerfile.wandb .
