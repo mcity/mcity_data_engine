@@ -27,8 +27,7 @@ from anomalib.models import (
     WinClip,
 )
 import wandb
-from wandb.sdk import launch
-
+from utils.wandb_helper import get_wandb_conf
 from anomalib.loggers import AnomalibTensorBoardLogger, AnomalibWandbLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
@@ -40,7 +39,7 @@ from torchvision.transforms.v2 import Resize
 import torch
 import logging
 
-from config.config import NUM_WORKERS, GLOBAL_SEED, ANOMALIB_EVAL_METRICS
+from config.config import NUM_WORKERS, GLOBAL_SEED, ANOMALIB_EVAL_METRICS, WANDB_CONFIG
 
 # https://docs.voxel51.com/tutorials/anomaly_detection.html
 # https://medium.com/@enrico.randellini/anomalib-a-library-for-image-anomaly-detection-and-localization-fb363639104f
@@ -54,19 +53,23 @@ class Anodec:
         dataset,
         dataset_info,
         anomalib_output_root="./output/models/anomalib/",
-        model_name="Padim",
+        config=None,
+        wandb_project="wandb_project",
     ):
+        self.config = config
         torch.set_float32_matmul_precision(
             "medium"
         )  # Utilize Tensor core, came in warning
         self.dataset = dataset
+        self.wandb_project = "Data Engine"
+        self.wan
         self.normal_data = dataset.match_tags("train")
         self.abnormal_data = dataset.match_tags("val")
         self.brains = dataset.list_brain_runs()
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
         self.IMAGE_SIZE = (256, 256)  ## preprocess image size for uniformity
-        self.model_name = model_name
+        self.model_name = get_wandb_conf(self.config, "v51_dataset_name")
         self.anomalib_output_root = anomalib_output_root
         self.model_path = os.path.join(
             anomalib_output_root,
@@ -87,12 +90,12 @@ class Anodec:
         self.inferencer = None
         self.engine = None
         self.datamodule = None
-        self.wandb_logger = None
+        self.anomalib_logger = None
 
     def __del__(self):
         try:
             self.unlink_symlinks()
-            self.wandb_logger.finalize("success")
+            self.anomalib_logger.finalize("success")
             wandb.finish()
         except:
             pass
@@ -169,22 +172,26 @@ class Anodec:
         # The inferencer object is used to make predictions on new images.
 
         # FIXME if not os.path.exists(self.model_path):
+        wandb_run = wandb.init(
+            allow_val_change=True,
+            sync_tensorboard=True,
+            config=self.config,
+            entity=WANDB_CONFIG["entity"],
+            project="Data Engine",
+            group="Anomalib",
+            job_type="train",
+        )
         self.model = getattr(anomalib.models, self.model_name)()
 
         os.makedirs(self.anomalib_output_root, exist_ok=True)
         os.makedirs("./logs/tensorboard", exist_ok=True)
         self.unlink_symlinks()
         self.create_datamodule(transform=transform)
-        self.wandb_logger = AnomalibTensorBoardLogger(
-            save_dir="./logs/wandb",
+        self.anomalib_logger = AnomalibTensorBoardLogger(
+            save_dir="./logs/tensorboard",
             name="anomalib_" + self.dataset_name + "_" + self.model_name,
             # project="mcity-data-engine",
         )
-        run = wandb.init(allow_val_change=True, sync_tensorboard=True)
-        config = run.config
-        run_config_overrides = launch.load_wandb_config()
-        logging.warning(run_config_overrides)
-        logging.warning(config)
 
         # Callbacks
         callbacks = [
@@ -212,14 +219,6 @@ class Anodec:
         )
         self.engine.fit(model=self.model, datamodule=self.datamodule)
 
-        # Test model
-        # test_results = self.engine.test(
-        #    model=self.model,
-        #    datamodule=self.datamodule,
-        #    ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
-        # )
-        # logging.info(test_results)
-
         # Export and generate inferencer
         export_root = self.model_path.replace("weights/torch/model.pt", "")
         self.engine.export(
@@ -228,6 +227,16 @@ class Anodec:
             export_type=ExportType.TORCH,
             ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
         )
+        wandb_run.finish
+
+    def validate_model(self):
+        # Test model
+        test_results = self.engine.test(
+            model=self.model,
+            datamodule=self.datamodule,
+            ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
+        )
+        logging.info(test_results)
 
     def run_inference(self, threshold=0.5):
         # Take a FiftyOne sample collection (e.g. our test set) as input, along with the inferencer object,

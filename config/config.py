@@ -63,5 +63,12 @@ WORKFLOWS = {
 }
 
 # Define the global variable
+WANDB_CONFIG = {
+    "docker": "dbogdollresearch/mcity_data_engine:latest",
+    "queue": "data-engine",
+    "entity": "mcity",
+    "github": "https://github.com/daniel-bogdoll/mcity_data_engine",
+}
+
 NUM_WORKERS = os.cpu_count()
 GLOBAL_SEED = 0
