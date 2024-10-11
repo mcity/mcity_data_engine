@@ -73,15 +73,6 @@ def signal_handler(sig, frame):
 
 def main(args):
     time_start = time.time()
-    # Argument parsing
-    parser = argparse.ArgumentParser(description="Run script locally or in W&B queue.")
-    parser.add_argument(
-        "--run-mode",
-        choices=["local", "wandb"],
-        default="local",
-        help="Run mode: 'local' or 'wandb queue'",
-    )
-    args = parser.parse_args()
 
     signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
     configure_logging()
@@ -119,7 +110,7 @@ def main(args):
         with open("wandb_runs/anomalib_config.json", "r") as config_file:
             config = json.load(config_file)
         config["v51_dataset_name"] = SELECTED_DATASET
-        wandb_project = "Data Engine: Anomalib"
+        wandb_project = "Data Engine"
 
         for MODEL_NAME in (pbar := tqdm(ANOMALIB_IMAGE_MODELS, desc="Anomalib")):
             pbar.set_description("Training/Loading Anomalib model " + MODEL_NAME)
@@ -160,4 +151,12 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Run script locally or in W&B queue.")
+    parser.add_argument(
+        "--run-mode",
+        choices=["local", "wandb"],
+        default="local",
+        help="Run mode: 'local' or 'wandb queue'",
+    )
+    args = parser.parse_args()
+    main(args)
