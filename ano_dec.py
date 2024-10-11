@@ -27,6 +27,8 @@ from anomalib.models import (
     WinClip,
 )
 import wandb
+from wandb.sdk import launch
+
 from anomalib.loggers import AnomalibTensorBoardLogger, AnomalibWandbLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
@@ -178,6 +180,8 @@ class Anodec:
             name="anomalib_" + self.dataset_name + "_" + self.model_name,
             project="mcity-data-engine",
         )
+        run_config_overrides = launch.load_wandb_config()
+        logging.warning(run_config_overrides)
 
         # Callbacks
         callbacks = [
