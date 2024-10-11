@@ -64,10 +64,11 @@ WORKFLOWS = {
 
 # Define the global variable
 WANDB_CONFIG = {
-    "docker": "dbogdollresearch/mcity_data_engine:latest",
+    "docker_image": "dbogdollresearch/mcity_data_engine:latest",
+    "docker_file": "Dockerfile.wandb",
     "queue": "data-engine",
     "entity": "mcity",
-    "github": "https://github.com/daniel-bogdoll/mcity_data_engine",
+    "github": "git@github.com:daniel-bogdoll/mcity_data_engine.git",
 }
 
 NUM_WORKERS = os.cpu_count()

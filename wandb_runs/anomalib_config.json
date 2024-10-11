@@ -8,12 +8,12 @@
             "batch_size": 8,
             "epochs": 1,
             "early_stop_patience": 10,
-            "v51_dataset_name": "",
+            "v51_dataset_name": "mcity_fisheye_ano_ped",
             "v51_dataset_splits:": [
                 "train",
                 "val"
             ],
-            "model_name": "",
+            "model_name": "Padim",
             "metrics": [
                 "AUPR",
                 "AUROC",
