@@ -171,6 +171,13 @@ class Anodec:
         PATIENCE = self.config["early_stop_patience"]
 
         # FIXME if not os.path.exists(self.model_path):
+        run = wandb.run
+        run.project = self.wandb_project
+        run.group = self.wandb_group
+        run.entity = WANDB_CONFIG["entity"]
+        run.job_type = "train"
+        run.tags = [self.dataset_name, self.model_name]
+
         # wandb_run = wandb.init(
         #    allow_val_change=True,
         #    sync_tensorboard=True,
@@ -184,11 +191,13 @@ class Anodec:
         self.model = getattr(anomalib.models, self.model_name)()
 
         os.makedirs(self.anomalib_output_root, exist_ok=True)
-        os.makedirs("./logs/tensorboard", exist_ok=True)
+        tensorboard_logs_dir = "./logs/tensorboard"
+        os.makedirs(tensorboard_logs_dir, exist_ok=True)
+        wandb.tensorboard.patch(root_logdir=tensorboard_logs_dir) = True
         self.unlink_symlinks()
         self.create_datamodule(transform=transform)
         self.anomalib_logger = AnomalibTensorBoardLogger(
-            save_dir="./logs/tensorboard",
+            save_dir=tensorboard_logs_dir,
             name="anomalib_" + self.dataset_name + "_" + self.model_name,
             # project="mcity-data-engine",
         )
