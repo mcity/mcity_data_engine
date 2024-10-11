@@ -1,5 +1,5 @@
-from ..ano_dec import Anodec
-from ..utils.data_loader import *
+from ano_dec import Anodec
+from utils.data_loader import *
 
 import wandb
 import logging
