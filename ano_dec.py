@@ -175,13 +175,15 @@ class Anodec:
         os.makedirs("./logs/tensorboard", exist_ok=True)
         self.unlink_symlinks()
         self.create_datamodule(transform=transform)
-        self.wandb_logger = AnomalibWandbLogger(
+        self.wandb_logger = AnomalibTensorBoardLogger(
             save_dir="./logs/wandb",
             name="anomalib_" + self.dataset_name + "_" + self.model_name,
             project="mcity-data-engine",
         )
+        run = wandb.init(allow_val_change=True)
         run_config_overrides = launch.load_wandb_config()
         logging.warning(run_config_overrides)
+        logging.warning(run.config)
 
         # Callbacks
         callbacks = [
