@@ -172,7 +172,6 @@ class Anodec:
 
         # FIXME if not os.path.exists(self.model_path):
         run = wandb.run
-        run.project = self.wandb_project
         run.group = self.wandb_group
         run.entity = WANDB_CONFIG["entity"]
         run.job_type = "train"
