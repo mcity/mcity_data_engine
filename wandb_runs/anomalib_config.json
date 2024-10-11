@@ -1,0 +1,23 @@
+{
+    "overrides": {
+        "batch_size": 8,
+        "epochs": 100,
+        "entry_point": [
+            "python",
+            "wandb_runs/anomalib_run.py"
+        ],
+        "run_config": {
+            "v51_dataset_name": "",
+            "v51_dataset_splits:": [
+                "train",
+                "val"
+            ],
+            "model_name": "",
+            "metrics": [
+                "AUPR",
+                "AUROC",
+                "F1Max"
+            ]
+        }
+    }
+}

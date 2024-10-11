@@ -2,6 +2,7 @@ import wandb
 from wandb.sdk.launch import launch_add, launch
 
 # https://docs.wandb.ai/ref/python/launch-library/launch_add/
+# https://docs.wandb.ai/guides/launch/add-job-to-queue/
 
 
 def job_to_queue(config):
@@ -26,5 +27,5 @@ def job_to_queue(config):
     )
 
 
-job_to_queue(config={"alpha": 0.5, "l1_ratio": 0.01})
-job_to_queue(config={"alpha": 1, "l1_ratio": 0.05})
+config = {"overrides": {"run_config": {"test123": 0, "777": 0}}}
+job_to_queue(config=config)

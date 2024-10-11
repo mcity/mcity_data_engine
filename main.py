@@ -1,7 +1,10 @@
+import argparse
 import time
 import signal
+import json
 
 from utils.logging import configure_logging
+from utils.wandb_helper import launch_to_queue
 import logging
 
 from config.config import (
@@ -9,6 +12,7 @@ from config.config import (
     SELECTED_DATASET,
     V51_EMBEDDING_MODELS,
     ANOMALIB_IMAGE_MODELS,
+    WANDB_CONFIG,
 )
 
 from tqdm import tqdm
@@ -67,10 +71,18 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-def main():
-    # FIXME sudo chown -R dbogdoll:dbogdoll /home/dbogdoll/mcity_data_engine/output when docker changes owner to root
-
+def main(args):
     time_start = time.time()
+    # Argument parsing
+    parser = argparse.ArgumentParser(description="Run script locally or in W&B queue.")
+    parser.add_argument(
+        "--run-mode",
+        choices=["local", "wandb"],
+        default="local",
+        help="Run mode: 'local' or 'wandb queue'",
+    )
+    args = parser.parse_args()
+
     signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
     configure_logging()
 
@@ -104,14 +116,28 @@ def main():
         spaces = panel_embeddings(v51_brain)
 
     elif SELECTED_WORKFLOW == "learn_normality":
+        with open("wandb_runs/anomalib_config.json", "r") as config_file:
+            config = json.load(config_file)
+        config["v51_dataset_name"] = SELECTED_DATASET
+        wandb_project = "Data Engine: Anomalib"
+
         for MODEL_NAME in (pbar := tqdm(ANOMALIB_IMAGE_MODELS, desc="Anomalib")):
             pbar.set_description("Training/Loading Anomalib model " + MODEL_NAME)
+            config["v51_dataset_name"] = MODEL_NAME
+            if args.run_mode == "local":
 
-            ano_dec = Anodec(dataset, dataset_info, model_name=MODEL_NAME)
-            ano_dec.train_and_export_model()
-            # ano_dec.run_inference()
-            # ano_dec.eval_v51()
-            del ano_dec
+                ano_dec = Anodec(dataset, dataset_info, config, wandb_project)
+                ano_dec.train_and_export_model()
+                # ano_dec.run_inference()
+                # ano_dec.eval_v51()
+                del ano_dec
+
+            elif args.run_mode == "wandb":
+                launch_to_queue(
+                    name="Anomalib_" + SELECTED_DATASET + "_" + MODEL_NAME,
+                    project=wandb_project,
+                    config=config,
+                )
 
     else:
         logging.error(
@@ -126,7 +152,6 @@ def main():
     dataset.save()
     logging.info(dataset)
     fo.pprint(dataset.stats(include_media=True))
-    wandb_run.finish()
     time_stop = time.time()
     logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
     if not os.getenv("RUNNING_IN_DOCKER"):  # ENV variable set in Dockerfile only
