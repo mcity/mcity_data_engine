@@ -178,9 +178,11 @@ class Anodec:
         self.wandb_logger = AnomalibTensorBoardLogger(
             save_dir="./logs/wandb",
             name="anomalib_" + self.dataset_name + "_" + self.model_name,
-            project="mcity-data-engine",
+            # project="mcity-data-engine",
         )
-        run = wandb.init(allow_val_change=True)
+        run = wandb.init(allow_val_change=True, sync_tensorboard=True)
+        config = run.config
+        config.update()
         run_config_overrides = launch.load_wandb_config()
         logging.warning(run_config_overrides)
         logging.warning(run.config)
