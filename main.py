@@ -4,7 +4,7 @@ import signal
 import json
 
 from utils.logging import configure_logging
-from utils.wandb_helper import launch_to_queue_terminal
+from utils.wandb_helper import launch_to_queue_terminal, get_wandb_conf
 import logging
 
 from config.config import (
@@ -111,12 +111,13 @@ def main(args):
         config_file_path = "wandb_runs/anomalib_config.json"
         with open(config_file_path, "r") as config_file:
             config = json.load(config_file)
-        config["v51_dataset_name"] = SELECTED_DATASET
+        config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
         wandb_project = "Data Engine"
 
         for MODEL_NAME in (pbar := tqdm(ANOMALIB_IMAGE_MODELS, desc="Anomalib")):
             pbar.set_description("Training/Loading Anomalib model " + MODEL_NAME)
-            config["v51_dataset_name"] = MODEL_NAME
+            config["overrides"]["run_config"]["model_name"] = MODEL_NAME
+
             if args.run_mode == "local":
 
                 ano_dec = Anodec(dataset, dataset_info, config, wandb_project)
@@ -126,7 +127,7 @@ def main(args):
                 del ano_dec
 
             elif args.run_mode == "wandb":
-                logging.warning("Launching WandB")
+                logging.warning(config)
                 launch_to_queue_terminal(
                     name="Anomalib_" + SELECTED_DATASET + "_" + MODEL_NAME,
                     project=wandb_project,
