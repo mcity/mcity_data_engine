@@ -1,13 +1,13 @@
 {
     "overrides": {
-        "batch_size": 8,
-        "epochs": 100,
-        "early_stop_patience": 10,
         "entry_point": [
             "python",
             "wandb_runs/anomalib_run.py"
         ],
         "run_config": {
+            "batch_size": 8,
+            "epochs": 1,
+            "early_stop_patience": 10,
             "v51_dataset_name": "",
             "v51_dataset_splits:": [
                 "train",
