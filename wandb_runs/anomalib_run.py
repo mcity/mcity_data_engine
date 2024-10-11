@@ -1,14 +1,14 @@
-from ano_dec import Anodec
+from ..ano_dec import Anodec
+from ..utils.data_loader import *
 
 import wandb
 import logging
-
-from utils.data_loader import *
 
 
 def main(config):
     # Get dataset with Voxel51
 
+    logging.error("HELLO")
     logging.warning(wandb.run)
 
     dataset_name = config["v51_dataset_name"]
