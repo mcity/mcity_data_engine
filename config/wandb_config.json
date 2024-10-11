@@ -5,7 +5,7 @@
     "memory": "48g",
     "volume": [
         "/media/dbogdoll/Datasets:/media/dbogdoll/Datasets:rw",
-        "/home/dbogdoll/mcity_data_engine/output:/launch/output:rw"
+        "/home/dbogdoll/mcity_data_engine/output/docker:/launch/output:rw"
     ],
     "shm-size": "8g",
     "memory-swap": "56g"

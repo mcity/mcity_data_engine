@@ -85,10 +85,13 @@ class Anodec:
         self.inferencer = None
         self.engine = None
         self.datamodule = None
+        self.wandb_logger = None
 
     def __del__(self):
         try:
             self.unlink_symlinks()
+            self.wandb_logger.finalize("success")
+            wandb.finish()
         except:
             pass
 
@@ -101,7 +104,7 @@ class Anodec:
         if transform is None:
             transform = Resize(self.IMAGE_SIZE, antialias=True)
 
-        BATCH_SIZE = 16
+        BATCH_SIZE = 8
 
         # Symlink the images and masks to the directory Anomalib expects.
         for sample in self.abnormal_data.iter_samples():
@@ -170,9 +173,10 @@ class Anodec:
         os.makedirs("./logs/tensorboard", exist_ok=True)
         self.unlink_symlinks()
         self.create_datamodule(transform=transform)
-        wandb_logger = AnomalibWandbLogger(
+        self.wandb_logger = AnomalibWandbLogger(
             save_dir="./logs/wandb",
             name="anomalib_" + self.dataset_name + "_" + self.model_name,
+            project="mcity-data-engine",
         )
 
         # Callbacks
@@ -192,7 +196,7 @@ class Anodec:
         self.engine = Engine(
             task=self.TASK,
             default_root_dir=self.anomalib_output_root,
-            logger=wandb_logger,
+            logger=self.wandb_logger,
             max_epochs=max_epochs,
             callbacks=callbacks,
             image_metrics=ANOMALIB_EVAL_METRICS,
@@ -202,12 +206,12 @@ class Anodec:
         self.engine.fit(model=self.model, datamodule=self.datamodule)
 
         # Test model
-        test_results = self.engine.test(
-            model=self.model,
-            datamodule=self.datamodule,
-            ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
-        )
-        logging.info(test_results)
+        # test_results = self.engine.test(
+        #    model=self.model,
+        #    datamodule=self.datamodule,
+        #    ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
+        # )
+        # logging.info(test_results)
 
         # Export and generate inferencer
         export_root = self.model_path.replace("weights/torch/model.pt", "")
@@ -218,39 +222,60 @@ class Anodec:
             ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
         )
 
-        wandb_logger.finalize("success")
-
-        inferencer = TorchInferencer(
-            path=os.path.join(self.model_path),
-            device="cuda",
-        )
-        self.inferencer = inferencer
-
     def run_inference(self, threshold=0.5):
         # Take a FiftyOne sample collection (e.g. our test set) as input, along with the inferencer object,
         # and a key for storing the results in the samples. It will run the model on each sample in the collection
         # and store the results. The threshold argument acts as a cutoff for the anomaly score.
         # If the score is above the threshold, the sample is considered anomalous
-        for sample in self.abnormal_data.iter_samples(autosave=True, progress=True):
-            # output = self.engine.predict(
-            #    datamodule=self.datamodule,
-            #    model=self.model,
-            #    ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
-            # )
-            # image = Image.open(sample.filepath)
-            image = read_image(sample.filepath, as_tensor=True)
-            output = self.inferencer.predict(image)
-            conf = output.pred_score
-            anomaly = "normal" if conf < threshold else "anomaly"
+        if self.engine:
+            outputs = self.engine.predict(
+                model=self.model,
+                datamodule=self.datamodule,
+                ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
+            )
+            for sample, output in zip(
+                self.abnormal_data.iter_samples(autosave=True, progress=True), outputs
+            ):
+                if sample.filepath != output["image_path"][0]:
+                    logging.error("Sample and output are not aligned!")
+                    continue
+                conf = output["pred_scores"].item()
+                anomaly = "normal" if conf < threshold else "anomaly"
 
-            sample[f"pred_anomaly_score_{self.model_name}"] = conf
-            sample[f"pred_anomaly_{self.model_name}"] = fo.Classification(label=anomaly)
-            sample[f"pred_anomaly_map_{self.model_name}"] = fo.Heatmap(
-                map=output.anomaly_map
+                sample[f"pred_anomaly_score_{self.model_name}"] = conf
+                sample[f"pred_anomaly_{self.model_name}"] = fo.Classification(
+                    label=anomaly
+                )
+                sample[f"pred_anomaly_map_{self.model_name}"] = fo.Heatmap(
+                    map=output["anomaly_maps"].numpy()
+                )
+                sample[f"pred_defect_mask_{self.model_name}"] = fo.Segmentation(
+                    mask=output["pred_masks"].numpy()
+                )
+
+        else:
+            inferencer = TorchInferencer(
+                path=os.path.join(self.model_path), device="cuda"
             )
-            sample[f"pred_defect_mask_{self.model_name}"] = fo.Segmentation(
-                mask=output.pred_mask
-            )
+            self.inferencer = inferencer
+
+            for sample in self.abnormal_data.iter_samples(autosave=True, progress=True):
+
+                image = read_image(sample.filepath, as_tensor=True)
+                output = self.inferencer.predict(image)
+                conf = output.pred_score
+                anomaly = "normal" if conf < threshold else "anomaly"
+
+                sample[f"pred_anomaly_score_{self.model_name}"] = conf
+                sample[f"pred_anomaly_{self.model_name}"] = fo.Classification(
+                    label=anomaly
+                )
+                sample[f"pred_anomaly_map_{self.model_name}"] = fo.Heatmap(
+                    map=output.anomaly_map
+                )
+                sample[f"pred_defect_mask_{self.model_name}"] = fo.Segmentation(
+                    mask=output.pred_mask
+                )
 
     def eval_v51(self):
         eval_seg = self.abnormal_data.evaluate_segmentations(
