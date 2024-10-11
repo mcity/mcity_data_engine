@@ -76,14 +76,6 @@ In order to change the standard WandB directory, add the following line to the b
 ```
 export WANDB_DIR="/home/dbogdoll/mcity_data_engine/logs/wandb"
 ```
-
-In order to make sure that Docker runs, if executed on your system, so not take over ownership of mounted volumes, add the following line to the bottom of your ```~/.bashrc``` file and then run ```source ~/.bashrc```:
-
-```
-export LOCAL_USER_ID=$(id -u)
-export LOCAL_GROUP_ID=$(id -g)
-```
-
 In order to execute jobs, the [following tools](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch) need to be installed:
 
 - [Docker](https://docs.docker.com/engine/install/ubuntu/) incl. [post-installation](https://docs.docker.com/engine/install/linux-postinstall/)
