@@ -22,6 +22,7 @@ def main(config):
     # Train with Anomalib
     ano_dec = Anodec(dataset, dataset_info, config)
     ano_dec.train_and_export_model()
+    ano_dec.validate_model()
 
 
 if __name__ == "__main__":
