@@ -97,6 +97,17 @@ To launch a job, make sure, an [active agent](https://wandb.ai/mcity/launch/UnVu
 wandb launch --uri "git@github.com:daniel-bogdoll/mcity_data_engine.git" --job-name <name-run> --project mcity-data-engine --entry-point "python main.py" --dockerfile Dockerfile.wandb --queue data-engine
 ```
 
+### Docker Container
+
+To use the [```launch_add```](https://docs.wandb.ai/ref/python/launch-library/launch_add/) Python API of Weights and Biases, a docker image on [Docker Hub](https://hub.docker.com/r/dbogdollresearch/mcity_data_engine) is necessary. You can build and push the ```Dockerfile.wandb``` with the following commands, if you want to update it:
+
+```
+docker build -t mcity_data_engine -f Dockerfile.wandb .
+docker login
+docker tag mcity_data_engine dbogdollresearch/mcity_data_engine:latest
+docker push dbogdollresearch/mcity_data_engine:latest
+```
+
 ## Datasets
 
 ### [MARS](https://ai4ce.github.io/MARS/)
