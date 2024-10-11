@@ -8,5 +8,8 @@
         "/home/dbogdoll/mcity_data_engine/output/docker:/launch/output:rw"
     ],
     "shm-size": "8g",
-    "memory-swap": "56g"
+    "memory-swap": "56g",
+    "env": [
+        "PYTHONPATH=/launch"
+    ]
 }

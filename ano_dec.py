@@ -57,7 +57,6 @@ class Anodec:
         wandb_group="Anomalib",
     ):
         self.config = config
-        logging.warning("CONFIG: ", self.config)
         torch.set_float32_matmul_precision(
             "medium"
         )  # Utilize Tensor core, came in warning
