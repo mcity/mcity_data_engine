@@ -193,7 +193,7 @@ class Anodec:
         os.makedirs(self.anomalib_output_root, exist_ok=True)
         tensorboard_logs_dir = "./logs/tensorboard"
         os.makedirs(tensorboard_logs_dir, exist_ok=True)
-        wandb.tensorboard.patch(root_logdir=tensorboard_logs_dir) = True
+        wandb.tensorboard.patch(root_logdir=tensorboard_logs_dir)
         self.unlink_symlinks()
         self.create_datamodule(transform=transform)
         self.anomalib_logger = AnomalibTensorBoardLogger(
