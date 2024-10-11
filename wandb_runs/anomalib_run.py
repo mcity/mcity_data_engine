@@ -5,7 +5,7 @@ import wandb
 import logging
 
 
-def main(config):
+def main():
     # Get dataset with Voxel51
 
     logging.error("HELLO")
