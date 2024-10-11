@@ -171,16 +171,16 @@ class Anodec:
         PATIENCE = self.config["early_stop_patience"]
 
         # FIXME if not os.path.exists(self.model_path):
-        wandb_run = wandb.init(
-            allow_val_change=True,
-            sync_tensorboard=True,
-            config=self.config,
-            entity=WANDB_CONFIG["entity"],
-            project=self.wandb_project,
-            group=self.wandb_group,
-            job_type="train",
-            tags=[self.dataset_name, self.model_name],
-        )
+        # wandb_run = wandb.init(
+        #    allow_val_change=True,
+        #    sync_tensorboard=True,
+        #    config=self.config,
+        #    entity=WANDB_CONFIG["entity"],
+        #    project=self.wandb_project,
+        #    group=self.wandb_group,
+        #    job_type="train",
+        #    tags=[self.dataset_name, self.model_name],
+        # )
         self.model = getattr(anomalib.models, self.model_name)()
 
         os.makedirs(self.anomalib_output_root, exist_ok=True)
@@ -225,19 +225,9 @@ class Anodec:
             export_type=ExportType.TORCH,
             ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
         )
-        wandb_run.finish
+        # wandb_run.finish
 
     def validate_model(self):
-        wandb_run = wandb.init(
-            allow_val_change=True,
-            sync_tensorboard=True,
-            config=self.config,
-            entity=WANDB_CONFIG["entity"],
-            project=self.wandb_project,
-            group=self.wandb_group,
-            job_type="eval",
-            tags=[self.dataset_name, self.model_name],
-        )
         # Test model
         if self.engine:
             test_results = self.engine.test(
@@ -248,7 +238,6 @@ class Anodec:
             logging.info(test_results)
         else:
             pass  # TODO Load model from path like in inference mode
-        wandb_run.finish
 
     def run_inference(self, threshold=0.5):
         # Take a FiftyOne sample collection (e.g. our test set) as input, along with the inferencer object,

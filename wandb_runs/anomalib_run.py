@@ -1,13 +1,15 @@
 from ano_dec import Anodec
 
 import wandb
-from wandb.sdk import launch
 
 from utils.data_loader import *
 
 
 def main(config):
     # Get dataset with Voxel51
+
+    logging.warning(wandb.run)
+
     dataset_name = config["v51_dataset_name"]
     dataset_info = load_dataset_info(dataset_name)
     if dataset_info:
