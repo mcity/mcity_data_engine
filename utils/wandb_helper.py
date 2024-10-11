@@ -41,4 +41,5 @@ def launch_to_queue(name, project, config):
         docker_image=WANDB_CONFIG["docker"],
         queue_name=WANDB_CONFIG["queue"],
         project=project,
+        entry_point="wandb_runs/anomalib_run.py",
     )
