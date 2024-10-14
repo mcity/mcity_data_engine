@@ -17,7 +17,6 @@ def main():
     )
     config = wandb.config
     run.tags += (config["v51_dataset_name"], config["model_name"])
-    run.update()
     dataset_name = config["v51_dataset_name"]
     dataset_info = load_dataset_info(dataset_name)
     if dataset_info:
