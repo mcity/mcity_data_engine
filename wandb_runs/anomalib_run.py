@@ -16,7 +16,7 @@ def main():
         job_type="train",
     )
     config = wandb.config
-    run.tags += (config["v51_dataset_name"], config["model_name"])
+    run.tags += (config["v51_dataset_name"], config["model_name"], "docker")
     dataset_name = config["v51_dataset_name"]
     dataset_info = load_dataset_info(dataset_name)
     if dataset_info:
