@@ -12,7 +12,7 @@ from anomalib.loggers import AnomalibTensorBoardLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
 import os
-from torchvision.transforms.v2 import Resize
+from torchvision.transforms.v2 import Resize, Compose
 import torch
 import logging
 
@@ -97,6 +97,10 @@ class Anodec:
         """
         if transform is None:
             transform = Resize(self.IMAGE_SIZE, antialias=True)
+            if self.model_name == "EfficientAd":
+                transform = Compose([
+    Resize(self.IMAGE_SIZE, antialias=True),
+
 
         # Symlink the images and masks to the directory Anomalib expects.
         for sample in self.abnormal_data.iter_samples():
@@ -121,7 +125,7 @@ class Anodec:
                 )
 
         # Anomalib models that requires smaller batch sizes on an RTX 4090
-        batch_size_mapping = {"Draem": 8, "EfficientAd": 1, "Patchcore": 1}
+        batch_size_mapping = {"Draem": 8, "EfficientAd": 1}
         batch_size = batch_size_mapping.get(self.model_name, self.config["batch_size"])
         logging.info("Batch size = ", batch_size, " for model " + self.model_name)
 
