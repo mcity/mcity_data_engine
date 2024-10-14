@@ -123,6 +123,7 @@ class Anodec:
         # Anomalib models that requires smaller batch sizes on an RTX 4090
         batch_size_mapping = {"Draem": 8, "EfficientAd": 1, "Patchcore": 1}
         batch_size = batch_size_mapping.get(self.model_name, self.config["batch_size"])
+        logging.info("Batch size = ", batch_size, " for model " + self.model_name)
 
         self.datamodule = Folder(
             name=self.dataset_name,
