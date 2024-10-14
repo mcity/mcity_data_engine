@@ -96,11 +96,7 @@ class Anodec:
             None
         """
         if transform is None:
-            transform = Resize(self.IMAGE_SIZE, antialias=True)
-            if self.model_name == "EfficientAd":
-                transform = Compose([
-    Resize(self.IMAGE_SIZE, antialias=True),
-
+            transform = Compose([Resize(self.IMAGE_SIZE, antialias=True)])
 
         # Symlink the images and masks to the directory Anomalib expects.
         for sample in self.abnormal_data.iter_samples():
