@@ -68,8 +68,10 @@ class Anodec:
         self.brains = dataset.list_brain_runs()
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
-        self.IMAGE_SIZE = (256, 256)  ## preprocess image size for uniformity
         self.model_name = self.config["model_name"]
+        self.IMAGE_SIZE = (256, 256)  # Preprocess image size for uniformity
+        if self.model_name == "Uflow":
+            self.IMAGE_SIZE = (448, 448)  # Inflexible model
         self.anomalib_output_root = anomalib_output_root
         self.model_path = os.path.join(
             anomalib_output_root,
@@ -129,6 +131,13 @@ class Anodec:
                     sample.anomaly_mask.mask_path,
                     os.path.join(self.mask_dir, new_filename),
                 )
+
+        if self.model_name == "Draem":
+            self.config["batch_size"] = 8
+        elif self.model_name == "Patchcore":
+            self.config["batch_size"] = 4
+        elif self.model_name == "EfficientAd":
+            self.config["batch_size"] = 1
 
         self.datamodule = Folder(
             name=self.dataset_name,
@@ -191,12 +200,11 @@ class Anodec:
         os.makedirs(self.anomalib_output_root, exist_ok=True)
         tensorboard_logs_dir = "./logs/tensorboard"
         os.makedirs(tensorboard_logs_dir, exist_ok=True)
-        wandb.tensorboard.patch(root_logdir=tensorboard_logs_dir)
+        # wandb.tensorboard.patch(root_logdir=tensorboard_logs_dir)
         self.unlink_symlinks()
         self.create_datamodule(transform=transform)
         self.anomalib_logger = AnomalibTensorBoardLogger(
             save_dir=tensorboard_logs_dir,
-            name="anomalib_" + self.dataset_name + "_" + self.model_name,
             # project="mcity-data-engine",
         )
 
@@ -218,7 +226,7 @@ class Anodec:
             logger=self.anomalib_logger,
             max_epochs=MAX_EPOCHS,
             callbacks=callbacks,
-            image_metrics=ANOMALIB_EVAL_METRICS,
+            # image_metrics=ANOMALIB_EVAL_METRICS, #Classification for whole image
             pixel_metrics=ANOMALIB_EVAL_METRICS,
             accelerator="auto",
         )

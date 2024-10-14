@@ -11,7 +11,7 @@ def main():
     # Get dataset with Voxel51
     wandb.init(
         allow_val_change=True,
-        # sync_tensorboard=True,
+        sync_tensorboard=True,
         group="Anomalib",
         job_type="train",
     )
