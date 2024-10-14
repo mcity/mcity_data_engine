@@ -16,7 +16,7 @@ from torchvision.transforms.v2 import Resize, Compose
 import torch
 import logging
 
-from config.config import NUM_WORKERS, GLOBAL_SEED, ANOMALIB_EVAL_METRICS, WANDB_CONFIG
+from config.config import NUM_WORKERS, GLOBAL_SEED, ANOMALIB_EVAL_METRICS
 
 # https://docs.voxel51.com/tutorials/anomaly_detection.html
 # https://medium.com/@enrico.randellini/anomalib-a-library-for-image-anomaly-detection-and-localization-fb363639104f
@@ -30,10 +30,12 @@ class Anodec:
         dataset,
         dataset_info,
         config,
+        wandb_run,
         anomalib_output_root="./output/models/anomalib/",
-        wandb_project="Data Engine",
+        wandb_project="Data Engine Anomalib",
         wandb_group="Anomalib",
     ):
+        self.wandb_run = wandb_run
         self.config = config
         torch.set_float32_matmul_precision(
             "medium"
@@ -171,53 +173,51 @@ class Anodec:
         MAX_EPOCHS = self.config["epochs"]
         PATIENCE = self.config["early_stop_patience"]
 
-        # FIXME if not os.path.exists(self.model_path):
-        self.model = getattr(anomalib.models, self.model_name)()
-
-        os.makedirs(self.anomalib_output_root, exist_ok=True)
-        tensorboard_logs_dir = "./logs/tensorboard"
-        os.makedirs(tensorboard_logs_dir, exist_ok=True)
-        # wandb.tensorboard.patch(root_logdir=tensorboard_logs_dir)
-        self.unlink_symlinks()
         self.create_datamodule(transform=transform)
-        self.anomalib_logger = AnomalibTensorBoardLogger(
-            save_dir=tensorboard_logs_dir,
-            # project="mcity-data-engine",
-        )
+        if not os.path.exists(self.model_path):
+            self.model = getattr(anomalib.models, self.model_name)()
 
-        # Callbacks
-        callbacks = [
-            ModelCheckpoint(
-                mode="max",
-                monitor="pixel_AUROC",
-                save_last=True,
-                verbose=True,
-                auto_insert_metric_name=True,
-                every_n_epochs=1,
-            ),
-            EarlyStopping(monitor="pixel_AUROC", mode="max", patience=PATIENCE),
-        ]
-        self.engine = Engine(
-            task=self.TASK,
-            default_root_dir=self.anomalib_output_root,
-            logger=self.anomalib_logger,
-            max_epochs=MAX_EPOCHS,
-            callbacks=callbacks,
-            # image_metrics=ANOMALIB_EVAL_METRICS, #Classification for whole image
-            pixel_metrics=ANOMALIB_EVAL_METRICS,
-            accelerator="auto",
-        )
-        self.engine.fit(model=self.model, datamodule=self.datamodule)
+            os.makedirs(self.anomalib_output_root, exist_ok=True)
+            tensorboard_logs_dir = "./logs/tensorboard"
+            os.makedirs(tensorboard_logs_dir, exist_ok=True)
+            self.unlink_symlinks()
+            self.anomalib_logger = AnomalibTensorBoardLogger(
+                save_dir=tensorboard_logs_dir,
+                # project="mcity-data-engine",
+            )
 
-        # Export and generate inferencer
-        export_root = self.model_path.replace("weights/torch/model.pt", "")
-        self.engine.export(
-            model=self.model,
-            export_root=export_root,
-            export_type=ExportType.TORCH,
-            ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
-        )
-        # wandb_run.finish
+            # Callbacks
+            callbacks = [
+                ModelCheckpoint(
+                    mode="max",
+                    monitor="pixel_AUROC",
+                    save_last=True,
+                    verbose=True,
+                    auto_insert_metric_name=True,
+                    every_n_epochs=1,
+                ),
+                EarlyStopping(monitor="pixel_AUROC", mode="max", patience=PATIENCE),
+            ]
+            self.engine = Engine(
+                task=self.TASK,
+                default_root_dir=self.anomalib_output_root,
+                logger=self.anomalib_logger,
+                max_epochs=MAX_EPOCHS,
+                callbacks=callbacks,
+                # image_metrics=ANOMALIB_EVAL_METRICS, #Classification for whole image
+                pixel_metrics=ANOMALIB_EVAL_METRICS,
+                accelerator="auto",
+            )
+            self.engine.fit(model=self.model, datamodule=self.datamodule)
+
+            # Export and generate inferencer
+            export_root = self.model_path.replace("weights/torch/model.pt", "")
+            self.engine.export(
+                model=self.model,
+                export_root=export_root,
+                export_type=ExportType.TORCH,
+                ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
+            )
 
     def validate_model(self):
         """
@@ -240,7 +240,7 @@ class Anodec:
             )
             logging.info(test_results)
         else:
-            pass  # TODO Load model from path like in inference mode
+            pass
 
     def run_inference(self, threshold=0.5):
         """
@@ -291,6 +291,7 @@ class Anodec:
                 sample[f"pred_defect_mask_{self.model_name}"] = fo.Segmentation(
                     mask=output["pred_masks"].numpy()
                 )
+                sample.save()
 
         else:
             inferencer = TorchInferencer(
@@ -318,6 +319,7 @@ class Anodec:
                 sample[f"pred_defect_mask_{self.model_name}"] = fo.Segmentation(
                     mask=output.pred_mask
                 )
+                sample.save()
 
     def eval_v51(self):
         """
