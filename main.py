@@ -12,7 +12,6 @@ from config.config import (
     SELECTED_DATASET,
     V51_EMBEDDING_MODELS,
     ANOMALIB_IMAGE_MODELS,
-    WANDB_CONFIG,
 )
 
 from tqdm import tqdm
@@ -20,8 +19,10 @@ from tqdm import tqdm
 from utils.data_loader import *
 from brain import Brain
 from ano_dec import Anodec
+from teacher import Teacher
 
 import wandb
+
 import sys
 
 
@@ -78,6 +79,8 @@ def main(args):
     if args.run_mode == "local":
         signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
 
+        # Move results from remote Docker runs to local folder
+
         # Load the selected dataset
         dataset_info = load_dataset_info(SELECTED_DATASET)
 
@@ -112,19 +115,33 @@ def main(args):
         with open(config_file_path, "r") as file:
             config = json.load(file)
         config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
-
-        wandb_project = "Data Engine"
+        wandb_project = "Data Engine Anomalib"
 
         for MODEL_NAME in (pbar := tqdm(ANOMALIB_IMAGE_MODELS, desc="Anomalib")):
             pbar.set_description("Training/Loading Anomalib model " + MODEL_NAME)
             config["overrides"]["run_config"]["model_name"] = MODEL_NAME
 
             if args.run_mode == "local":
-
-                ano_dec = Anodec(dataset, dataset_info, config, wandb_project)
+                run = wandb.init(
+                    allow_val_change=True,
+                    sync_tensorboard=True,
+                    project=wandb_project,
+                    group="Anomalib",
+                    job_type="train",
+                    config=config,
+                )
+                config = wandb.config["overrides"]["run_config"]
+                run.tags += (config["v51_dataset_name"], config["model_name"])
+                ano_dec = Anodec(
+                    dataset=dataset,
+                    dataset_info=dataset_info,
+                    config=config,
+                    wandb_run=run,
+                    wandb_project=wandb_project,
+                )
                 ano_dec.train_and_export_model()
-                # ano_dec.run_inference()
-                # ano_dec.eval_v51()
+                ano_dec.run_inference()
+                ano_dec.eval_v51()
                 del ano_dec
 
             elif args.run_mode == "wandb":
@@ -138,6 +155,33 @@ def main(args):
                     project=wandb_project,
                     config_file=config_file_path,
                 )
+
+    elif SELECTED_WORKFLOW == "train_teacher":
+        if args.run_mode == "local":
+            wandb_project = "Data Engine Teacher"
+            config_file_path = "wandb_runs/teacher_config.json"
+            with open(config_file_path, "r") as file:
+                config = json.load(file)
+
+            run = wandb.init(
+                allow_val_change=True,
+                sync_tensorboard=True,
+                group="Anomalib",
+                job_type="train",
+                config=config,
+                project=wandb_project,
+            )
+
+            config = wandb.config["overrides"]["run_config"]
+            teacher = Teacher(
+                dataset,
+                dataset_info,
+                config,
+                wandb_project,
+            )
+
+            finetune = True
+            teacher.train(finetune)
 
     else:
         logging.error(
