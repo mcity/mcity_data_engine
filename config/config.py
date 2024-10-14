@@ -24,22 +24,23 @@ V51_EMBEDDING_MODELS = [
 ANOMALIB_IMAGE_MODELS = [
     "Padim",
     "Draem",
-    "Patchcore",
-    "Cfa",
-    "Cflow",
-    "Csflow",
-    "Dfkde",
-    "Dfm",
-    "Dsr",
-    "EfficientAd",
-    "Fastflow",
-    "Ganomaly",
-    "ReverseDistillation",
-    "Rkde",
-    "Stfpm",
-    "Uflow",
-    "WinClip",
+    # "Patchcore",
+    # "Cfa",
+    # "Cflow",
+    # "Csflow",
+    # "Dfm",
+    # "Dsr",
+    # "EfficientAd",
+    # "Fastflow",
+    # "ReverseDistillation",
+    # "Rkde",
+    # "Stfpm",
+    # "Uflow"
 ]
+# "WinClip",    # Requires language input
+# "Dfkde",  # Has no pixel metrics
+# "Ganomaly",   # Has no pixel metrics
+
 
 # Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/metrics/index.html
 ANOMALIB_EVAL_METRICS = [
