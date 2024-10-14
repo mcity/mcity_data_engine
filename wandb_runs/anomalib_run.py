@@ -9,14 +9,15 @@ import logging
 
 def main():
     # Get dataset with Voxel51
-    wandb.init(
+    run = wandb.init(
         allow_val_change=True,
         sync_tensorboard=True,
         group="Anomalib",
         job_type="train",
     )
     config = wandb.config
-    wandb.tags = [config["v51_dataset_name"], config["model_name"]]
+    run.tags.append([config["v51_dataset_name"], config["model_name"]])
+    run.update()
     dataset_name = config["v51_dataset_name"]
     dataset_info = load_dataset_info(dataset_name)
     if dataset_info:
