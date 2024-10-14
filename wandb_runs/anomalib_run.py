@@ -29,7 +29,7 @@ def main():
         )
 
     # Train with Anomalib
-    ano_dec = Anodec(dataset, dataset_info, config)
+    ano_dec = Anodec(dataset, dataset_info, config, run)
     ano_dec.train_and_export_model()
 
 
