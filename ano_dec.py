@@ -49,7 +49,9 @@ class Anodec:
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
         self.model_name = self.config["model_name"]
-        self.IMAGE_SIZE = (256, 256)  # Preprocess image size for uniformity
+        self.IMAGE_SIZE = self.config[
+            "image_size"
+        ]  # Preprocess image size for uniformity
         if self.model_name == "Uflow":
             self.IMAGE_SIZE = (448, 448)  # Inflexible model
         self.anomalib_output_root = anomalib_output_root

@@ -5,6 +5,10 @@
             "wandb_runs/anomalib_run.py"
         ],
         "run_config": {
+            "image_size": [
+                960,
+                960
+            ],
             "batch_size": 16,
             "epochs": 100,
             "early_stop_patience": 10,
@@ -13,7 +17,7 @@
                 "train",
                 "val"
             ],
-            "model_name": "Padim",
+            "model_name": "EfficientAd",
             "metrics": [
                 "AUPR",
                 "AUROC",
