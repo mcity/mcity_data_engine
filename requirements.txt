@@ -52,7 +52,7 @@ durationpy==0.9
 einops==0.8.0
 executing==2.1.0
 fastjsonschema==2.20.0
-fiftyone==1.0.0
+fiftyone==1.0.1
 fiftyone-brain==0.17.0
 fiftyone-desktop==0.34.1
 fiftyone_db==1.1.6
