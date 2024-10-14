@@ -7,33 +7,11 @@ from anomalib.data.image.folder import Folder
 from anomalib.data.utils import read_image
 from anomalib.deploy import ExportType, TorchInferencer
 from anomalib.engine import Engine
-from anomalib.models import (
-    Cfa,
-    Cflow,
-    Csflow,
-    Dfkde,
-    Dfm,
-    Draem,
-    Dsr,
-    EfficientAd,
-    Fastflow,
-    Ganomaly,
-    Padim,
-    Patchcore,
-    ReverseDistillation,
-    Rkde,
-    Stfpm,
-    Uflow,
-    WinClip,
-)
-import wandb
-from anomalib.loggers import AnomalibTensorBoardLogger, AnomalibWandbLogger
+
+from anomalib.loggers import AnomalibTensorBoardLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
-import numpy as np
 import os
-from pathlib import Path
-from PIL import Image
 from torchvision.transforms.v2 import Resize
 import torch
 import logging
@@ -102,11 +80,21 @@ class Anodec:
             pass
 
     def create_datamodule(self, transform=None):
-        ## Build transform
-        # We create subsets of our data containing only the “good” training images and “anomalous” images for validation.
-        # We symlink the images and masks to the directory Anomalib expects.
-        # We instantiate and setup a datamodule from Anomalib’s Folder, which is the general-purpose class for custom datasets.
-        #  It is also possible to create a torch DataLoader from scratch and pass it to the engine’s fit() method
+        """
+        Create and setup a data module for anomaly detection.
+
+        This method performs the following steps:
+        1. Builds a transform if none is provided.
+        2. Creates subsets of data containing only the “good” training images and “anomalous” images for validation.
+        3. Symlinks the images and masks to the directory Anomalib expects.
+        4. Instantiates and sets up a datamodule from Anomalib’s Folder class, which is the general-purpose class for custom datasets.
+
+        Args:
+            transform (callable, optional): A transformation to apply to the images. Defaults to resizing to IMAGE_SIZE with antialiasing.
+
+        Returns:
+            None
+        """
         if transform is None:
             transform = Resize(self.IMAGE_SIZE, antialias=True)
 
@@ -132,12 +120,9 @@ class Anodec:
                     os.path.join(self.mask_dir, new_filename),
                 )
 
-        if self.model_name == "Draem":
-            self.config["batch_size"] = 8
-        elif self.model_name == "Patchcore":
-            self.config["batch_size"] = 4
-        elif self.model_name == "EfficientAd":
-            self.config["batch_size"] = 1
+        # Anomalib models that requires smaller batch sizes on an RTX 4090
+        batch_size_mapping = {"Draem": 8, "EfficientAd": 1, "Patchcore": 1}
+        batch_size = batch_size_mapping.get(self.model_name, self.config["batch_size"])
 
         self.datamodule = Folder(
             name=self.dataset_name,
@@ -146,8 +131,8 @@ class Anodec:
             mask_dir=self.mask_dir,
             task=self.TASK,
             transform=transform,
-            train_batch_size=self.config["batch_size"],
-            eval_batch_size=self.config["batch_size"],
+            train_batch_size=batch_size,
+            eval_batch_size=batch_size,
             num_workers=NUM_WORKERS,
             seed=GLOBAL_SEED,
         )
@@ -170,31 +155,22 @@ class Anodec:
                 pass
 
     def train_and_export_model(self, transform=None):
-        # Now we can put it all together. The train_and_export_model() function
-        # below trains an anomaly detection model using Anomalib’s Engine class,
-        # exports the model to OpenVINO, and returns the model “inferencer” object.
-        # The inferencer object is used to make predictions on new images.
+        """
+        Trains an anomaly detection model using Anomalib’s Engine class, exports the model,
+        and returns the model “inferencer” object. The inferencer object is used to make predictions on new images.
+
+        Args:
+            transform (callable, optional): A function/transform that takes in an image and returns a transformed version.
+                                            E.g, ``transforms.RandomCrop`` for images.
+
+        Returns:
+            None
+        """
 
         MAX_EPOCHS = self.config["epochs"]
         PATIENCE = self.config["early_stop_patience"]
 
         # FIXME if not os.path.exists(self.model_path):
-        # run = wandb.run
-        # run.group = self.wandb_group
-        # run.entity = WANDB_CONFIG["entity"]
-        # run.job_type = "train"
-        # run.tags = [self.dataset_name, self.model_name]
-
-        # wandb_run = wandb.init(
-        #    allow_val_change=True,
-        #    sync_tensorboard=True,
-        #    config=self.config,
-        #    entity=WANDB_CONFIG["entity"],
-        #    project=self.wandb_project,
-        #    group=self.wandb_group,
-        #    job_type="train",
-        #    tags=[self.dataset_name, self.model_name],
-        # )
         self.model = getattr(anomalib.models, self.model_name)()
 
         os.makedirs(self.anomalib_output_root, exist_ok=True)
@@ -243,6 +219,17 @@ class Anodec:
         # wandb_run.finish
 
     def validate_model(self):
+        """
+        Validates the model using the engine's test method.
+
+        This method tests the model if the engine is available. It logs the test results
+        using the `logging` module. If the engine is not available, it currently does nothing
+        but has a TODO comment indicating that the model should be loaded from a path similar
+        to inference mode.
+
+        Returns:
+            None
+        """
         # Test model
         if self.engine:
             test_results = self.engine.test(
@@ -255,10 +242,29 @@ class Anodec:
             pass  # TODO Load model from path like in inference mode
 
     def run_inference(self, threshold=0.5):
-        # Take a FiftyOne sample collection (e.g. our test set) as input, along with the inferencer object,
-        # and a key for storing the results in the samples. It will run the model on each sample in the collection
-        # and store the results. The threshold argument acts as a cutoff for the anomaly score.
-        # If the score is above the threshold, the sample is considered anomalous
+        """
+        Runs inference on a collection of samples to detect anomalies.
+
+        Parameters:
+        threshold (float): The cutoff value for the anomaly score. Samples with a score above this threshold
+                           are considered anomalous. Default is 0.5.
+
+        Description:
+        This method takes a FiftyOne sample collection (e.g., a test set) as input, along with an inferencer object,
+        and a key for storing the results in the samples. It runs the model on each sample in the collection and stores
+        the results. The threshold argument acts as a cutoff for the anomaly score. If the score is above the threshold,
+        the sample is considered anomalous.
+
+        If the engine is available, it uses the engine to predict the outputs. For each sample, it checks if the sample
+        and output are aligned. If they are not aligned, it logs an error and continues to the next sample. It then
+        calculates the confidence score and determines if the sample is anomalous based on the threshold. The results
+        are stored in the sample with keys for anomaly score, anomaly classification, anomaly map, and defect mask.
+
+        If the engine is not available, it initializes a TorchInferencer and uses it to predict the outputs for each sample.
+        It reads the image from the sample's filepath, predicts the output, calculates the confidence score, and determines
+        if the sample is anomalous based on the threshold. The results are stored in the sample with keys for anomaly score,
+        anomaly classification, anomaly map, and defect mask.
+        """
         if self.engine:
             outputs = self.engine.predict(
                 model=self.model,
@@ -295,13 +301,16 @@ class Anodec:
 
                 image = read_image(sample.filepath, as_tensor=True)
                 output = self.inferencer.predict(image)
+
+                # Classification
                 conf = output.pred_score
                 anomaly = "normal" if conf < threshold else "anomaly"
-
                 sample[f"pred_anomaly_score_{self.model_name}"] = conf
                 sample[f"pred_anomaly_{self.model_name}"] = fo.Classification(
                     label=anomaly
                 )
+
+                # Segmentation
                 sample[f"pred_anomaly_map_{self.model_name}"] = fo.Heatmap(
                     map=output.anomaly_map
                 )
@@ -310,6 +319,22 @@ class Anodec:
                 )
 
     def eval_v51(self):
+        """
+        Evaluates the segmentations of abnormal data using the specified model.
+
+        This method evaluates the segmentations of abnormal data by comparing the predicted defect mask
+        with the ground truth anomaly mask. The evaluation results are stored and a report is printed.
+
+        Parameters:
+        None
+
+        Returns:
+        None
+
+        Side Effects:
+        - Evaluates the segmentations and stores the results in the `eval_seg_{self.model_name}` key.
+        - Prints a report of the evaluation results for the specified classes [0, 255].
+        """
         eval_seg = self.abnormal_data.evaluate_segmentations(
             f"pred_defect_mask_{self.model_name}",
             gt_field="anomaly_mask",

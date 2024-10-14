@@ -5,8 +5,8 @@
             "wandb_runs/anomalib_run.py"
         ],
         "run_config": {
-            "batch_size": 8,
-            "epochs": 1,
+            "batch_size": 16,
+            "epochs": 100,
             "early_stop_patience": 10,
             "v51_dataset_name": "mcity_fisheye_ano_ped",
             "v51_dataset_splits:": [
