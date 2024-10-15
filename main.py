@@ -16,7 +16,7 @@ from config.config import (
 
 from tqdm import tqdm
 
-from utils.data_loader import *
+from utils.dataset_loader import *
 from brain import Brain
 from ano_dec import Anodec
 from teacher import Teacher
@@ -131,7 +131,7 @@ def main(args):
                     config=config,
                 )
                 config = wandb.config["overrides"]["run_config"]
-                run.tags += (config["v51_dataset_name"], config["model_name"])
+                run.tags += (config["v51_dataset_name"], config["model_name"], "local")
                 ano_dec = Anodec(
                     dataset=dataset,
                     dataset_info=dataset_info,
@@ -166,13 +166,14 @@ def main(args):
             run = wandb.init(
                 allow_val_change=True,
                 sync_tensorboard=True,
-                group="Anomalib",
+                group="Teacher",
                 job_type="train",
                 config=config,
                 project=wandb_project,
             )
-
             config = wandb.config["overrides"]["run_config"]
+
+            run.tags += (config["v51_dataset_name"], config["model_name"], "local")
             teacher = Teacher(
                 dataset,
                 dataset_info,
@@ -197,7 +198,7 @@ def main(args):
         logging.info(dataset)
         fo.pprint(dataset.stats(include_media=True))
         session = fo.launch_app(dataset, spaces=spaces)
-        session.wait(-1)
+        session.wait()  # (-1) for indefinitely
 
     time_stop = time.time()
     logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
