@@ -1,5 +1,5 @@
 from ano_dec import Anodec
-from utils.data_loader import *
+from utils.dataset_loader import *
 
 from config.config import WANDB_CONFIG
 

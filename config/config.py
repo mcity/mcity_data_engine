@@ -1,10 +1,10 @@
 import os
 
-SELECTED_WORKFLOW = "learn_normality"  # Selection from WORKFLOWS
-SELECTED_DATASET = "mcity_fisheye_ano_ped"  # Choose from datasets.yaml
+SELECTED_WORKFLOW = "train_teacher"  # Selection from WORKFLOWS
+SELECTED_DATASET = "mcity_fisheye_2000"  # Choose from datasets.yaml
 SELECTED_SPLITS = ["train", "val"]  # Choose from datasets.yaml
 
-PERSISTENT = False  # If V51 database is stored
+PERSISTENT = True  # If V51 database is stored
 
 # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
 V51_EMBEDDING_MODELS = [
@@ -24,22 +24,22 @@ V51_EMBEDDING_MODELS = [
 ANOMALIB_IMAGE_MODELS = [
     "Padim",
     "Draem",
-    # "Patchcore",
-    # "Cfa",
-    # "Cflow",
-    # "Csflow",
-    # "Dfm",
-    # "Dsr",
-    # "EfficientAd",
-    # "Fastflow",
-    # "ReverseDistillation",
-    # "Rkde",
-    # "Stfpm",
-    # "Uflow"
+    "Cfa",
+    "Cflow",
+    "Csflow",
+    "Dfm",
+    "Dsr",
+    "EfficientAd",
+    "Fastflow",
+    "ReverseDistillation",
+    "Rkde",
+    "Stfpm",
+    "Uflow",
 ]
 # "WinClip",    # Requires language input
 # "Dfkde",  # Has no pixel metrics
 # "Ganomaly",   # Has no pixel metrics
+# "Patchcore",  # Ineffiecient algorithm, cannot load whole dataset
 
 
 # Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/metrics/index.html
@@ -57,10 +57,14 @@ ANOMALIB_EVAL_METRICS = [
     # "PRO",
 ]
 
+
 # Workflows and associated parameters
 WORKFLOWS = {
     "brain_selection": {},
     "learn_normality": {},
+    "train_teacher": {
+        "hf_models": ["microsoft/conditional-detr-resnet-50", "facebook/detr-resnet-50"]
+    },
 }
 
 # Define the global variable
