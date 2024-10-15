@@ -102,6 +102,18 @@ docker push dbogdollresearch/mcity_data_engine:latest
 
 ## Datasets
 
+### Huggingface Integration
+
+To upload datasets to Huggingface with Voxel51, load private datasets from Huggingface, and run the tests successfully, you need to set a [Huggingface token](https://huggingface.co/docs/hub/en/security-tokens):
+
+```.secrets``` file in the root folder with the following content:
+```
+HF_TOKEN=<YOUR_HF_TOKEN>
+```
+
+[Secret in Github Action](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) with the same name and content as above.
+
+
 ### [MARS](https://ai4ce.github.io/MARS/)
 Make sure you have entered your [SSH key at huggingface](https://huggingface.co/settings/keys). Download the dataset with
 
