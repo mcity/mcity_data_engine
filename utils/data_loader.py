@@ -1,168 +1,227 @@
-import yaml
-import re
-import os
-from datetime import datetime
+import torch
+from PIL import Image
+import fiftyone.utils.coco as fouc
 
-from nuscenes.nuscenes import NuScenes
-import fiftyone as fo
-
-import logging
-
-from config.config import NUM_WORKERS, PERSISTENT, SELECTED_SPLITS
+import datasets
+from datasets import Dataset, NamedSplit
 
 
-def load_dataset_info(dataset_name, config_path="./config/datasets.yaml"):
+class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
+    """A PyTorch Dataset class for loading data from a FiftyOne dataset in COCO format.
+
+        fiftyone_dataset (fiftyone.core.dataset.DatasetView): A FiftyOne dataset or view to be used for training or testing.
+        transforms (callable, optional): A function/transform that takes in an image and target and returns a transformed version.
+        gt_field (str, optional): The name of the field in fiftyone_dataset that contains the desired labels to load. Default is "ground_truth".
+        classes (list of str, optional): A list of class strings to define the mapping between class names and indices. If None, all classes present in the given fiftyone_dataset will be used.
+
+    Attributes:
+        samples (fiftyone.core.dataset.DatasetView): The FiftyOne dataset or view.
+        transforms (callable, optional): The transform function to apply to images and targets.
+        gt_field (str): The name of the field in fiftyone_dataset that contains the desired labels.
+        img_paths (list of str): List of image file paths from the FiftyOne dataset.
+        classes (list of str): List of class names.
+        labels_map_rev (dict): A dictionary mapping class names to indices.
+
+    Methods:
+        __getitem__(idx):
+            Retrieves the image and target at the specified index.
+
+        __getitems__(indices):
+            Retrieves a list of samples for the specified indices.
+
+        __len__():
+            Returns the number of samples in the dataset.
+
+        get_classes():
+            Returns the list of class names.
+
+        get_splits():
+            Returns a set of unique split names from the dataset.
     """
-    Load dataset information from a YAML configuration file.
 
-    Args:
-        dataset_name (str): The name of the dataset to retrieve information for.
-        config_path (str, optional): The path to the YAML configuration file. Defaults to "datasets/datasets.yaml".
+    def __init__(
+        self,
+        fiftyone_dataset,
+        transforms=None,
+        gt_field="ground_truth",
+        classes=None,
+    ):
+        self.samples = fiftyone_dataset
+        self.transforms = transforms
+        self.gt_field = gt_field
 
-    Returns:
-        dict or None: A dictionary containing the dataset information if found, otherwise None.
-    """
-    with open(config_path) as f:
-        datasets_config = yaml.safe_load(f)
+        self.img_paths = self.samples.values("filepath")
 
-    datasets = datasets_config["datasets"]
-    dataset_info = next((ds for ds in datasets if ds["name"] == dataset_name), None)
+        self.classes = classes
+        if not self.classes:
+            # Get list of distinct labels that exist in the view
+            self.classes = self.samples.distinct("%s.detections.label" % gt_field)
 
-    if dataset_info:
-        return dataset_info
-    else:
-        return None
+        if self.classes[0] != "background":
+            self.classes = ["background"] + self.classes
 
+        self.labels_map_rev = {c: i for i, c in enumerate(self.classes)}
 
-def load_mcity_fisheye_2000(dataset_info):
-    """
-    Loads the Mcity Fisheye 2000 dataset based on the provided dataset information.
+    def __getitem__(self, idx):
+        img_path = self.img_paths[idx]
+        sample = self.samples[img_path]
+        metadata = sample.metadata
+        img = Image.open(img_path).convert("RGB")
 
-    Args:
-        dataset_info (dict): A dictionary containing the following keys:
-            - "name" (str): The name of the dataset.
-            - "local_path" (str): The local path to the dataset directory.
-            - "v51_type" (str): The type of the dataset, corresponding to a type in `fo.types`.
-            - "v51_splits" (list): A list of dataset splits to be loaded.
-
-    Returns:
-        fo.Dataset: The loaded dataset object.
-
-    Raises:
-        KeyError: If any of the required keys are missing in `dataset_info`.
-        AttributeError: If `v51_type` does not correspond to a valid type in `fo.types`.
-    """
-    dataset_name = dataset_info["name"]
-    dataset_dir = dataset_info["local_path"]
-    dataset_type = getattr(fo.types, dataset_info["v51_type"])
-    if SELECTED_SPLITS:
-        dataset_splits = SELECTED_SPLITS
-    else:
-        dataset_splits = dataset_info["v51_splits"]  # Use all available splits
-
-    if PERSISTENT == False:
-        try:
-            fo.delete_dataset(dataset_info["name"])
-        except:
-            pass
-
-    logging.info(f"Available V51 datasets: {fo.list_datasets()}")
-
-    if dataset_name in fo.list_datasets():
-        dataset = fo.load_dataset(dataset_name)
-        logging.info("Existing dataset " + dataset_name + " was loaded.")
-    else:
-        dataset = fo.Dataset(dataset_name)
-        for split in dataset_splits:
-            dataset.add_dir(
-                dataset_dir=dataset_dir,
-                dataset_type=dataset_type,
-                split=split,
-                tags=split,
+        boxes = []
+        labels = []
+        area = []
+        iscrowd = []
+        detections = sample[self.gt_field].detections
+        for det in detections:
+            category_id = self.labels_map_rev[det.label]
+            coco_obj = fouc.COCOObject.from_label(
+                det,
+                metadata,
+                category_id=category_id,
             )
-        dataset.compute_metadata(num_workers=NUM_WORKERS)
+            x, y, w, h = coco_obj.bbox
+            boxes.append([x, y, x + w, y + h])
+            labels.append(coco_obj.category_id)
+            area.append(coco_obj.area)
+            iscrowd.append(coco_obj.iscrowd)
 
-        # Add dataset specific metedata based on filename
-        view = dataset.view()
-        for sample in view:  # https://docs.voxel51.com/api/fiftyone.core.sample.html
-            metadata = process_mcity_fisheye_2000_filename(sample["filepath"])
-            sample["location"] = metadata["location"]
-            sample["name"] = metadata["name"]
-            sample["timestamp"] = metadata["timestamp"]
-            sample.save()
+        target = {}
+        target["boxes"] = torch.as_tensor(boxes, dtype=torch.float32)
+        target["labels"] = torch.as_tensor(labels, dtype=torch.int64)
+        target["image_id"] = torch.as_tensor([idx])
+        target["area"] = torch.as_tensor(area, dtype=torch.float32)
+        target["iscrowd"] = torch.as_tensor(iscrowd, dtype=torch.int64)
 
-        dataset.persistent = PERSISTENT  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
-    return dataset
+        if self.transforms is not None:
+            img, target = self.transforms(img, target)
+
+        return img, target
+
+    def __getitems__(self, indices):
+        samples = [self.__getitem__(idx) for idx in indices]
+        return samples
+
+    def __len__(self):
+        return len(self.img_paths)
+
+    def get_classes(self):
+        return self.classes
+
+    def get_splits(self):
+        splits = set()
+        for sample in self.samples.iter_samples():
+            split = sample.tags[0]  # Assuming the split is the first tag
+            splits.add(split)
+        return splits
 
 
-def process_mcity_fisheye_2000_filename(filename):
+class TorchToHFDatasetCOCO:
     """
-    Processes a given filename to extract metadata including location, name, and timestamp.
+    A class to convert a PyTorch dataset to a Hugging Face dataset in COCO format.
 
-    Args:
-        filename (str): The full path or name of the file to be processed.
+    Attributes:
+        torch_dataset (Dataset): The PyTorch dataset to be converted.
 
-    Returns:
-        dict: A dictionary containing the following keys:
-            - 'filename' (str): The base name of the file.
-            - 'location' (str or None): The location extracted from the filename, if available.
-            - 'name' (str or None): The cleaned name extracted from the filename.
-            - 'timestamp' (datetime or None): The timestamp extracted from the filename, if available.
-
-    The function performs the following steps:
-        1. Extracts the base name of the file.
-        2. Searches for a known location within the filename.
-        3. Splits the filename into two parts based on the first occurrence of a 4-digit year.
-        4. Cleans up the first part to derive the name.
-        5. Extracts and parses the timestamp from the second part of the filename.
+    Methods:
+        convert():
+            Converts the PyTorch dataset to a Hugging Face dataset.
+        
+        gen_factory(dataset, split_name):
+            Generates a generator function for a specific split of the dataset.
+        
+        create_target(sample, dataset, idx):
+            Creates the target dictionary for a given sample.
     """
 
-    filename = os.path.basename(filename)
-    results = {"filename": filename, "location": None, "name": None, "timestamp": None}
+        """
+        Initializes the TorchToHFDatasetCOCO with the given PyTorch dataset.
 
-    available_locations = [
-        "beal",
-        "bishop",
-        "georgetown",
-        "gridsmart_ne",
-        "gridsmart_nw",
-        "gridsmart_se",
-        "gridsmart_sw",
-        "Huron_Plymouth-Geddes",
-        "Main_stadium",
-    ]
+        Args:
+            torch_dataset (Dataset): The PyTorch dataset to be converted.
+        """
 
-    for location in available_locations:
-        if location in filename:
-            results["location"] = location
-            break
+        """
+        Converts the PyTorch dataset to a Hugging Face dataset.
 
-    # Split string into first and second part based on first 4 digit year number
-    match = re.search(r"\d{4}", filename)
-    if match:
-        year_index = match.start()
-        part1 = filename[:year_index]
-        part2 = filename[year_index:]
+        Returns:
+            dict: A dictionary where keys are split names and values are Hugging Face datasets.
+        """
 
-    # Cleanup first part
-    results["name"] = re.sub(r"[-_]+$", "", part1)
+        """
+        Generates a generator function for a specific split of the dataset.
 
-    # Extract timestamp from second part
-    match = re.search(r"\d{8}T\d{6}|\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", part2)
-    if match:
-        timestamp_str = match.group(0)
-        if "T" in timestamp_str:
-            results["timestamp"] = datetime.strptime(timestamp_str, "%Y%m%dT%H%M%S")
-        else:
-            results["timestamp"] = datetime.strptime(timestamp_str, "%Y-%m-%d_%H-%M-%S")
-    return results
+        Args:
+            dataset (Dataset): The PyTorch dataset.
+            split_name (str): The name of the split.
+
+        Returns:
+            function: A generator function that yields samples for the specified split.
+        """
 
 
-def load_mars_multiagent(dataset_info):
-    hugging_face_id = "ai4ce/MARS/Multiagent_53scene"
+
+        """
+        Creates the target dictionary for a given sample.
+
+        Args:
+            sample (Sample): A sample from the dataset.
+            dataset (Dataset): The PyTorch dataset.
+            idx (int): The index of the sample.
+
+        Returns:
+            dict: A dictionary containing bounding boxes, labels, image ID, area, and iscrowd information.
+        """
 
 
-def load_mars_multitraversal(dataset_info):
-    location = 10
-    data_root = "./datasets/MARS/Multitraversal_2023_10_04-2024_03_08"
-    nusc = NuScenes(version="v1.0", dataroot=f"data_root/{location}", verbose=True)
+    def __init__(self, torch_dataset):
+        self.torch_dataset = torch_dataset
+
+    def convert(self):
+        splits = self.torch_dataset.get_splits()
+        hf_dataset = {
+            split: Dataset.from_generator(
+                self.gen_factory(self.torch_dataset, split),
+                split=NamedSplit(split),
+            )
+            for split in splits
+        }
+        return hf_dataset
+
+    def gen_factory(self, dataset, split_name):
+        def gen():
+            for idx, img_path in enumerate(dataset.img_paths):
+                sample = dataset.samples[img_path]
+                split = sample.tags[0]
+                if split != split_name:
+                    continue
+
+                target = self.create_target(sample, dataset, idx)
+                yield {"image": img_path, "target": target, "split": split}
+
+        return gen
+
+    def create_target(self, sample, dataset, idx):
+        metadata = sample.metadata
+        detections = sample[dataset.gt_field].detections
+
+        boxes = [
+            [
+                det.bounding_box[0],
+                det.bounding_box[1],
+                det.bounding_box[0] + det.bounding_box[2],
+                det.bounding_box[1] + det.bounding_box[3],
+            ]
+            for det in detections
+        ]
+        labels = [dataset.labels_map_rev[det.label] for det in detections]
+        area = [det.bounding_box[2] * det.bounding_box[3] for det in detections]
+        iscrowd = [0 for _ in detections]  # Assuming iscrowd is not available
+
+        return {
+            "boxes": boxes,
+            "labels": labels,
+            "image_id": idx,
+            "area": area,
+            "iscrowd": iscrowd,
+        }
