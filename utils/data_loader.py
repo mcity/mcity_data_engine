@@ -2,8 +2,9 @@ import torch
 from PIL import Image
 import fiftyone.utils.coco as fouc
 
-import datasets
-from datasets import Dataset, NamedSplit
+import logging
+
+from datasets import Dataset, NamedSplit, Split
 
 
 class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
@@ -132,13 +133,14 @@ class TorchToHFDatasetCOCO:
 
     convert():
         Converts the PyTorch dataset to a Hugging Face dataset.
-
-    gen_factory(dataset, split_name):
-        Creates a generator function for a specific split of the dataset.
-
-    create_target(sample, dataset, idx):
-        Creates the target dictionary for a given sample in the dataset.
     """
+
+    split_mapping = {
+        "train": Split.TRAIN,
+        "test": Split.TEST,
+        "validation": Split.VALIDATION,
+        "val": Split.VALIDATION,
+    }
 
     def __init__(self, torch_dataset):
         self.torch_dataset = torch_dataset
@@ -146,15 +148,15 @@ class TorchToHFDatasetCOCO:
     def convert(self):
         splits = self.torch_dataset.get_splits()
         hf_dataset = {
-            split: Dataset.from_generator(
-                self.gen_factory(self.torch_dataset, split),
-                split=NamedSplit(split),
+            self.split_mapping[split]: Dataset.from_generator(
+                self._gen_factory(self.torch_dataset, split),
+                split=self.split_mapping[split],
             )
             for split in splits
         }
         return hf_dataset
 
-    def gen_factory(self, dataset, split_name):
+    def _gen_factory(self, dataset, split_name):
         def gen():
             for idx, img_path in enumerate(dataset.img_paths):
                 sample = dataset.samples[img_path]
@@ -162,12 +164,16 @@ class TorchToHFDatasetCOCO:
                 if split != split_name:
                     continue
 
-                target = self.create_target(sample, dataset, idx)
-                yield {"image": img_path, "target": target, "split": split}
+                target = self._create_target(sample, dataset, idx)
+                yield {
+                    "image": img_path,
+                    "target": target,
+                    "split": split,
+                }
 
         return gen
 
-    def create_target(self, sample, dataset, idx):
+    def _create_target(self, sample, dataset, idx):
         metadata = sample.metadata
         detections = sample[dataset.gt_field].detections
 
