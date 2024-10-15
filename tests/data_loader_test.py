@@ -7,7 +7,12 @@ from PIL import Image
 
 @pytest.fixture
 def dataset_v51():
-    return load_from_hub("dbogdollumich/mcity_fisheye_v51", max_samples=100)
+    dataset_name = "dbogdollumich/mcity_fisheye_v51"
+    try:
+        dataset = load_from_hub(dataset_name, max_samples=100)
+    except:
+        dataset = fo.load_dataset(dataset_name)
+    return dataset
 
 
 @pytest.fixture
