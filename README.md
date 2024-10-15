@@ -34,41 +34,30 @@ clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --to=notebook -
 > [!NOTE]
 > In case there are issues with MongoDB, use ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
 
-## Structure
-
-.  
-├── ano_dec.py  
-├── brain.py  
-├── config  
-├── Dockerfile.wandb  
-├── docs  
-├── main.py  
-├── README.md  
-├── requirements.txt  
-├── scripts  
-├── teacher.py  
-├── tests  
-├── utils  
-└── wandb_runs  
+## Repository Structure
 
 .   
-├── ano_dec.py              # WORKFLOW: Pixel-wise anomaly detection with anomalib  
-├── brain.py                # Voxel51: Frame-wise analysis of data   
-├── teacher.py              # Training teacher model with labeled data   
-├── config.py               # General config    
-├── data_loader/            # Handles dataset loading   
-│   └── nuscenes-devkit     # Modified devkit for python 3.12   
-├── datasets/               # Stores datasets and computed  embeddings  
-│   ├── datasets.yaml       # Dataset related parameters    
-│   └── embeddings/         # Default storage for computed  embeddings  
-├── docs/                   # pdoc Documentation    
-│   └── index.html          # Documentation entry point     
-├── logs/                   # Default storage for logs  
-├── main.py                 # Core of the framework     
-├── requirements.txt        # pip install -r requirements.txt   
-├── scripts/                # Experiments and one-time  operations  
-├── tests/                  # Pytest cases  
-└── utils/                  # Utility functions 
+├── main.py                   # Core of the framework     
+├── ano_dec.py                # WORKFLOW: Pixel-wise anomaly detection with anomalib  
+├── brain.py                  # WORKFLOW: Frame-wise analysis of data with Voxel51  
+├── teacher.py                # WORKFLOW: Training teacher model with labeled data   
+├── config/                   # Local configuration files
+├── utils/                    # Utility functions 
+├── scripts/                  # Experiments and one-time operations  
+├── logs/                     # Default storage for logs  
+├── datasets/                 # Default storage for datasets
+├── output/                   # Default storage for models, embeddings etc.
+├── docs/                     # pdoc Documentation    
+├── tests/                    # Pytest cases
+├── wandb_runs/               # Entrypoints and configs for WandB experiments
+├── Dockerfile.wand           # Dockerfile for WandB experiments
+├── .github/workflows         # Github Action Workflows
+├── .gitignore                # Ignored files for Git tracking
+├── .gitattributes            # Used to clean Notebooks prior to commits
+├── .gitmodules               # Managing Git submodules
+├── .secret                   # Secret TOKENS (untracked)
+└── requirements.txt          # pip install -r requirements.txt   
+
 
 ## Documentation
 
