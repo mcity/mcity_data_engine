@@ -42,7 +42,7 @@ clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --to=notebook -
 ├── brain.py                  # WORKFLOW: Frame-wise analysis of data with Voxel51  
 ├── teacher.py                # WORKFLOW: Training teacher model with labeled data   
 ├── config/                   # Local configuration files  
-├── utils/                    # Utility functions 
+├── utils/                    # Utility functions  
 ├── scripts/                  # Experiments and one-time operations  
 ├── logs/                     # Default storage for logs  
 ├── datasets/                 # Default storage for datasets  
