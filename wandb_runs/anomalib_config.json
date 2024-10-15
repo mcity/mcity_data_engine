@@ -17,7 +17,7 @@
                 "train",
                 "val"
             ],
-            "model_name": "EfficientAd",
+            "model_name": "Uflow",
             "metrics": [
                 "AUPR",
                 "AUROC",
