@@ -41,21 +41,21 @@ clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --to=notebook -
 ├── ano_dec.py                # WORKFLOW: Pixel-wise anomaly detection with anomalib  
 ├── brain.py                  # WORKFLOW: Frame-wise analysis of data with Voxel51  
 ├── teacher.py                # WORKFLOW: Training teacher model with labeled data   
-├── config/                   # Local configuration files
+├── config/                   # Local configuration files  
 ├── utils/                    # Utility functions 
 ├── scripts/                  # Experiments and one-time operations  
 ├── logs/                     # Default storage for logs  
-├── datasets/                 # Default storage for datasets
-├── output/                   # Default storage for models, embeddings etc.
+├── datasets/                 # Default storage for datasets  
+├── output/                   # Default storage for models, embeddings etc.  
 ├── docs/                     # pdoc Documentation    
-├── tests/                    # Pytest cases
-├── wandb_runs/               # Entrypoints and configs for WandB experiments
-├── Dockerfile.wand           # Dockerfile for WandB experiments
-├── .github/workflows         # Github Action Workflows
-├── .gitignore                # Ignored files for Git tracking
-├── .gitattributes            # Used to clean Notebooks prior to commits
-├── .gitmodules               # Managing Git submodules
-├── .secret                   # Secret TOKENS (untracked)
+├── tests/                    # Pytest cases  
+├── wandb_runs/               # Entrypoints and configs for WandB experiments  
+├── Dockerfile.wand           # Dockerfile for WandB experiments  
+├── .github/workflows         # Github Action Workflows  
+├── .gitignore                # Ignored files for Git tracking  
+├── .gitattributes            # Used to clean Notebooks prior to commits  
+├── .gitmodules               # Managing Git submodules  
+├── .secret                   # Secret TOKENS (untracked)  
 └── requirements.txt          # pip install -r requirements.txt   
 
 
