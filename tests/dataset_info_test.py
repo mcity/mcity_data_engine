@@ -1,4 +1,4 @@
-from utils.data_loader import load_dataset_info
+from utils.dataset_loader import load_dataset_info
 
 
 def test_load_dataset_info():
