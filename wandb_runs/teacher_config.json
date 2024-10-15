@@ -1,0 +1,21 @@
+{
+    "overrides": {
+        "entry_point": [
+            "python",
+            "wandb_runs/teacher_run.py"
+        ],
+        "run_config": {
+            "batch_size": 8,
+            "epochs": 100,
+            "learning_rate": 5e-5,
+            "weight_decay": 1e-4,
+            "max_grad_norm": 0.01,
+            "v51_dataset_name": "mcity_fisheye_2000",
+            "v51_dataset_splits:": [
+                "train",
+                "val"
+            ],
+            "model_name": "microsoft/conditional-detr-resnet-50"
+        }
+    }
+}
