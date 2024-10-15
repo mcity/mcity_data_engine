@@ -31,36 +31,48 @@ To exclude the output of jupyter notebooks from git tracking, add the following 
 clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --to=notebook --stdin --stdout --log-level=ERROR
 ```
 
-In case there are issues with MongoDB, use ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
-
-Development System Specifications:
-- Ubuntu 24.04.1 LTS
-- Python 3.12.3
-- CUDA Version: 12.4 (RTX 4090)
+> [!NOTE]
+> In case there are issues with MongoDB, use ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
 
 ## Structure
 
+.  
+├── ano_dec.py  
+├── brain.py  
+├── config  
+├── Dockerfile.wandb  
+├── docs  
+├── main.py  
+├── README.md  
+├── requirements.txt  
+├── scripts  
+├── teacher.py  
+├── tests  
+├── utils  
+└── wandb_runs  
+
 .   
-    ├── ano_dec.py              # Anolib: Pixel-wise anomaly detection  
-    ├── brain.py                # Voxel51: Frame-wise analysis of data   
-    ├── config.py               # General config    
-    ├── data_loader/            # Handles dataset loading   
-    │   └── nuscenes-devkit     # Modified devkit for python 3.12   
-    ├── datasets/               # Stores datasets and computed  embeddings  
-    │   └── datasets.yaml       # Dataset related parameters    
-    │   └── embeddings/         # Default storage for computed  embeddings  
-    ├── docs/                   # pdoc Documentation    
-    │   └── index.html          # Documentation entry point     
-    ├── logs/                   # Default storage for logs  
-    ├── main.py                 # Core of the framework     
-    ├── requirements.txt        # pip install -r requirements.txt   
-    ├── scripts/                # Experiments and one-time  operations  
-    ├── tests/                  # Pytest cases  
-    └── utils/                  # Utility functions 
+├── ano_dec.py              # WORKFLOW: Pixel-wise anomaly detection with anomalib  
+├── brain.py                # Voxel51: Frame-wise analysis of data   
+├── teacher.py              # Training teacher model with labeled data   
+├── config.py               # General config    
+├── data_loader/            # Handles dataset loading   
+│   └── nuscenes-devkit     # Modified devkit for python 3.12   
+├── datasets/               # Stores datasets and computed  embeddings  
+│   ├── datasets.yaml       # Dataset related parameters    
+│   └── embeddings/         # Default storage for computed  embeddings  
+├── docs/                   # pdoc Documentation    
+│   └── index.html          # Documentation entry point     
+├── logs/                   # Default storage for logs  
+├── main.py                 # Core of the framework     
+├── requirements.txt        # pip install -r requirements.txt   
+├── scripts/                # Experiments and one-time  operations  
+├── tests/                  # Pytest cases  
+└── utils/                  # Utility functions 
 
 ## Documentation
 
-Open the [docs/index.html](./docs/index.html) file locally with your browser to see the API documentation. The documentation is updated automatically with Github Actions, generating pull requests.
+Open the [docs/index.html](./docs/index.html) file locally with your browser to see the API documentation. The documentation is updated automatically by pdoc with Github Actions, generating pull requests.
 
 ## Training
 
@@ -83,22 +95,13 @@ In order to execute jobs, the [following tools](https://catalog.ngc.nvidia.com/o
 - [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 - [GitHub Authentication Caching](https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git) with SSH
 
-To launch a job, make sure, an [active agent](https://wandb.ai/mcity/launch/UnVuUXVldWU6NDQ0OTE4MA==/agents) is running in a terminal. Adapt the [config](https://wandb.ai/mcity/launch/UnVuUXVldWU6NDQ0OTE4MA==/config) as necessary. Then, run
+To launch a job on your machine with Docker, an [active agent](https://wandb.ai/mcity/launch/UnVuUXVldWU6NDQ0OTE4MA==/agents) needs to be running in a terminal. Adapt the [config](https://wandb.ai/mcity/launch/UnVuUXVldWU6NDQ0OTE4MA==/config) as necessary. Then, run
 
 ```
 wandb launch --uri "git@github.com:daniel-bogdoll/mcity_data_engine.git" --job-name <name-run> --project mcity-data-engine --entry-point "python main.py" --dockerfile Dockerfile.wandb --queue data-engine
 ```
 
-### Docker Container
-
-To use the [```launch_add```](https://docs.wandb.ai/ref/python/launch-library/launch_add/) Python API of Weights and Biases, a docker image on [Docker Hub](https://hub.docker.com/r/dbogdollresearch/mcity_data_engine) is necessary. ```dbogdollresearch/mcity_data_engine:latest``` is already vaialble. You can build and push the ```Dockerfile.wandb``` with the following commands, if you want to update it:
-
-```
-docker build -t mcity_data_engine -f Dockerfile.wandb .
-docker login
-docker tag mcity_data_engine dbogdollresearch/mcity_data_engine:latest
-docker push dbogdollresearch/mcity_data_engine:latest
-```
+Locally, you will need to clean up old docker images once in a while. Run ```docker image prune --all --filter until=48h``` to delete docker images older than 48 hours.
 
 ## Datasets
 
