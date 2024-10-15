@@ -121,58 +121,24 @@ class TorchToHFDatasetCOCO:
     A class to convert a PyTorch dataset to a Hugging Face dataset in COCO format.
 
     Attributes:
-        torch_dataset (Dataset): The PyTorch dataset to be converted.
+    -----------
+    torch_dataset : object
+        The PyTorch dataset to be converted.
 
     Methods:
-        convert():
-            Converts the PyTorch dataset to a Hugging Face dataset.
-        
-        gen_factory(dataset, split_name):
-            Generates a generator function for a specific split of the dataset.
-        
-        create_target(sample, dataset, idx):
-            Creates the target dictionary for a given sample.
-    """
+    --------
+    __init__(torch_dataset):
+        Initializes the TorchToHFDatasetCOCO with a PyTorch dataset.
 
-        """
-        Initializes the TorchToHFDatasetCOCO with the given PyTorch dataset.
-
-        Args:
-            torch_dataset (Dataset): The PyTorch dataset to be converted.
-        """
-
-        """
+    convert():
         Converts the PyTorch dataset to a Hugging Face dataset.
 
-        Returns:
-            dict: A dictionary where keys are split names and values are Hugging Face datasets.
-        """
+    gen_factory(dataset, split_name):
+        Creates a generator function for a specific split of the dataset.
 
-        """
-        Generates a generator function for a specific split of the dataset.
-
-        Args:
-            dataset (Dataset): The PyTorch dataset.
-            split_name (str): The name of the split.
-
-        Returns:
-            function: A generator function that yields samples for the specified split.
-        """
-
-
-
-        """
-        Creates the target dictionary for a given sample.
-
-        Args:
-            sample (Sample): A sample from the dataset.
-            dataset (Dataset): The PyTorch dataset.
-            idx (int): The index of the sample.
-
-        Returns:
-            dict: A dictionary containing bounding boxes, labels, image ID, area, and iscrowd information.
-        """
-
+    create_target(sample, dataset, idx):
+        Creates the target dictionary for a given sample in the dataset.
+    """
 
     def __init__(self, torch_dataset):
         self.torch_dataset = torch_dataset
