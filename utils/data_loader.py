@@ -132,6 +132,23 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
 
 
 class TorchToHFDatasetCOCO:
+    """
+    A class to convert a PyTorch dataset to a Hugging Face dataset in COCO format.
+
+    Attributes:
+    -----------
+    torch_dataset : object
+        The PyTorch dataset to be converted.
+
+    Methods:
+    --------
+    __init__(torch_dataset):
+        Initializes the TorchToHFDatasetCOCO with a PyTorch dataset.
+
+    convert():
+        Converts the PyTorch dataset to a Hugging Face dataset.
+    """
+
     split_mapping = {
         "train": Split.TRAIN,
         "test": Split.TEST,
@@ -141,14 +158,6 @@ class TorchToHFDatasetCOCO:
 
     def __init__(self, torch_dataset):
         self.torch_dataset = torch_dataset
-        self._inspect_torch_dataset()
-
-    def _inspect_torch_dataset(self):
-        logging.warning("Inspecting torch_dataset attributes:")
-        for attr in dir(self.torch_dataset):
-            if not attr.startswith("__"):
-                value = getattr(self.torch_dataset, attr)
-                logging.warning(f"{attr}: {type(value)}")
 
     def convert(self):
         splits = self.torch_dataset.get_splits()
