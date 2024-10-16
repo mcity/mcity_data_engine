@@ -53,12 +53,12 @@ def get_wandb_conf(config, value):
 #    )
 #
 #
-def launch_to_queue_terminal(name, project, config_file):
+def launch_to_queue_terminal(name, project, config_file, entry_point):
     uri = WANDB_CONFIG["github"]
     entity = WANDB_CONFIG["entity"]
     queue_name = WANDB_CONFIG["queue"]
     docker = WANDB_CONFIG["docker_file"]
-    entry_point = "python wandb_runs/anomalib_run.py"
+    entry_point = entry_point[0] + "/" + entry_point[1]
 
     command = (
         f"wandb launch "
