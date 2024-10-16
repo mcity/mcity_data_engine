@@ -162,12 +162,9 @@ class TorchToHFDatasetCOCO:
         return hf_dataset
 
     def _gen_factory(self, split_name):
-        # Extract necessary data from self.torch_dataset
         img_paths = self.torch_dataset.img_paths
         gt_field = self.torch_dataset.gt_field
         labels_map_rev = self.torch_dataset.labels_map_rev
-
-        # Extract samples data
         samples_data = {
             img_path: {
                 "tags": sample.tags,
@@ -177,21 +174,21 @@ class TorchToHFDatasetCOCO:
             for img_path, sample in self.torch_dataset.samples.items()
         }
 
-        def _gen():
-            for idx, img_path in enumerate(img_paths):
-                sample_data = samples_data[img_path]
-                split = sample_data["tags"][0]
-                if split != split_name:
-                    continue
+        return self._gen, (img_paths, samples_data, labels_map_rev, split_name)
 
-                target = self._create_target(sample_data, labels_map_rev, idx)
-                yield {
-                    "image": img_path,
-                    "target": target,
-                    "split": split,
-                }
+    def _gen(self, img_paths, samples_data, labels_map_rev, split_name):
+        for idx, img_path in enumerate(img_paths):
+            sample_data = samples_data[img_path]
+            split = sample_data["tags"][0]
+            if split != split_name:
+                continue
 
-        return _gen
+            target = self._create_target(sample_data, labels_map_rev, idx)
+            yield {
+                "image": img_path,
+                "target": target,
+                "split": split,
+            }
 
     def _create_target(self, sample_data, labels_map_rev, idx):
         detections = sample_data["detections"]
