@@ -8,15 +8,15 @@
             "batch_size": 8,
             "epochs": 100,
             "early_stop_patience": 10,
-            "learning_rate": 5e-5,
-            "weight_decay": 1e-4,
+            "learning_rate": 5e-05,
+            "weight_decay": 0.0001,
             "max_grad_norm": 0.01,
             "v51_dataset_name": "mcity_fisheye_2000",
             "v51_dataset_splits:": [
                 "train",
                 "val"
             ],
-            "model_name": "microsoft/conditional-detr-resnet-50"
+            "model_name": "facebook/detr-resnet-50"
         }
     }
 }
