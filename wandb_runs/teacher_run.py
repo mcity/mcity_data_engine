@@ -28,7 +28,10 @@ def main():
         )
 
     # Train with Huggingface Trainer
-    teacher = Teacher(dataset, dataset_info, config)
+    teacher = Teacher(
+        dataset=dataset,
+        config=config,
+    )
     teacher.train()
 
 
