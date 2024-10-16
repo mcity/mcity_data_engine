@@ -151,10 +151,12 @@ def main(args):
                     json.dump(config, file, indent=4)
 
                 # Add job to queue
+                wandb_entry_point = config["overrides"]["entry_point"]
                 launch_to_queue_terminal(
                     name="Anomalib_" + SELECTED_DATASET + "_" + MODEL_NAME,
                     project=wandb_project,
                     config_file=config_file_path,
+                    entry_point=wandb_entry_point,
                 )
 
     elif SELECTED_WORKFLOW == "train_teacher":
@@ -193,11 +195,13 @@ def main(args):
                 with open(config_file_path, "w") as file:
                     json.dump(config, file, indent=4)
 
+                wandb_entry_point = config["overrides"]["entry_point"]
                 # Add job to queue
                 launch_to_queue_terminal(
                     name="Teacher_" + SELECTED_DATASET + "_" + MODEL_NAME,
                     project=wandb_project,
                     config_file=config_file_path,
+                    entry_point=wandb_entry_point,
                 )
 
     else:
