@@ -71,7 +71,7 @@ def transform_batch(examples, image_processor, return_pixel_mask=False):
 
 
 class Teacher:
-    def __init__(self, dataset, dataset_info, config, wandb_project):
+    def __init__(self, dataset, config):
         self.dataset = dataset
         self.config = config
         self.model_name = config["model_name"]
