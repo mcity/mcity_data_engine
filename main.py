@@ -137,8 +137,6 @@ def main(args):
                     dataset=dataset,
                     dataset_info=dataset_info,
                     config=config,
-                    wandb_run=run,
-                    wandb_project=wandb_project,
                 )
                 ano_dec.train_and_export_model()
                 ano_dec.run_inference()
@@ -183,10 +181,8 @@ def main(args):
 
                 run.tags += (config["v51_dataset_name"], config["model_name"], "local")
                 teacher = Teacher(
-                    dataset,
-                    dataset_info,
-                    config,
-                    wandb_project,
+                    dataset=dataset,
+                    config=config,
                 )
 
                 teacher.train()
