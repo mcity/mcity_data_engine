@@ -30,8 +30,8 @@ def main():
         )
 
     # Train with Huggingface Trainer
-    ano_dec = Teacher(dataset, dataset_info, config)
-    ano_dec.train_and_export_model()
+    teacher = Teacher(dataset, dataset_info, config)
+    teacher.train()
 
 
 if __name__ == "__main__":
