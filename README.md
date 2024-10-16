@@ -106,21 +106,7 @@ HF_TOKEN=<YOUR_HF_TOKEN>
 [Secret in Github Action](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) with the same name and content as above.
 
 
-### [MARS](https://ai4ce.github.io/MARS/)
-Make sure you have entered your [SSH key at huggingface](https://huggingface.co/settings/keys). Download the dataset with
 
-```
-sudo apt-get install git-lfs
-git lfs install
-git clone git@hf.co:datasets/ai4ce/MARS
-```
-
-If not installed yet, install the nuscenes-devkit with
-
-```
-cd data_loader/nuscenes-devkit
-pip install .
-```
 
 ### Mcity Fisheye 2000 (labeled)
 
@@ -138,6 +124,28 @@ cd datasets
 scp -r <uniqname>@lighthouse.arc-ts.umich.edu:/nfs/turbo/coe-mcity/tinghanw/midadv_swinl_label_veh_0p3_ped_0p3_2023q4_yolov8_format_v2 .
 ```
 
+### Mcity Fisheye Anomalies: Pedestrians
+This dataset is based on the ```Mcity Fisheye 2000 (labeled)``` dataset. It computes the splits newly with a ```train``` split that does not contain any pedestrians, and a ```val``` split which has pedestrians on every frame. This way, pedestrians can be treated as anomalies. It was first designed to evaluate the Anomalib library.
+
+
 ### Fisheye 8k
+Follow the instructions from the [MoyoG/FishEye8K repository](https://github.com/MoyoG/FishEye8K) to download the dataset. Afterwards, delete intermediate folders, such that the ```test``` and ```train``` folders are at the root level of the dataset folder. Scripts are designed for the dataset version ```Fisheye8K_all_including_train&test_update_2024Jan Update.zip```.
+
+
+### [MARS](https://ai4ce.github.io/MARS/)
+Make sure you have entered your [SSH key at huggingface](https://huggingface.co/settings/keys). Download the dataset with
+
+```
+sudo apt-get install git-lfs
+git lfs install
+git clone git@hf.co:datasets/ai4ce/MARS
+```
+
+If not installed yet, install the nuscenes-devkit with
+
+```
+cd data_loader/nuscenes-devkit
+pip install .
+```
 
 

@@ -80,8 +80,6 @@ def main(args):
     if args.run_mode == "local":
         signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
 
-        # Move results from remote Docker runs to local folder
-
         # Load the selected dataset
         dataset_info = load_dataset_info(SELECTED_DATASET)
 
@@ -205,8 +203,6 @@ def main(args):
             str(SELECTED_WORKFLOW)
             + " is not a valid workflow. Check _WORKFLOWS_ in config.py."
         )
-
-    # Create layout for the web interface
 
     # Launch V51 session
     if args.run_mode == "local":
