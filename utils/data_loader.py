@@ -166,12 +166,12 @@ class TorchToHFDatasetCOCO:
         gt_field = self.torch_dataset.gt_field
         labels_map_rev = self.torch_dataset.labels_map_rev
         samples_data = {
-            img_path: {
+            sample.filepath: {
                 "tags": sample.tags,
                 "metadata": sample.metadata,
                 "detections": sample[gt_field].detections,
             }
-            for img_path, sample in self.torch_dataset.samples.items()
+            for sample in self.torch_dataset.samples.iter_samples()
         }
 
         return self._gen, (img_paths, samples_data, labels_map_rev, split_name)
