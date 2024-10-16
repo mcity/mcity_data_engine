@@ -181,8 +181,7 @@ def main(args):
                 wandb_project,
             )
 
-            finetune = True
-            teacher.train(finetune)
+            teacher.train()
 
     else:
         logging.error(

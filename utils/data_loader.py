@@ -57,9 +57,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         if not self.classes:
             # Get list of distinct labels that exist in the view
             self.classes = self.samples.distinct("%s.detections.label" % gt_field)
-
-        if self.classes[0] != "background":
-            self.classes = ["background"] + self.classes
+        logging.warning(self.classes)
 
         self.labels_map_rev = {c: i for i, c in enumerate(self.classes)}
 
@@ -82,7 +80,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
                 category_id=category_id,
             )
             x, y, w, h = coco_obj.bbox
-            boxes.append([x, y, x + w, y + h])
+            boxes.append([x, y, w, h])
             labels.append(coco_obj.category_id)
             area.append(coco_obj.area)
             iscrowd.append(coco_obj.iscrowd)
@@ -177,22 +175,14 @@ class TorchToHFDatasetCOCO:
         metadata = sample.metadata
         detections = sample[dataset.gt_field].detections
 
-        boxes = [
-            [
-                det.bounding_box[0],
-                det.bounding_box[1],
-                det.bounding_box[0] + det.bounding_box[2],
-                det.bounding_box[1] + det.bounding_box[3],
-            ]
-            for det in detections
-        ]
+        boxes = [det.bounding_box for det in detections]
         labels = [dataset.labels_map_rev[det.label] for det in detections]
         area = [det.bounding_box[2] * det.bounding_box[3] for det in detections]
         iscrowd = [0 for _ in detections]  # Assuming iscrowd is not available
 
         return {
-            "boxes": boxes,
-            "labels": labels,
+            "bbox": boxes,
+            "category_id": labels,
             "image_id": idx,
             "area": area,
             "iscrowd": iscrowd,
