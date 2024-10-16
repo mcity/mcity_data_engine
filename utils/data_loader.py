@@ -172,13 +172,16 @@ class TorchToHFDatasetCOCO:
 
     def _gen_factory(self, split_name):
         def _gen():
-            for idx, img_path in enumerate(self.torch_dataset.img_paths):
-                sample = self.torch_dataset.samples[img_path]
+            torch_dataset = (
+                self.torch_dataset
+            )  # Localize the dataset to avoid pickling issues
+            for idx, img_path in enumerate(torch_dataset.img_paths):
+                sample = torch_dataset.samples[img_path]
                 split = sample.tags[0]
                 if split != split_name:
                     continue
 
-                target = self._create_target(sample, self.torch_dataset, idx)
+                target = self._create_target(sample, torch_dataset, idx)
                 yield {
                     "image": img_path,
                     "target": target,
