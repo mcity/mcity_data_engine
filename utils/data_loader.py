@@ -154,54 +154,56 @@ class TorchToHFDatasetCOCO:
         splits = self.torch_dataset.get_splits()
         hf_dataset = {
             self.split_mapping[split]: Dataset.from_generator(
-                self._gen_factory(split),
+                gen_factory(self.torch_dataset, split),
                 split=self.split_mapping[split],
             )
             for split in splits
         }
         return hf_dataset
 
-    def _gen_factory(self, split_name):
-        img_paths = self.torch_dataset.img_paths
-        gt_field = self.torch_dataset.gt_field
-        labels_map_rev = self.torch_dataset.labels_map_rev
-        samples_data = {
-            sample.filepath: {
-                "tags": sample.tags,
-                "metadata": sample.metadata,
-                "detections": sample[gt_field].detections,
-            }
-            for sample in self.torch_dataset.samples.iter_samples()
+
+def gen_factory(torch_dataset, split_name):
+    img_paths = torch_dataset.img_paths
+    gt_field = torch_dataset.gt_field
+    labels_map_rev = torch_dataset.labels_map_rev
+    samples_data = {
+        sample.filepath: {
+            "tags": sample.tags,
+            "metadata": sample.metadata,
+            "detections": sample[gt_field].detections,
         }
+        for sample in torch_dataset.samples.iter_samples()
+    }
 
-        return self._gen, (img_paths, samples_data, labels_map_rev, split_name)
-
-    def _gen(self, img_paths, samples_data, labels_map_rev, split_name):
+    def _gen():
         for idx, img_path in enumerate(img_paths):
             sample_data = samples_data[img_path]
             split = sample_data["tags"][0]
             if split != split_name:
                 continue
 
-            target = self._create_target(sample_data, labels_map_rev, idx)
+            target = create_target(sample_data, labels_map_rev, idx)
             yield {
                 "image": img_path,
                 "target": target,
                 "split": split,
             }
 
-    def _create_target(self, sample_data, labels_map_rev, idx):
-        detections = sample_data["detections"]
+    return _gen
 
-        boxes = [det.bounding_box for det in detections]
-        labels = [labels_map_rev[det.label] for det in detections]
-        area = [det.bounding_box[2] * det.bounding_box[3] for det in detections]
-        iscrowd = [0 for _ in detections]
 
-        return {
-            "bbox": boxes,
-            "category_id": labels,
-            "image_id": idx,
-            "area": area,
-            "iscrowd": iscrowd,
-        }
+def create_target(sample_data, labels_map_rev, idx):
+    detections = sample_data["detections"]
+
+    boxes = [det.bounding_box for det in detections]
+    labels = [labels_map_rev[det.label] for det in detections]
+    area = [det.bounding_box[2] * det.bounding_box[3] for det in detections]
+    iscrowd = [0 for _ in detections]
+
+    return {
+        "bbox": boxes,
+        "category_id": labels,
+        "image_id": idx,
+        "area": area,
+        "iscrowd": iscrowd,
+    }
