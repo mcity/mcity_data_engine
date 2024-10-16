@@ -1,8 +1,6 @@
 from teacher import Teacher
 from utils.dataset_loader import *
 
-from config.config import WANDB_CONFIG
-
 import wandb
 import logging
 
@@ -17,7 +15,7 @@ def main():
     )
     config = wandb.config
 
-    run.tags += (config["v51_dataset_name"], config["model_name"])
+    run.tags += (config["v51_dataset_name"], config["model_name"], "docker")
     dataset_name = config["v51_dataset_name"]
     dataset_info = load_dataset_info(dataset_name)
     if dataset_info:

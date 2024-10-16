@@ -1,8 +1,6 @@
 from ano_dec import Anodec
 from utils.dataset_loader import *
 
-from config.config import WANDB_CONFIG
-
 import wandb
 import logging
 
