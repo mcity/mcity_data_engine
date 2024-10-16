@@ -146,6 +146,7 @@ class Teacher:
             num_train_epochs=self.config["epochs"],
             fp16=False,
             per_device_train_batch_size=self.config["batch_size"],
+            auto_find_batch_size=True,  # Automates the lowering process if CUDA OOM
             dataloader_num_workers=NUM_WORKERS,
             learning_rate=self.config["learning_rate"],
             lr_scheduler_type="cosine",
