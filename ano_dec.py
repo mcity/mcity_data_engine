@@ -30,19 +30,13 @@ class Anodec:
         dataset,
         dataset_info,
         config,
-        wandb_run,
         anomalib_output_root="./output/models/anomalib/",
-        wandb_project="Data Engine Anomalib",
-        wandb_group="Anomalib",
     ):
-        self.wandb_run = wandb_run
         self.config = config
         torch.set_float32_matmul_precision(
             "medium"
         )  # Utilize Tensor core, came in warning
         self.dataset = dataset
-        self.wandb_project = wandb_project
-        self.wandb_group = wandb_group
         self.normal_data = dataset.match_tags("train")
         self.abnormal_data = dataset.match_tags("val")
         self.brains = dataset.list_brain_runs()
