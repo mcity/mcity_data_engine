@@ -12,6 +12,7 @@ from config.config import (
     SELECTED_DATASET,
     V51_EMBEDDING_MODELS,
     ANOMALIB_IMAGE_MODELS,
+    WORKFLOWS,
 )
 
 from tqdm import tqdm
@@ -157,31 +158,47 @@ def main(args):
                 )
 
     elif SELECTED_WORKFLOW == "train_teacher":
-        if args.run_mode == "local":
-            wandb_project = "Data Engine Teacher"
-            config_file_path = "wandb_runs/teacher_config.json"
-            with open(config_file_path, "r") as file:
-                config = json.load(file)
+        teacher_models = WORKFLOWS["train_teacher"]["hf_models"]
+        wandb_project = "Data Engine Teacher"
+        config_file_path = "wandb_runs/teacher_config.json"
+        with open(config_file_path, "r") as file:
+            config = json.load(file)
 
-            run = wandb.init(
-                allow_val_change=True,
-                sync_tensorboard=True,
-                group="Teacher",
-                job_type="train",
-                config=config,
-                project=wandb_project,
-            )
-            config = wandb.config["overrides"]["run_config"]
+        for MODEL_NAME in (pbar := tqdm(teacher_models, desc="Teacher Models")):
+            pbar.set_description("Training/Loading Teacher model " + MODEL_NAME)
+            config["overrides"]["run_config"]["model_name"] = MODEL_NAME
+            if args.run_mode == "local":
 
-            run.tags += (config["v51_dataset_name"], config["model_name"], "local")
-            teacher = Teacher(
-                dataset,
-                dataset_info,
-                config,
-                wandb_project,
-            )
+                run = wandb.init(
+                    allow_val_change=True,
+                    sync_tensorboard=True,
+                    group="Teacher",
+                    job_type="train",
+                    config=config,
+                    project=wandb_project,
+                )
+                config = wandb.config["overrides"]["run_config"]
 
-            teacher.train()
+                run.tags += (config["v51_dataset_name"], config["model_name"], "local")
+                teacher = Teacher(
+                    dataset,
+                    dataset_info,
+                    config,
+                    wandb_project,
+                )
+
+                teacher.train()
+            elif args.run_mode == "wandb":
+                # Update config file
+                with open(config_file_path, "w") as file:
+                    json.dump(config, file, indent=4)
+
+                # Add job to queue
+                launch_to_queue_terminal(
+                    name="Teacher_" + SELECTED_DATASET + "_" + MODEL_NAME,
+                    project=wandb_project,
+                    config_file=config_file_path,
+                )
 
     else:
         logging.error(
