@@ -114,39 +114,21 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         return splits
 
 
-def gen_factory(dataset, split_name):
-    def gen():
-        for idx, img_path in enumerate(dataset.img_paths):
-            sample = dataset.samples[img_path]
-            split = sample.tags[0]
-            if split != split_name:
-                continue
-
-            target = create_target(sample, dataset, idx)
-            yield {
-                "image": img_path,
-                "target": target,
-                "split": split,
-            }
-
-    return gen
-
-
-def create_target(sample, dataset, idx):
-    detections = sample[dataset.gt_field].detections
-
-    boxes = [det.bounding_box for det in detections]
-    labels = [dataset.labels_map_rev[det.label] for det in detections]
-    area = [det.bounding_box[2] * det.bounding_box[3] for det in detections]
-    iscrowd = [0 for _ in detections]  # Assuming iscrowd is not available
-
-    return {
-        "bbox": boxes,
-        "category_id": labels,
-        "image_id": idx,
-        "area": area,
-        "iscrowd": iscrowd,
-    }
+# def create_target(sample, dataset, idx):
+#    detections = sample[dataset.gt_field].detections
+#
+#    boxes = [det.bounding_box for det in detections]
+#    labels = [dataset.labels_map_rev[det.label] for det in detections]
+#    area = [det.bounding_box[2] * det.bounding_box[3] for det in detections]
+#    iscrowd = [0 for _ in detections]  # Assuming iscrowd is not available
+#
+#    return {
+#        "bbox": boxes,
+#        "category_id": labels,
+#        "image_id": idx,
+#        "area": area,
+#        "iscrowd": iscrowd,
+#    }
 
 
 class TorchToHFDatasetCOCO:
@@ -181,12 +163,27 @@ class TorchToHFDatasetCOCO:
         splits = self.torch_dataset.get_splits()
         hf_dataset = {
             self.split_mapping[split]: Dataset.from_generator(
-                gen_factory(self.torch_dataset, split),
+                self._gen,
+                gen_kwargs={"dataset": self.torch_dataset, "split_name": split},
                 split=self.split_mapping[split],
             )
             for split in splits
         }
         return hf_dataset
+
+    def _gen(self, split_name):
+        for idx, img_path in enumerate(self.torch_dataset.img_paths):
+            sample = self.torch_dataset.samples[img_path]
+            split = sample.tags[0]
+            if split != split_name:
+                continue
+
+            target = self._create_target(sample, self.torch_dataset, idx)
+            yield {
+                "image": img_path,
+                "target": target,
+                "split": split,
+            }
 
     def _create_target(self, sample, dataset, idx):
         metadata = sample.metadata
