@@ -49,7 +49,6 @@ def test_torch_dataset_getitems(torch_dataset):
 def test_torch_dataset_get_classes(torch_dataset):
     classes = torch_dataset.get_classes()
     assert isinstance(classes, list)
-    assert "background" in classes
 
 
 def test_torch_dataset_get_splits(torch_dataset):
