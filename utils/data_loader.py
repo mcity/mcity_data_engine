@@ -163,27 +163,29 @@ class TorchToHFDatasetCOCO:
         splits = self.torch_dataset.get_splits()
         hf_dataset = {
             self.split_mapping[split]: Dataset.from_generator(
-                self._gen,
-                gen_kwargs={"dataset": self.torch_dataset, "split_name": split},
+                self._gen_factory(split),
                 split=self.split_mapping[split],
             )
             for split in splits
         }
         return hf_dataset
 
-    def _gen(self, split_name):
-        for idx, img_path in enumerate(self.torch_dataset.img_paths):
-            sample = self.torch_dataset.samples[img_path]
-            split = sample.tags[0]
-            if split != split_name:
-                continue
+    def _gen_factory(self, split_name):
+        def _gen():
+            for idx, img_path in enumerate(self.torch_dataset.img_paths):
+                sample = self.torch_dataset.samples[img_path]
+                split = sample.tags[0]
+                if split != split_name:
+                    continue
 
-            target = self._create_target(sample, self.torch_dataset, idx)
-            yield {
-                "image": img_path,
-                "target": target,
-                "split": split,
-            }
+                target = self._create_target(sample, self.torch_dataset, idx)
+                yield {
+                    "image": img_path,
+                    "target": target,
+                    "split": split,
+                }
+
+        return _gen
 
     def _create_target(self, sample, dataset, idx):
         metadata = sample.metadata
