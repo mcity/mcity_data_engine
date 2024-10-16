@@ -4,8 +4,11 @@ from utils.dataset_loader import *
 import wandb
 import logging
 
+from utils.logging import configure_logging
+
 
 def main():
+    configure_logging()
     # Get dataset with Voxel51
     run = wandb.init(
         allow_val_change=True,
