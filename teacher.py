@@ -153,7 +153,6 @@ class Teacher:
             weight_decay=self.config["weight_decay"],
             max_grad_norm=self.config["max_grad_norm"],
             metric_for_best_model="eval_loss",  # eval_map,
-            greater_is_better=True,
             load_best_model_at_end=True,
             eval_strategy="epoch",
             save_strategy="epoch",
