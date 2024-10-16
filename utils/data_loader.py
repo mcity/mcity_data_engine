@@ -132,23 +132,6 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
 
 
 class TorchToHFDatasetCOCO:
-    """
-    A class to convert a PyTorch dataset to a Hugging Face dataset in COCO format.
-
-    Attributes:
-    -----------
-    torch_dataset : object
-        The PyTorch dataset to be converted.
-
-    Methods:
-    --------
-    __init__(torch_dataset):
-        Initializes the TorchToHFDatasetCOCO with a PyTorch dataset.
-
-    convert():
-        Converts the PyTorch dataset to a Hugging Face dataset.
-    """
-
     split_mapping = {
         "train": Split.TRAIN,
         "test": Split.TEST,
@@ -163,25 +146,28 @@ class TorchToHFDatasetCOCO:
         splits = self.torch_dataset.get_splits()
         hf_dataset = {
             self.split_mapping[split]: Dataset.from_generator(
-                self._gen_factory(split),
+                self._gen_factory(
+                    split,
+                    self.torch_dataset.img_paths,
+                    self.torch_dataset.samples,
+                    self.torch_dataset.gt_field,
+                    self.torch_dataset.labels_map_rev,
+                ),
                 split=self.split_mapping[split],
             )
             for split in splits
         }
         return hf_dataset
 
-    def _gen_factory(self, split_name):
+    def _gen_factory(self, split_name, img_paths, samples, gt_field, labels_map_rev):
         def _gen():
-            torch_dataset = (
-                self.torch_dataset
-            )  # Localize the dataset to avoid pickling issues
-            for idx, img_path in enumerate(torch_dataset.img_paths):
-                sample = torch_dataset.samples[img_path]
+            for idx, img_path in enumerate(img_paths):
+                sample = samples[img_path]
                 split = sample.tags[0]
                 if split != split_name:
                     continue
 
-                target = self._create_target(sample, torch_dataset, idx)
+                target = self._create_target(sample, gt_field, labels_map_rev, idx)
                 yield {
                     "image": img_path,
                     "target": target,
@@ -190,14 +176,14 @@ class TorchToHFDatasetCOCO:
 
         return _gen
 
-    def _create_target(self, sample, dataset, idx):
+    def _create_target(self, sample, gt_field, labels_map_rev, idx):
         metadata = sample.metadata
-        detections = sample[dataset.gt_field].detections
+        detections = sample[gt_field].detections
 
         boxes = [det.bounding_box for det in detections]
-        labels = [dataset.labels_map_rev[det.label] for det in detections]
+        labels = [labels_map_rev[det.label] for det in detections]
         area = [det.bounding_box[2] * det.bounding_box[3] for det in detections]
-        iscrowd = [0 for _ in detections]  # Assuming iscrowd is not available
+        iscrowd = [0 for _ in detections]
 
         return {
             "bbox": boxes,
