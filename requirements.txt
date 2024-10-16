@@ -278,7 +278,7 @@ torchvision==0.19.1+cu124
 tornado==6.4.1
 tqdm==4.66.5
 traitlets==5.14.3
-transformers==4.45.0
+transformers==4.45.2
 triton==3.0.0
 typeshed_client==2.7.0
 typing_extensions==4.12.2
