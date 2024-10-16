@@ -58,7 +58,7 @@ def launch_to_queue_terminal(name, project, config_file, entry_point):
     entity = WANDB_CONFIG["entity"]
     queue_name = WANDB_CONFIG["queue"]
     docker = WANDB_CONFIG["docker_file"]
-    entry_point = entry_point[0] + "/" + entry_point[1]
+    entry_point = entry_point[0] + " " + entry_point[1]
 
     command = (
         f"wandb launch "
