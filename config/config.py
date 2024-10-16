@@ -63,7 +63,14 @@ WORKFLOWS = {
     "brain_selection": {},
     "learn_normality": {},
     "train_teacher": {
-        "hf_models": ["microsoft/conditional-detr-resnet-50", "facebook/detr-resnet-50"]
+        "hf_models": [
+            "microsoft/conditional-detr-resnet-50",
+            "facebook/detr-resnet-50",
+            "SenseTime/deformable-detr",
+            "microsoft/conditional-detr-resnet-50",
+            "PekingU/rtdetr_r50vd",
+            "zongzhuofan/co-detr-vit-large-coco",
+        ]
     },
 }
 
