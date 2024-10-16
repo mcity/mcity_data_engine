@@ -15,6 +15,7 @@ from transformers import (
     AutoModelForObjectDetection,
     TrainingArguments,
     Trainer,
+    EarlyStoppingCallback,
 )
 
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
@@ -161,6 +162,11 @@ class Teacher:
             push_to_hub=False,
         )
 
+        early_stopping_callback = EarlyStoppingCallback(
+            early_stopping_patience=self.config["early_stop_patience"],
+            early_stopping_threshold=0.0,
+        )
+
         trainer = Trainer(
             model=model,
             args=training_args,
@@ -168,6 +174,7 @@ class Teacher:
             eval_dataset=hf_dataset[Split.VALIDATION],
             tokenizer=image_processor,
             data_collator=self.collate_fn,
+            callbacks=[early_stopping_callback],
             # compute_metrics=eval_compute_metrics_fn,
         )
 
