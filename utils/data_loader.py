@@ -57,7 +57,6 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         if not self.classes:
             # Get list of distinct labels that exist in the view
             self.classes = self.samples.distinct("%s.detections.label" % gt_field)
-        logging.warning(self.classes)
 
         self.labels_map_rev = {c: i for i, c in enumerate(self.classes)}
 
@@ -115,6 +114,41 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         return splits
 
 
+def gen_factory(dataset, split_name):
+    def gen():
+        for idx, img_path in enumerate(dataset.img_paths):
+            sample = dataset.samples[img_path]
+            split = sample.tags[0]
+            if split != split_name:
+                continue
+
+            target = create_target(sample, dataset, idx)
+            yield {
+                "image": img_path,
+                "target": target,
+                "split": split,
+            }
+
+    return gen
+
+
+def create_target(sample, dataset, idx):
+    detections = sample[dataset.gt_field].detections
+
+    boxes = [det.bounding_box for det in detections]
+    labels = [dataset.labels_map_rev[det.label] for det in detections]
+    area = [det.bounding_box[2] * det.bounding_box[3] for det in detections]
+    iscrowd = [0 for _ in detections]  # Assuming iscrowd is not available
+
+    return {
+        "bbox": boxes,
+        "category_id": labels,
+        "image_id": idx,
+        "area": area,
+        "iscrowd": iscrowd,
+    }
+
+
 class TorchToHFDatasetCOCO:
     """
     A class to convert a PyTorch dataset to a Hugging Face dataset in COCO format.
@@ -147,29 +181,12 @@ class TorchToHFDatasetCOCO:
         splits = self.torch_dataset.get_splits()
         hf_dataset = {
             self.split_mapping[split]: Dataset.from_generator(
-                self._gen_factory(self.torch_dataset, split),
+                gen_factory(self.torch_dataset, split),
                 split=self.split_mapping[split],
             )
             for split in splits
         }
         return hf_dataset
-
-    def _gen_factory(self, dataset, split_name):
-        def gen():
-            for idx, img_path in enumerate(dataset.img_paths):
-                sample = dataset.samples[img_path]
-                split = sample.tags[0]
-                if split != split_name:
-                    continue
-
-                target = self._create_target(sample, dataset, idx)
-                yield {
-                    "image": img_path,
-                    "target": target,
-                    "split": split,
-                }
-
-        return gen
 
     def _create_target(self, sample, dataset, idx):
         metadata = sample.metadata
