@@ -8,7 +8,21 @@ import fiftyone as fo
 
 import logging
 
-from config.config import NUM_WORKERS, PERSISTENT, SELECTED_SPLITS
+from config.config import NUM_WORKERS, PERSISTENT
+
+
+def delete_all_datasets():
+    """
+    Deletes all local V51 datasets.
+
+    This function logs a warning message indicating that all local V51 datasets
+    are being deleted. It then iterates through all the datasets listed by the
+    `fo.list_datasets()` function and deletes each one using the `fo.delete_dataset()`
+    function.
+    """
+    logging.warning("Deleting all local V51 datasets")
+    for dataset_name in fo.list_datasets():
+        fo.delete_dataset(dataset_name)
 
 
 def load_dataset_info(dataset_name, config_path="./config/datasets.yaml"):
@@ -22,6 +36,7 @@ def load_dataset_info(dataset_name, config_path="./config/datasets.yaml"):
     Returns:
         dict or None: A dictionary containing the dataset information if found, otherwise None.
     """
+    logging.info(f"Loaded V51 datasets: {fo.list_datasets()}")
     with open(config_path) as f:
         datasets_config = yaml.safe_load(f)
 
@@ -55,18 +70,13 @@ def load_mcity_fisheye_2000(dataset_info):
     dataset_name = dataset_info["name"]
     dataset_dir = dataset_info["local_path"]
     dataset_type = getattr(fo.types, dataset_info["v51_type"])
-    if SELECTED_SPLITS:
-        dataset_splits = SELECTED_SPLITS
-    else:
-        dataset_splits = dataset_info["v51_splits"]  # Use all available splits
+    dataset_splits = dataset_info["v51_splits"]  # Use all available splits
 
     if PERSISTENT == False:
         try:
             fo.delete_dataset(dataset_info["name"])
         except:
             pass
-
-    logging.info(f"Available V51 datasets: {fo.list_datasets()}")
 
     if dataset_name in fo.list_datasets():
         dataset = fo.load_dataset(dataset_name)
@@ -155,6 +165,95 @@ def process_mcity_fisheye_2000_filename(filename):
             results["timestamp"] = datetime.strptime(timestamp_str, "%Y%m%dT%H%M%S")
         else:
             results["timestamp"] = datetime.strptime(timestamp_str, "%Y-%m-%d_%H-%M-%S")
+    return results
+
+
+def load_fisheye_8k(dataset_info):
+    """
+    Loads a fisheye 8k dataset based on the provided dataset information.
+
+    Args:
+        dataset_info (dict): A dictionary containing the following keys:
+            - "name" (str): The name of the dataset.
+            - "local_path" (str): The local directory path where the dataset is stored.
+            - "v51_type" (str): The type of the dataset as defined in `fo.types`.
+            - "v51_splits" (list): A list of dataset splits to be used.
+
+    Returns:
+        fo.Dataset: The loaded FiftyOne dataset.
+
+    Notes:
+        - If the dataset is not persistent and already exists, it will be deleted.
+        - If the dataset already exists, it will be loaded; otherwise, it will be created and metadata will be computed.
+        - The dataset will be tagged with the split names and additional metadata will be added to each sample.
+    """
+    dataset_name = dataset_info["name"]
+    dataset_dir = dataset_info["local_path"]
+    dataset_type = getattr(fo.types, dataset_info["v51_type"])
+    dataset_splits = dataset_info["v51_splits"]  # Use all available splits
+
+    if PERSISTENT == False:
+        try:
+            fo.delete_dataset(dataset_info["name"])
+        except:
+            pass
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = fo.Dataset(dataset_name)
+        for split in dataset_splits:
+            dataset.add_dir(
+                data_path=os.path.join(dataset_dir, split, "images"),
+                labels_path=os.path.join(dataset_dir, split, f"{split}.json"),
+                dataset_type=dataset_type,
+                tags=split,
+            )
+
+        dataset.compute_metadata(num_workers=NUM_WORKERS)
+
+        view = dataset.view()
+        for sample in view:  # https://docs.voxel51.com/api/fiftyone.core.sample.html
+            metadata = process_fisheye_8k_filename(sample["filepath"])
+            sample["location"] = metadata["location"]
+            sample["time_of_day"] = metadata["time_of_day"]
+            sample.save()
+
+        dataset.persistent = PERSISTENT  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
+    return dataset
+
+
+def process_fisheye_8k_filename(filename):
+    """
+    Process a fisheye 8K filename to extract metadata.
+
+    This function extracts the location and time of day from a given filename.
+    The filename is expected to follow the format: cameraX_T_YYY.png, where:
+    - X is the camera number.
+    - T is the time of day indicator (A for afternoon, E for evening, N for night, M for morning).
+    - YYY is an arbitrary sequence of digits.
+
+    Args:
+        filename (str): The filename to process.
+
+    Returns:
+        dict: A dictionary containing the following keys:
+            - 'filename' (str): The basename of the input filename.
+            - 'location' (str): The location derived from the camera number (e.g., 'camera4' becomes 'cam4').
+            - 'time_of_day' (str or None): The time of day derived from the time of day indicator, or None if the indicator is not recognized.
+    """
+
+    time_of_day_map = {"A": "afternoon", "E": "evening", "N": "night", "M": "morning"}
+
+    filename = os.path.basename(filename)
+    parts = filename.split("_")
+
+    location = parts[0].replace("camera", "cam")
+    time_of_day = time_of_day_map.get(parts[1], None)
+
+    results = {"filename": filename, "location": location, "time_of_day": time_of_day}
+
     return results
 
 
