@@ -114,23 +114,6 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         return splits
 
 
-# def create_target(sample, dataset, idx):
-#    detections = sample[dataset.gt_field].detections
-#
-#    boxes = [det.bounding_box for det in detections]
-#    labels = [dataset.labels_map_rev[det.label] for det in detections]
-#    area = [det.bounding_box[2] * det.bounding_box[3] for det in detections]
-#    iscrowd = [0 for _ in detections]  # Assuming iscrowd is not available
-#
-#    return {
-#        "bbox": boxes,
-#        "category_id": labels,
-#        "image_id": idx,
-#        "area": area,
-#        "iscrowd": iscrowd,
-#    }
-
-
 class TorchToHFDatasetCOCO:
     """
     A class to convert a PyTorch dataset to a Hugging Face dataset in COCO format.
@@ -172,6 +155,26 @@ class TorchToHFDatasetCOCO:
 
 
 def gen_factory(torch_dataset, split_name):
+    """
+    Factory function to create a generator function for the Hugging Face dataset.
+
+    Args:
+    -----
+    torch_dataset : FiftyOneTorchDatasetCOCO
+        The PyTorch dataset to be converted.
+    split_name : str
+        The name of the split to filter the data.
+
+    Returns:
+    --------
+    function
+        A generator function that yields data samples for the specified split.
+
+    Note:
+    -----
+    This function ensures that all objects used within the generator function are picklable.
+    The FiftyOne dataset is iterated to collect sample data, which is then used within the generator function.
+    """
     img_paths = torch_dataset.img_paths
     gt_field = torch_dataset.gt_field
     labels_map_rev = torch_dataset.labels_map_rev
@@ -202,6 +205,23 @@ def gen_factory(torch_dataset, split_name):
 
 
 def create_target(sample_data, labels_map_rev, idx):
+    """
+    Creates a target dictionary for a given sample.
+
+    Args:
+    -----
+    sample_data : dict
+        The data of the sample, including detections and metadata.
+    labels_map_rev : dict
+        A dictionary mapping class names to indices.
+    idx : int
+        The index of the sample.
+
+    Returns:
+    --------
+    dict
+        A dictionary containing bounding boxes, category IDs, image ID, area, and iscrowd flags.
+    """
     detections = sample_data["detections"]
 
     boxes = [det.bounding_box for det in detections]
