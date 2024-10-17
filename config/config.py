@@ -1,7 +1,7 @@
 import os
 
-SELECTED_WORKFLOW = ""  # Selection from WORKFLOWS
-SELECTED_DATASET = "fisheye_8k"  # Choose from datasets.yaml
+SELECTED_WORKFLOW = "train_teacher"  # Selection from WORKFLOWS
+SELECTED_DATASET = "mcity_fisheye_2000"  # Choose from datasets.yaml
 
 PERSISTENT = False  # If V51 database is stored
 
@@ -63,18 +63,18 @@ WORKFLOWS = {
     "learn_normality": {},
     "train_teacher": {
         "hf_models": [
-            "microsoft/conditional-detr-resnet-50",
-            "facebook/detr-resnet-50",
-            "facebook/detr-resnet-101",
-            "SenseTime/deformable-detr",
-            "microsoft/conditional-detr-resnet-50",
-            "PekingU/rtdetr_r50vd",
-            "zongzhuofan/co-detr-vit-large-coco",
-            "jozhang97/deta-swin-large-o365",
-            "danelcsb/grounding-dino-tiny-finetuned-cppe-5-10k-steps",
-            "DaiShiResearch/dino-5scale-transnext-base-coco",
-            "facebook/dinov2-base",
-            "IDEA-Research/grounding-dino-base",
+            # "microsoft/conditional-detr-resnet-50",
+            # "facebook/detr-resnet-50",
+            # "facebook/detr-resnet-101",
+            # "SenseTime/deformable-detr",
+            # "microsoft/conditional-detr-resnet-50",
+            # "PekingU/rtdetr_r50vd",
+            "jozhang97/deta-swin-large",
+            "Ultralytics/YOLOv8",
+            "Ultralytics/YOLO11",
+            "hustvl/yolos-base",
+            "jameslahm/yolov10x",
+            "onnx-community/yolov10x",
         ]
     },
 }
