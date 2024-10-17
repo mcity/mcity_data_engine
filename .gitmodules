@@ -1,3 +1,6 @@
 [submodule "data_loader/nuscenes-devkit"]
 	path = utils/nuscenes-devkit
 	url = https://github.com/daniel-bogdoll/nuscenes-devkit
+[submodule "custom_models/CoDETR/Co-DETR"]
+	path = custom_models/CoDETR/Co-DETR
+	url = git@github.com:daniel-bogdoll/Co-DETR.git
