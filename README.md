@@ -7,6 +7,7 @@
   <img alt="Test Results" src="https://github.com/daniel-bogdoll/mcity_data_engine/actions/workflows/python-app.yml/badge.svg?branch=main"/>
   <img alt="Ubuntu Version" src="https://img.shields.io/badge/Ubuntu-24.04-blue"/>
   <img alt="Python Version" src="https://img.shields.io/badge/Python-3.12-blue"/>
+  <img alt="PyTorch Version" src="https://img.shields.io/badge/PyTorch-2.5-blue"/>
   <img alt="CUDA Version" src="https://img.shields.io/badge/CUDA-12.4-blue"/>
 </p>
 
