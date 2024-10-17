@@ -142,6 +142,7 @@ class Teacher:
         )
 
         training_args = TrainingArguments(
+            run_name=self.model_name,
             output_dir="output/models/teacher/" + self.model_name,
             num_train_epochs=self.config["epochs"],
             fp16=False,
@@ -159,6 +160,7 @@ class Teacher:
             save_total_limit=2,
             remove_unused_columns=False,
             eval_do_concat_batches=False,
+            save_safetensors=False,  # TODO Might have caused error for facebook/deformable-detr-detic
             push_to_hub=False,
         )
 
