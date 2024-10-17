@@ -149,7 +149,7 @@ def main(args):
                 # Add job to queue
                 wandb_entry_point = config["overrides"]["entry_point"]
                 launch_to_queue_terminal(
-                    name="Anomalib_" + SELECTED_DATASET + "_" + MODEL_NAME,
+                    name=MODEL_NAME,
                     project=wandb_project,
                     config_file=config_file_path,
                     entry_point=wandb_entry_point,
@@ -192,7 +192,7 @@ def main(args):
                 wandb_entry_point = config["overrides"]["entry_point"]
                 # Add job to queue
                 launch_to_queue_terminal(
-                    name="Teacher_" + SELECTED_DATASET + "_" + MODEL_NAME,
+                    name=MODEL_NAME,
                     project=wandb_project,
                     config_file=config_file_path,
                     entry_point=wandb_entry_point,
