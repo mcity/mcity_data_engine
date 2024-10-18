@@ -77,6 +77,8 @@ def main(args):
     time_start = time.time()
     configure_logging()
 
+    if args.tags:
+        wandb_tags = args.tags.split(",")
     if args.run_mode == "local":
         signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
 
@@ -223,6 +225,11 @@ if __name__ == "__main__":
         choices=["local", "wandb"],
         default="local",
         help="Run mode: 'local' or 'wandb queue'",
+    )
+    parser.add_argument(
+        "--tags",
+        type=str,
+        help="Comma-separated list of WandB tags",
     )
     args = parser.parse_args()
     main(args)
