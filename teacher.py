@@ -110,7 +110,9 @@ class Teacher:
         pytorch_dataset = FiftyOneTorchDatasetCOCO(self.dataset)
         pt_to_hf_converter = TorchToHFDatasetCOCO(pytorch_dataset)
         hf_dataset = pt_to_hf_converter.convert()
-
+        # TODO AutoProcessor.from_pretrained('onnx-community/yolov10x')
+        # Runs in web? https://github.com/huggingface/transformers.js
+        # import { AutoModel, AutoProcessor, RawImage } from '@huggingface/transformers';
         image_processor = AutoImageProcessor.from_pretrained(
             self.model_name,
             do_resize=False,
@@ -149,7 +151,7 @@ class Teacher:
             type(hf_model_config) in AutoModelForZeroShotObjectDetection._model_mapping
         ):
             run = wandb.run
-            run.tags += "zero-shot"
+            run.tags += ["zero-shot"]
             model = AutoModelForZeroShotObjectDetection.from_pretrained(
                 self.model_name,
                 id2label=self.id2label,
