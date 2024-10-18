@@ -130,7 +130,14 @@ This dataset is based on the ```Mcity Fisheye 2000 (labeled)``` dataset. It comp
 
 
 ### Fisheye 8k
-Follow the instructions from the [MoyoG/FishEye8K repository](https://github.com/MoyoG/FishEye8K) to download the dataset. Afterwards, delete intermediate folders, such that the ```test``` and ```train``` folders are at the root level of the dataset folder. Scripts are designed for the dataset version ```Fisheye8K_all_including_train&test_update_2024Jan Update.zip```.
+Follow the instructions from the [MoyoG/FishEye8K repository](https://github.com/MoyoG/FishEye8K) to download the dataset. Unzip with
+
+```
+sudo apt-get install p7zip-full
+7z x Fisheye8K.zip -o./Fisheye8K
+```
+
+Afterwards, delete intermediate folders, such that the ```test``` and ```train``` folders are at the root level of the dataset folder. Scripts are designed for the dataset version ```Fisheye8K_all_including_train&test_update_2024Jan Update.zip```.
 
 
 ### [MARS](https://ai4ce.github.io/MARS/)
