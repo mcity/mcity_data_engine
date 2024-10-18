@@ -63,18 +63,32 @@ WORKFLOWS = {
     "learn_normality": {},
     "train_teacher": {
         "hf_models": [
-            # "microsoft/conditional-detr-resnet-50",
-            # "facebook/detr-resnet-50",
-            # "facebook/detr-resnet-101",
-            # "SenseTime/deformable-detr",
-            # "microsoft/conditional-detr-resnet-50",
-            # "PekingU/rtdetr_r50vd",
+            "microsoft/conditional-detr-resnet-50",
+            "Omnifact/conditional-detr-resnet-101-dc5",
+            "facebook/detr-resnet-50",
+            "facebook/detr-resnet-50-dc5",
+            "facebook/detr-resnet-101",
+            "facebook/detr-resnet-101-dc5",
+            "facebook/deformable-detr-detic",
+            "facebook/deformable-detr-box-supervised",
+            "SenseTime/deformable-detr",
+            "SenseTime/deformable-detr-with-box-refine-two-stage",
+            "SenseTime/deformable-detr-with-box-refine",
+            "disco-eth/cue-detr",
+            "PekingU/rtdetr_r50vd",
+            "PekingU/rtdetr_r50vd_coco_o365",
             "jozhang97/deta-swin-large",
+            "jozhang97/deta-swin-large-o365",
+            "jozhang97/deta-resnet-50",
             "Ultralytics/YOLOv8",
             "Ultralytics/YOLO11",
             "hustvl/yolos-base",
             "jameslahm/yolov10x",
             "onnx-community/yolov10x",
+            # "IDEA-Research/grounding-dino-tiny",
+            # "google/owlvit-base-patch32",
+            # "google/owlv2-base-patch16-ensemble",
+            # "omlab/omdet-turbo-swin-tiny-hf",
         ]
     },
 }
@@ -83,9 +97,9 @@ WORKFLOWS = {
 WANDB_CONFIG = {
     "docker_image": "dbogdollresearch/mcity_data_engine:latest",
     "docker_file": "Dockerfile.wandb",
-    "queue": "data-engine",
+    "queue": "data-engine",  # TODO Make this a command line argument
     "entity": "mcity",
-    "github": "git@github.com:daniel-bogdoll/mcity_data_engine.git",
+    "github": "git@github.com:daniel-bogdoll/mcity_data_engine.git",  # TODO https might be necessary for jobs on lighthouse
 }
 
 NUM_WORKERS = os.cpu_count()
