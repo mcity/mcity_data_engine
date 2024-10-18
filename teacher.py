@@ -11,7 +11,9 @@ import torch
 
 from config.config import WORKFLOWS
 from transformers import (
+    AutoConfig,
     AutoImageProcessor,
+    AutoModelForZeroShotObjectDetection,
     AutoModelForObjectDetection,
     TrainingArguments,
     Trainer,
@@ -26,6 +28,8 @@ from config.config import NUM_WORKERS
 
 def transform_batch(examples, image_processor, return_pixel_mask=False):
     """Apply format annotations in COCO format for object detection task"""
+    # TODO Include augmentations
+    # https://albumentations.ai/docs/integrations/fiftyone/
 
     images = []
     annotations = []
@@ -132,14 +136,29 @@ class Teacher:
         # Controls whether to convert the annotations to the format expected by the DETR model.
         # Converts the bounding boxes to the format (center_x, center_y, width, height) and in the range [0, 1].
 
-        # Maybe this? https://albumentations.ai/docs/integrations/fiftyone/
-
-        model = AutoModelForObjectDetection.from_pretrained(
-            self.model_name,
-            id2label=self.id2label,
-            label2id=self.label2id,
-            ignore_mismatched_sizes=True,
-        )
+        # TODO Could "AutoModel" also work? https://huggingface.co/docs/transformers/v4.45.2/en/model_doc/auto#transformers.AutoModel
+        hf_model_config = AutoConfig.from_pretrained(self.model_name)
+        if type(hf_model_config) in AutoModelForObjectDetection._model_mapping:
+            model = AutoModelForObjectDetection.from_pretrained(
+                self.model_name,
+                id2label=self.id2label,
+                label2id=self.label2id,
+                ignore_mismatched_sizes=True,
+            )
+        elif (
+            type(hf_model_config) in AutoModelForZeroShotObjectDetection._model_mapping
+        ):
+            model = AutoModelForZeroShotObjectDetection.from_pretrained(
+                self.model_name,
+                id2label=self.id2label,
+                label2id=self.label2id,
+                ignore_mismatched_sizes=True,
+            )
+        else:
+            model = None
+            logging.error(
+                "HuggingFace AutoModel does not support " + str(type(hf_model_config))
+            )
 
         training_args = TrainingArguments(
             run_name=self.model_name,
@@ -177,7 +196,7 @@ class Teacher:
             tokenizer=image_processor,
             data_collator=self.collate_fn,
             callbacks=[early_stopping_callback],
-            # compute_metrics=eval_compute_metrics_fn,
+            # compute_metrics=eval_compute_metrics_fn, # TODO Write eval function
         )
 
         trainer.train()
