@@ -7,7 +7,7 @@
         "run_config": {
             "batch_size": 32,
             "epochs": 100,
-            "early_stop_patience": 5,
+            "early_stop_patience": 10,
             "learning_rate": 5e-05,
             "weight_decay": 0.0001,
             "max_grad_norm": 0.01,
@@ -16,7 +16,7 @@
                 "train",
                 "val"
             ],
-            "model_name": "IDEA-Research/grounding-dino-base"
+            "model_name": "facebook/detr-resnet-50"
         }
     }
 }
