@@ -153,7 +153,7 @@ nbformat==5.10.4
 nest-asyncio==1.6.0
 networkx==3.3
 numba==0.60.0
-numpy==2.1.2
+numpy==2.0.2
 nuscenes-devkit @ git+https://github.com/daniel-bogdoll/nuscenes-devkit.git@e9a832e608484c5496c6236ed78a185be6d7a44b
 nvidia-cublas-cu12==12.4.5.8
 nvidia-cuda-cupti-cu12==12.4.127
