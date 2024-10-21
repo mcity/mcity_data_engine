@@ -1,7 +1,7 @@
 # This workflow will install Python dependencies, run tests and lint with a single version of Python
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
-name: Build Validation and Documentation
+name: Tests and Documentation
 
 on:
   push:
@@ -48,7 +48,7 @@ jobs:
     - name: Test with pytest
       env: # Or as an environment variable
         HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      run: pytest --ignore custom_models/*
+      run: pytest --ignore custom_models/
 
     - name: Documentation with pdoc
       run: pdoc ./*.py ./utils/*.py -o docs
