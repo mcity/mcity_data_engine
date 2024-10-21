@@ -180,15 +180,15 @@ def main(args):
                         config=config,
                         project=wandb_project,
                     )
-                    config = wandb.config["overrides"]["run_config"]
+                    wandb_config = wandb.config["overrides"]["run_config"]
 
                     run.tags += (
-                        config["v51_dataset_name"],
+                        wandb_config["v51_dataset_name"],
                         "local",
                     )
                     teacher = Teacher(
                         dataset=dataset,
-                        config=config,
+                        config=wandb_config,
                     )
 
                     teacher.train()
