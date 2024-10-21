@@ -26,11 +26,14 @@ jobs:
     
     - name: Upgrade pip
       run: pip install --upgrade pip
+
+    - name: Install packages from requirements.txt
+      run: pip install -r requirements.txt
     
     - name: List all available package updates
       run: |
         echo "Listing all available package updates:"
-        pip list --outdated --requirement requirements.txt > outdated.txt
+        pip list --outdated > outdated.txt
         cat outdated.txt
 
     - name: Set default updates flag
