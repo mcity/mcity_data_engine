@@ -20,8 +20,12 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
-
+    
     steps:
+    - name: Remove unnecessary files
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
     - uses: actions/checkout@v4
       with:
         submodules: true
