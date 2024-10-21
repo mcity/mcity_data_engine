@@ -38,13 +38,13 @@ jobs:
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude utils/nuscenes-devkit,custom_models/*
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude custom_models/*
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude utils/nuscenes-devkit,custom_models/*
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude custom_models/*
     - name: Test with pytest
       env: # Or as an environment variable
         HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      run: pytest --ignore=utils/nuscenes-devkit --ignore custom_models/*
+      run: pytest --ignore custom_models/*
 
     - name: Documentation with pdoc
       run: pdoc ./*.py ./utils/*.py -o docs
