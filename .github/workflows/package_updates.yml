@@ -41,6 +41,7 @@ jobs:
         else
           echo "No updates available for selected packages."
           echo "::set-output name=updates::false"
+        fi
 
     - name: Create pull request if updates are found
       if: steps.check_updates.outputs.updates == 'true'
