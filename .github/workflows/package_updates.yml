@@ -27,13 +27,14 @@ jobs:
     - name: Upgrade pip
       run: pip install --upgrade pip
 
-    - name: Install packages from requirements.txt
-      run: pip install -r requirements.txt
-    
+    - name: Install jq
+      run: sudo apt-get install -y jq
+
     - name: List all available package updates
       run: |
         echo "Listing all available package updates:"
-        pip list --outdated > outdated.txt
+        pip install --upgrade -r requirements.txt --dry-run --quiet --report - 2> /dev/null \
+          | jq -r '.install[] | "\(.metadata.name)  \(.metadata.version)"' > outdated.txt
         cat outdated.txt
 
     - name: Set default updates flag
