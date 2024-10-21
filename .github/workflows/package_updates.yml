@@ -57,7 +57,6 @@ jobs:
         - name: Create pull request if specified updates are found
           if: env.updates == 'true'
           run: |
-            sudo apt-get install gh
             git config --global user.name 'github-actions'
             git config --global user.email 'github-actions@github.com'
             git checkout -b update-packages
@@ -66,6 +65,15 @@ jobs:
             git add requirements.txt
             git commit -m "Update selected packages in requirements.txt"
             git push --set-upstream origin update-packages
-            gh pr create --title "Update selected packages in requirements.txt" --body "Automated package update" --base main
+
+        - name: Pull request for updated packages
+          if: env.updates == 'true'
+          uses: peter-evans/create-pull-request@v7
+          with:
+            title: '[Package Updates] Update selected packages in requirements.txt'
+            commit-message: 'Update selected packages in requirements.txt'
+            delete-branch: true
+            labels: package-update
+            add-paths: requirements.txt
           env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
