@@ -166,41 +166,49 @@ def main(args):
             config = json.load(file)
 
         for MODEL_NAME in (pbar := tqdm(teacher_models, desc="Teacher Models")):
-            pbar.set_description("Training/Loading Teacher model " + MODEL_NAME)
-            config["overrides"]["run_config"]["model_name"] = MODEL_NAME
-            if args.queue == None:
+            try:
+                pbar.set_description("Training/Loading Teacher model " + MODEL_NAME)
+                config["overrides"]["run_config"]["model_name"] = MODEL_NAME
+                if args.queue == None:
 
-                run = wandb.init(
-                    allow_val_change=True,
-                    sync_tensorboard=True,
-                    group="Teacher",
-                    job_type="train",
-                    config=config,
-                    project=wandb_project,
-                )
-                config = wandb.config["overrides"]["run_config"]
+                    run = wandb.init(
+                        allow_val_change=True,
+                        sync_tensorboard=True,
+                        group="Teacher",
+                        job_type="train",
+                        config=config,
+                        project=wandb_project,
+                    )
+                    config = wandb.config["overrides"]["run_config"]
 
-                run.tags += (config["v51_dataset_name"], config["model_name"], "local")
-                teacher = Teacher(
-                    dataset=dataset,
-                    config=config,
-                )
+                    run.tags += (
+                        config["v51_dataset_name"],
+                        config["model_name"],
+                        "local",
+                    )
+                    teacher = Teacher(
+                        dataset=dataset,
+                        config=config,
+                    )
 
-                teacher.train()
-            elif args.queue != None:
-                # Update config file
-                with open(config_file_path, "w") as file:
-                    json.dump(config, file, indent=4)
+                    teacher.train()
+                elif args.queue != None:
+                    # Update config file
+                    with open(config_file_path, "w") as file:
+                        json.dump(config, file, indent=4)
 
-                wandb_entry_point = config["overrides"]["entry_point"]
-                # Add job to queue
-                launch_to_queue_terminal(
-                    name=MODEL_NAME,
-                    project=wandb_project,
-                    config_file=config_file_path,
-                    entry_point=wandb_entry_point,
-                    queue=args.queue,
-                )
+                    wandb_entry_point = config["overrides"]["entry_point"]
+                    # Add job to queue
+                    launch_to_queue_terminal(
+                        name=MODEL_NAME,
+                        project=wandb_project,
+                        config_file=config_file_path,
+                        entry_point=wandb_entry_point,
+                        queue=args.queue,
+                    )
+            except Exception as e:
+                logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
+                continue
 
     else:
         logging.error(
