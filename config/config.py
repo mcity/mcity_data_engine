@@ -98,5 +98,6 @@ WANDB_CONFIG = {
     "github": "git@github.com:daniel-bogdoll/mcity_data_engine.git",  # TODO https might be necessary for jobs on lighthouse
 }
 
-NUM_WORKERS = os.cpu_count()
+cpu_count = os.cpu_count()
+NUM_WORKERS = 32 if cpu_count > 32 else cpu_count
 GLOBAL_SEED = 0
