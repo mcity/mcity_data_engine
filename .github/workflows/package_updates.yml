@@ -1,4 +1,4 @@
-name: Available package updates
+name: Package Updates
 
 on:
   push:
