@@ -4,7 +4,7 @@
 
 <p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-  <img alt="Test Results" src="https://github.com/daniel-bogdoll/mcity_data_engine/actions/workflows/python-app.yml/badge.svg?branch=main"/>
+  <img alt="Test Results" src="https://github.com/daniel-bogdoll/mcity_data_engine/actions/workflows/tests-documentation.yml/badge.svg?branch=main"/>
   <img alt="Ubuntu Version" src="https://img.shields.io/badge/Ubuntu-24.04-blue"/>
   <img alt="Python Version" src="https://img.shields.io/badge/Python-3.12-blue"/>
   <img alt="PyTorch Version" src="https://img.shields.io/badge/PyTorch-2.5-blue"/>
