@@ -14,57 +14,58 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
+        - uses: actions/checkout@v4
+          with:
+            submodules: true
 
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
-        cache: 'pip'
-    
-    - name: Upgrade pip
-      run: pip install --upgrade pip
+        - name: Set up Python 3.12
+          uses: actions/setup-python@v5
+          with:
+            python-version: "3.12"
+            cache: 'pip'
+        
+        - name: Upgrade pip
+          run: pip install --upgrade pip
 
-    - name: Install jq
-      run: sudo apt-get install -y jq
+        - name: Install jq
+          run: sudo apt-get install -y jq
 
-    - name: List all available package updates
-      run: |
-        echo "Listing all available package updates:"
-        pip install --upgrade -r requirements.txt --dry-run --quiet --report - 2> /dev/null \
-          | jq -r '.install[] | "\(.metadata.name)  \(.metadata.version)"' > outdated.txt
-        cat outdated.txt
+        - name: List all available package updates
+          run: |
+            echo "Listing all available package updates:"
+            pip install -r requirements.txt
+            pip list --outdated --format=json > outdated.json
+            jq -r '.[] | "\(.name) \(.version) -> \(.latest_version)"' outdated.json > outdated.txt
+            cat outdated.txt
 
-    - name: Set default updates flag
-      run: echo "updates=false" >> $GITHUB_ENV
+        - name: Set default updates flag
+          run: echo "updates=false" >> $GITHUB_ENV
 
-    - name: Check for specified package updates
-      id: check_updates
-      run: |
-        updates=$(grep -E 'datasets|transformers|fiftyone' outdated.txt || true)
-        if [ -n "$updates" ]; then
-          echo "Updates available for selected packages:"
-          echo "$updates"
-          echo "updates=true" >> $GITHUB_ENV
-        else
-          echo "No updates available for selected packages."
-          echo "updates=false" >> $GITHUB_ENV
-        fi
+        - name: Check for specified package updates
+          id: check_updates
+          run: |
+            updates=$(grep -E 'datasets|transformers|fiftyone' outdated.txt || true)
+            if [ -n "$updates" ]; then
+              echo "Updates available for selected packages:"
+              echo "$updates"
+              echo "updates=true" >> $GITHUB_ENV
+            else
+              echo "No updates available for selected packages."
+              echo "updates=false" >> $GITHUB_ENV
+            fi
 
-    - name: Create pull request if specified updates are found
-      if: env.updates == 'true'
-      run: |
-        sudo apt-get install gh
-        git config --global user.name 'github-actions'
-        git config --global user.email 'github-actions@github.com'
-        git checkout -b update-packages
-        pip install --upgrade $(grep -E 'datasets|transformers|fiftyone' outdated.txt | cut -d ' ' -f 1)
-        pip freeze > requirements.txt
-        git add requirements.txt
-        git commit -m "Update selected packages in requirements.txt"
-        git push --set-upstream origin update-packages
-        gh pr create --title "Update selected packages in requirements.txt" --body "Automated package update" --base main
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        - name: Create pull request if specified updates are found
+          if: env.updates == 'true'
+          run: |
+            sudo apt-get install gh
+            git config --global user.name 'github-actions'
+            git config --global user.email 'github-actions@github.com'
+            git checkout -b update-packages
+            pip install --upgrade $(grep -E 'datasets|transformers|fiftyone' outdated.txt | cut -d ' ' -f 1)
+            pip freeze > requirements.txt
+            git add requirements.txt
+            git commit -m "Update selected packages in requirements.txt"
+            git push --set-upstream origin update-packages
+            gh pr create --title "Update selected packages in requirements.txt" --body "Automated package update" --base main
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
