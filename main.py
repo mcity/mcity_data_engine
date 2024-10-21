@@ -79,7 +79,7 @@ def main(args):
 
     if args.tags:
         wandb_tags = args.tags.split(",")
-    if args.run_mode == "local":
+    if args.queue == None:
         signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
 
         # Load the selected dataset
@@ -122,7 +122,7 @@ def main(args):
             pbar.set_description("Training/Loading Anomalib model " + MODEL_NAME)
             config["overrides"]["run_config"]["model_name"] = MODEL_NAME
 
-            if args.run_mode == "local":
+            if args.queue == None:
                 run = wandb.init(
                     allow_val_change=True,
                     sync_tensorboard=True,
@@ -143,7 +143,7 @@ def main(args):
                 ano_dec.eval_v51()
                 del ano_dec
 
-            elif args.run_mode == "wandb":
+            elif args.queue != None:
                 # Update config file
                 with open(config_file_path, "w") as file:
                     json.dump(config, file, indent=4)
@@ -155,6 +155,7 @@ def main(args):
                     project=wandb_project,
                     config_file=config_file_path,
                     entry_point=wandb_entry_point,
+                    queue=args.queue,
                 )
 
     elif SELECTED_WORKFLOW == "train_teacher":
@@ -167,7 +168,7 @@ def main(args):
         for MODEL_NAME in (pbar := tqdm(teacher_models, desc="Teacher Models")):
             pbar.set_description("Training/Loading Teacher model " + MODEL_NAME)
             config["overrides"]["run_config"]["model_name"] = MODEL_NAME
-            if args.run_mode == "local":
+            if args.queue == None:
 
                 run = wandb.init(
                     allow_val_change=True,
@@ -186,7 +187,7 @@ def main(args):
                 )
 
                 teacher.train()
-            elif args.run_mode == "wandb":
+            elif args.queue != None:
                 # Update config file
                 with open(config_file_path, "w") as file:
                     json.dump(config, file, indent=4)
@@ -198,6 +199,7 @@ def main(args):
                     project=wandb_project,
                     config_file=config_file_path,
                     entry_point=wandb_entry_point,
+                    queue=args.queue,
                 )
 
     else:
@@ -207,7 +209,7 @@ def main(args):
         )
 
     # Launch V51 session
-    if args.run_mode == "local":
+    if args.queue == None:
         dataset.save()
         logging.info(dataset)
         fo.pprint(dataset.stats(include_media=True))
@@ -221,10 +223,10 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run script locally or in W&B queue.")
     parser.add_argument(
-        "--run-mode",
-        choices=["local", "wandb"],
-        default="local",
-        help="Run mode: 'local' or 'wandb queue'",
+        "--queue",
+        choices=[None, "data-engine", "lighthouse"],
+        default=None,
+        help="If no WandB queue selected, code will run locally.'",
     )
     parser.add_argument(
         "--tags",

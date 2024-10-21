@@ -53,10 +53,9 @@ def get_wandb_conf(config, value):
 #    )
 #
 #
-def launch_to_queue_terminal(name, project, config_file, entry_point):
+def launch_to_queue_terminal(name, project, config_file, entry_point, queue):
     uri = WANDB_CONFIG["github"]
     entity = WANDB_CONFIG["entity"]
-    queue_name = WANDB_CONFIG["queue"]
     docker = WANDB_CONFIG["docker_file"]
     entry_point = entry_point[0] + " " + entry_point[1]
 
@@ -68,7 +67,7 @@ def launch_to_queue_terminal(name, project, config_file, entry_point):
         f'--project "{project}" '
         f'--entry-point "{entry_point}" '
         f"--dockerfile {docker} "
-        f"--queue {queue_name} "
+        f"--queue {queue} "
         f"--config {config_file}"
     )
 
