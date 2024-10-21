@@ -39,6 +39,32 @@ jobs:
     - name: Install dependencies
       run: |
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    - name: List all available pip updates
+      run: pip list --outdated
+    - name: Check for updates for specific packages
+      id: check_updates
+      run: |
+        outdated=$(pip list --outdated --format=freeze | grep -E '^(transformers|datasets|fiftyone)==')
+        echo "outdated_packages=$outdated" >> $GITHUB_ENV
+    - name: Update requirements.txt if necessary
+      if: env.outdated_packages != ''
+      run: |
+        pip-compile --upgrade requirements.in
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git checkout -b update-requirements
+        git add requirements.txt
+        git commit -m "Update requirements.txt with latest versions of transformers, datasets, and fiftyone"
+        git push origin update-requirements
+    - name: Create PR for updated requirements.txt
+      if: env.outdated_packages != ''
+      uses: peter-evans/create-pull-request@v7
+      with:
+        title: '[pip] Updated requirements.txt'
+        commit-message: Update requirements.txt with latest versions of transformers, datasets, and fiftyone
+        delete-branch: true
+        labels: dependencies
+        add-paths: requirements.txt
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
@@ -68,4 +94,3 @@ jobs:
   # Deploy the artifact to GitHub pages PUBLICLY.
   # This is a separate job so that only actions/deploy-pages has the necessary permissions.
   # https://github.com/mitmproxy/pdoc/blob/main/.github/workflows/docs.yml
-        
