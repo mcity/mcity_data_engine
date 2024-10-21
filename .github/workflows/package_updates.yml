@@ -41,6 +41,7 @@ jobs:
         else
           echo "No updates available for selected packages."
           echo "updates=false" >> $GITHUB_ENV
+        fi
     
     - name: Create pull request if updates are found
       if: env.updates == 'true'
