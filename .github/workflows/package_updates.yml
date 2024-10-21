@@ -30,7 +30,7 @@ jobs:
     - name: List all available package updates
       run: |
         echo "Listing all available package updates:"
-        pip list --outdated --format=freeze > outdated.txt
+        pip list --outdated --requirement requirements.txt > outdated.txt
         cat outdated.txt
 
     - name: Set default updates flag
@@ -55,7 +55,7 @@ jobs:
         git config --global user.name 'github-actions'
         git config --global user.email 'github-actions@github.com'
         git checkout -b update-packages
-        pip install --upgrade $(grep -E 'datasets|transformers|fiftyone' outdated.txt | cut -d '=' -f 1)
+        pip install --upgrade $(grep -E 'datasets|transformers|fiftyone' outdated.txt | cut -d ' ' -f 1)
         pip freeze > requirements.txt
         git add requirements.txt
         git commit -m "Update selected packages in requirements.txt"
