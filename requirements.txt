@@ -99,7 +99,7 @@ hyperframe==6.0.1
 idna==3.10
 imageio==2.35.1
 imagesize==1.4.1
-imgaug==0.4.0
+imgaug @ git+https://github.com/beastless/imgaug.git@a24a2215d3efb6260ea8456c7661ddc91b1a9160
 importlib_resources==6.4.5
 inflate64==1.0.0
 iniconfig==2.0.0
