@@ -2,6 +2,7 @@ import argparse
 import time
 import signal
 import json
+import socket
 
 from utils.logging import configure_logging
 from utils.wandb_helper import launch_to_queue_terminal, get_wandb_conf
@@ -172,6 +173,7 @@ def main(args):
                 if args.queue == None:
 
                     run = wandb.init(
+                        name=MODEL_NAME,
                         allow_val_change=True,
                         sync_tensorboard=True,
                         group="Teacher",
@@ -181,10 +183,10 @@ def main(args):
                     )
                     config = wandb.config["overrides"]["run_config"]
 
+                    hostname = socket.gethostname()
                     run.tags += (
                         config["v51_dataset_name"],
-                        config["model_name"],
-                        "local",
+                        hostname,
                     )
                     teacher = Teacher(
                         dataset=dataset,
