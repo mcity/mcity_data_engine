@@ -153,8 +153,8 @@ nbformat==5.10.4
 nest-asyncio==1.6.0
 networkx==3.3
 numba==0.60.0
-numpy==1.26.4
-nuscenes-devkit @ git+https://github.com/daniel-bogdoll/nuscenes-devkit.git@3bec3a175623bbdd2f56798b0b270e52b828b786
+numpy==2.1.2
+nuscenes-devkit @ git+https://github.com/daniel-bogdoll/nuscenes-devkit.git@e9a832e608484c5496c6236ed78a185be6d7a44b
 nvidia-cublas-cu12==12.4.5.8
 nvidia-cuda-cupti-cu12==12.4.127
 nvidia-cuda-nvrtc-cu12==12.4.127
@@ -182,7 +182,7 @@ pandas==2.2.3
 pandocfilters==1.5.1
 parso==0.8.4
 pathlib2==2.3.7.post1
-pdoc==14.7.0
+pdoc==15.0.0
 pexpect==4.9.0
 pillow==10.4.0
 platformdirs==4.3.6
@@ -292,7 +292,7 @@ umap-learn==0.5.6
 universal-analytics-python3==1.1.1
 urllib3==2.2.3
 voxel51-eta==0.13.0
-wandb==0.18.3
+wandb==0.18.5
 wcwidth==0.2.13
 webencodings==0.5.1
 websocket-client==1.8.0
