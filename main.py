@@ -192,6 +192,7 @@ def main(args):
                     )
 
                     teacher.train()
+                    run.finish()
                 elif args.queue != None:
                     # Update config file
                     with open(config_file_path, "w") as file:
