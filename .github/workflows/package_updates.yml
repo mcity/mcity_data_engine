@@ -30,7 +30,12 @@ jobs:
     - name: Install pip-review
       run: pip install pip-review
     
-    - name: Check for package updates
+    - name: List all available package updates
+      run: |
+        echo "Listing all available package updates:"
+        pip-review --local
+
+    - name: Check for specified package updates
       id: check_updates
       run: |
         updates=$(pip-review --local | grep -E 'datasets|transformers|fiftyone' || true)
@@ -42,8 +47,11 @@ jobs:
           echo "No updates available for selected packages."
           echo "updates=false" >> $GITHUB_ENV
         fi
-    
-    - name: Create pull request if updates are found
+
+    - name: Install GitHub CLI
+      run: sudo apt-get install gh
+
+    - name: Create pull request if specified updates are found
       if: env.updates == 'true'
       run: |
         git config --global user.name 'github-actions'
