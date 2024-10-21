@@ -33,7 +33,7 @@ jobs:
     - name: Check for package updates
       id: check_updates
       run: |
-        updates=$(pip-review --local | grep -E "datasets|transformers|fiftyone" || true)
+        updates=$(pip-review --local | grep -E 'datasets|transformers|fiftyone' || true)
         if [ -n "$updates" ]; then
           echo "Updates available for selected packages:"
           echo "$updates"
