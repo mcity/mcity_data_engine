@@ -23,13 +23,13 @@ jobs:
       with:
         python-version: "3.12"
         cache: 'pip'
-
+    
     - name: Upgrade pip
       run: pip install --upgrade pip
-
+    
     - name: Install pip-review
       run: pip install pip-review
-
+    
     - name: Check for package updates
       id: check_updates
       run: |
@@ -37,14 +37,13 @@ jobs:
         if [ -n "$updates" ]; then
           echo "Updates available for selected packages:"
           echo "$updates"
-          echo "::set-output name=updates::true"
+          echo "updates=true" >> $GITHUB_ENV
         else
           echo "No updates available for selected packages."
-          echo "::set-output name=updates::false"
-        fi
-
+          echo "updates=false" >> $GITHUB_ENV
+    
     - name: Create pull request if updates are found
-      if: steps.check_updates.outputs.updates == 'true'
+      if: env.updates == 'true'
       run: |
         git config --global user.name 'github-actions'
         git config --global user.email 'github-actions@github.com'
