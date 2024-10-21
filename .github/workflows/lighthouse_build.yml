@@ -1,10 +1,12 @@
 name: Lighthouse Build
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    push:
+        paths:
+          - 'requirements.txt'
+    pull_request:
+        paths:
+          - 'requirements.txt'
 
 jobs:
   build:
