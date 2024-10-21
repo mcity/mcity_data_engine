@@ -166,6 +166,7 @@ def main(args):
             config = json.load(file)
 
         for MODEL_NAME in (pbar := tqdm(teacher_models, desc="Teacher Models")):
+            run = None
             try:
                 pbar.set_description("Training/Loading Teacher model " + MODEL_NAME)
                 config["overrides"]["run_config"]["model_name"] = MODEL_NAME
@@ -192,7 +193,7 @@ def main(args):
                     )
 
                     teacher.train()
-                    run.finish()
+                    run.finish(exit_code=0)
                 elif args.queue != None:
                     # Update config file
                     with open(config_file_path, "w") as file:
@@ -209,6 +210,8 @@ def main(args):
                     )
             except Exception as e:
                 logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
+                if run:
+                    run.finish(exit_code=1)
                 continue
 
     else:
