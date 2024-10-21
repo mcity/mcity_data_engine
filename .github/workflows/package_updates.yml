@@ -48,12 +48,10 @@ jobs:
           echo "No updates available for selected packages."
           echo "updates=false" >> $GITHUB_ENV
 
-    - name: Install GitHub CLI
-      run: sudo apt-get install gh
-
     - name: Create pull request if specified updates are found
       if: env.updates == 'true'
       run: |
+        sudo apt-get install gh
         git config --global user.name 'github-actions'
         git config --global user.email 'github-actions@github.com'
         git checkout -b update-packages
