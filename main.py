@@ -2,7 +2,6 @@ import argparse
 import time
 import signal
 import json
-import socket
 
 from utils.logging import configure_logging
 from utils.wandb_helper import launch_to_queue_terminal, get_wandb_conf
@@ -183,10 +182,9 @@ def main(args):
                     )
                     config = wandb.config["overrides"]["run_config"]
 
-                    hostname = socket.gethostname()
                     run.tags += (
                         config["v51_dataset_name"],
-                        hostname,
+                        "local",
                     )
                     teacher = Teacher(
                         dataset=dataset,
