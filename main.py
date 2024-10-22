@@ -4,7 +4,7 @@ import signal
 import json
 
 from utils.logging import configure_logging
-from utils.wandb_helper import launch_to_queue_terminal, get_wandb_conf
+from utils.wandb_helper import launch_to_queue_terminal
 import logging
 
 from config.config import (
