@@ -159,12 +159,13 @@ def main(args):
                 )
 
     elif SELECTED_WORKFLOW == "train_teacher":
-        teacher_models = WORKFLOWS["train_teacher"]["hf_models"]
+        teacher_models = WORKFLOWS["train_teacher"]["hf_models_objectdetection"]
         wandb_project = "Data Engine Teacher"
         config_file_path = "wandb_runs/teacher_config.json"
         with open(config_file_path, "r") as file:
             config = json.load(file)
 
+        # Train teacher models
         for MODEL_NAME in (pbar := tqdm(teacher_models, desc="Teacher Models")):
             run = None
             try:
@@ -214,6 +215,22 @@ def main(args):
                     run.finish(exit_code=1)
                 continue
 
+    elif SELECTED_WORKFLOW == "zero_shot_teacher":
+        # Evaluation with Zero Shot models
+        zero_shot_teacher_models = WORKFLOWS["train_teacher"][
+            "hf_models_zeroshot_objectdetection"
+        ]
+        for MODEL_NAME in (
+            pbar := tqdm(zero_shot_teacher_models, desc="Zero Shot Teacher Models")
+        ):
+            # try:
+            pbar.set_description("Evaluating Zero Shot Teacher model " + MODEL_NAME)
+            config = {"model_name": MODEL_NAME}
+            teacher = Teacher(dataset=dataset, config=config)
+            teacher.zero_shot_inference()
+            # except Exception as e:
+            #    logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
+            #    continue
     else:
         logging.error(
             str(SELECTED_WORKFLOW)

@@ -1,9 +1,9 @@
 import os
 
-SELECTED_WORKFLOW = "train_teacher"  # Selection from WORKFLOWS
+SELECTED_WORKFLOW = "zero_shot_teacher"  # Selection from WORKFLOWS
 SELECTED_DATASET = "mcity_fisheye_2000"  # Choose from datasets.yaml
 
-PERSISTENT = False  # If V51 database is stored
+PERSISTENT = True  # If V51 database is stored
 
 # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
 V51_EMBEDDING_MODELS = [
@@ -62,7 +62,7 @@ WORKFLOWS = {
     "brain_selection": {},
     "learn_normality": {},
     "train_teacher": {
-        "hf_models": [
+        "hf_models_objectdetection": [
             "microsoft/conditional-detr-resnet-50",
             "Omnifact/conditional-detr-resnet-101-dc5",
             "facebook/detr-resnet-50",
@@ -81,11 +81,13 @@ WORKFLOWS = {
             "jozhang97/deta-resnet-50",
             "jozhang97/deta-resnet-50-24-epochs",
             "hustvl/yolos-base",
-            "IDEA-Research/grounding-dino-tiny",
-            "google/owlvit-base-patch32",
+        ],
+        "hf_models_zeroshot_objectdetection": [
+            # "IDEA-Research/grounding-dino-tiny",
+            # "google/owlvit-base-patch32",
             "google/owlv2-base-patch16-ensemble",
-            "omlab/omdet-turbo-swin-tiny-hf",
-        ]
+            # "omlab/omdet-turbo-swin-tiny-hf",
+        ],
     },
 }
 

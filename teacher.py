@@ -1,6 +1,4 @@
 import logging
-import wandb
-import random
 
 from PIL import Image
 
@@ -13,31 +11,25 @@ from config.config import WORKFLOWS
 from transformers import (
     AutoConfig,
     AutoProcessor,
-    AutoImageProcessor,
-    AutoModel,
     AutoModelForZeroShotObjectDetection,
     AutoModelForObjectDetection,
-    AutoTokenizer,
     TrainingArguments,
     Trainer,
     EarlyStoppingCallback,
 )
-
+import fiftyone as fo
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
-import datasets
 from datasets import Split
 from config.config import NUM_WORKERS
 
 
-def transform_batch(examples, image_processor, hf_model_config, return_pixel_mask=False):
+def transform_batch(examples, image_processor, return_pixel_mask=False):
     """Apply format annotations in COCO format for object detection task"""
     # TODO Include augmentations
     # https://albumentations.ai/docs/integrations/fiftyone/
 
     images = []
     annotations = []
-    zero_shot_text = ["a cat. a car."] # TODO Fix with available dataset classes
-    zero_shot_text = ["hat", "book", "sunglasses", "camera"]    #https://huggingface.co/docs/transformers/en/tasks/zero_shot_object_detection
 
     for image_path, annotation in zip(examples["image"], examples["target"]):
         image = Image.open(image_path).convert("RGB")
@@ -69,19 +61,10 @@ def transform_batch(examples, image_processor, hf_model_config, return_pixel_mas
         }
         annotations.append(detr_annotation)
 
-    # Apply the image processor transformations: resizing, rescaling, normalization
-    if type(hf_model_config) in AutoModelForObjectDetection._model_mapping:
+        # Apply the image processor transformations: resizing, rescaling, normalization
         result = image_processor(
             images=images, annotations=annotations, return_tensors="pt"
         )
-    elif (
-            type(hf_model_config) in AutoModelForZeroShotObjectDetection._model_mapping
-        ):
-        
-        result = image_processor(
-            images=images, text=zero_shot_text, annotations=annotations, return_tensors="pt"
-        )
-
 
     if not return_pixel_mask:
         result.pop("pixel_mask", None)
@@ -90,7 +73,7 @@ def transform_batch(examples, image_processor, hf_model_config, return_pixel_mas
 
 
 class Teacher:
-    def __init__(self, dataset, config):
+    def __init__(self, dataset, config=None):
         self.dataset = dataset
         self.config = config
         self.model_name = config["model_name"]
@@ -98,9 +81,6 @@ class Teacher:
         self.categories = dataset.default_classes
         self.id2label = {index: x for index, x in enumerate(self.categories, start=0)}
         self.label2id = {v: k for k, v in self.id2label.items()}
-
-        # For training of zero shot models (https://huggingface.co/docs/transformers/en/model_doc/grounding-dino)
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
     def collate_fn(self, batch):
         """
@@ -122,28 +102,105 @@ class Teacher:
         data["labels"] = [x["labels"] for x in batch]
         if "pixel_mask" in batch[0]:
             data["pixel_mask"] = torch.stack([x["pixel_mask"] for x in batch])
-
-        # TODO if-else statement
-        # Add input_ids for zero-shot detection
-        zero_shot_text = ["a cat. a car."]  # This should match your classes
-        input_ids = self.tokenizer(zero_shot_text, padding=True, return_tensors='pt')['input_ids']
-        data["input_ids"] = input_ids.repeat(len(batch), 1)  # Match batch size
         return data
+
+    def zero_shot_inference(self):
+        # TODO: Does this make sense as part of the teacher class?
+        hf_model_config = AutoConfig.from_pretrained(self.model_name)
+        if type(hf_model_config) in AutoModelForZeroShotObjectDetection._model_mapping:
+            processor = AutoProcessor.from_pretrained(self.model_name)
+            model = AutoModelForZeroShotObjectDetection.from_pretrained(self.model_name)
+        else:
+            model = None
+            logging.error(
+                "HuggingFace AutoModel does not support " + str(type(hf_model_config))
+            )
+
+        print(self.categories)
+        print(self.model_name)
+        if (
+            self.model_name == "IDEA-Research/grounding-dino-tiny"
+        ):  # https://huggingface.co/IDEA-Research/grounding-dino-tiny
+            class_names = (
+                "car.truck.bus.trailer.mototorbike/cycler.pedestrian.van.pickup."
+            )
+        else:
+            class_names = [  # TODO Assign based on self.categories
+                [
+                    "car",
+                    "truck",
+                    "bus",
+                    "trailer",
+                    "motorbike/cycler",
+                    "pedestrian",
+                    "van",
+                    "pickup",
+                ]
+            ]
+        v51_pred_key = "pred_" + self.model_name
+        v51_eval_key = "eval" + self.model_name
+        for sample in self.dataset.iter_samples(
+            progress=True, autosave=True
+        ):  # dataset.select_fields()
+            image = Image.open(sample.filepath)
+            width, height = image.size  # FIXME Read from V51 metadata
+            inputs = processor(text=class_names, images=image, return_tensors="pt")
+
+            with torch.no_grad():
+                outputs = model(**inputs)
+            original_size = torch.Tensor([image.size[::-1]])
+
+            # Convert outputs (bounding boxes and class logits) to final bounding boxes and scores
+            if self.model_name == "IDEA-Research/grounding-dino-tiny":
+                results = processor.post_process_grounded_object_detection(
+                    outputs,
+                    inputs.input_ids,
+                    box_threshold=0.4,
+                    text_threshold=0.3,
+                    target_sizes=[image.size[::-1]],
+                )
+            else:
+                results = processor.post_process_object_detection(
+                    outputs=outputs,
+                    threshold=0.2,
+                    target_sizes=original_size,  # TODO Move threshold to config
+                )
+            i = 0  # Retrieve predictions for the first image for the corresponding text queries
+            boxes, scores, labels = (
+                results[i]["boxes"],
+                results[i]["scores"],
+                results[i]["labels"],
+            )
+
+            # Convert to V51 format [top-left-x, top-left-y, width, height] in rel. coordinates between [0, 1]
+            detections = []
+            for box, score, label in zip(boxes, scores, labels):
+                top_left_x = box[0].item() / width
+                top_left_y = box[1].item() / height
+                box_width = (box[2] - box[0]).item() / width
+                box_height = (box[3] - box[1]).item() / height
+
+                detection = fo.Detection(
+                    label=class_names[0][label],
+                    bounding_box=[top_left_x, top_left_y, box_width, box_height],
+                    confidence=score.item(),
+                )
+                detections.append(detection)
+
+            sample[v51_pred_key] = fo.Detections(detections=detections)
+
+        # Evaluate model
+        results = self.dataset.evaluate_detections(
+            v51_pred_key,
+            gt_field="ground_truth",
+            eval_key=v51_eval_key,
+            compute_mAP=True,
+        )
 
     def train(self):
         pytorch_dataset = FiftyOneTorchDatasetCOCO(self.dataset)
         pt_to_hf_converter = TorchToHFDatasetCOCO(pytorch_dataset)
         hf_dataset = pt_to_hf_converter.convert()
-        # TODO AutoProcessor.from_pretrained('onnx-community/yolov10x')
-        # Runs in web? https://github.com/huggingface/transformers.js
-        # import { AutoModel, AutoProcessor, RawImage } from '@huggingface/transformers';
-        
-        #image_processor = AutoImageProcessor.from_pretrained(
-        #    self.model_name,
-        #    do_resize=False,
-        #    do_pad=False,  # Assumes all images have the same size
-        #    do_convert_annotations=False,  # expects YOLO (center_x, center_y, width, height) between [0,1]
-        #)
 
         image_processor = AutoProcessor.from_pretrained(
             self.model_name,
@@ -154,10 +211,12 @@ class Teacher:
 
         hf_model_config = AutoConfig.from_pretrained(self.model_name)
         train_transform_batch = partial(
-            transform_batch, image_processor=image_processor, hf_model_config=hf_model_config
+            transform_batch,
+            image_processor=image_processor,
         )
         validation_transform_batch = partial(
-            transform_batch, image_processor=image_processor, hf_model_config=hf_model_config
+            transform_batch,
+            image_processor=image_processor,
         )
 
         hf_dataset[Split.TRAIN] = hf_dataset[Split.TRAIN].with_transform(
@@ -167,24 +226,8 @@ class Teacher:
             validation_transform_batch
         )
 
-        # do_convert_annotations (bool, optional, defaults to True)
-        # Controls whether to convert the annotations to the format expected by the DETR model.
-        # Converts the bounding boxes to the format (center_x, center_y, width, height) and in the range [0, 1].
-
-        # TODO Could "AutoModel" also work? https://huggingface.co/docs/transformers/v4.45.2/en/model_doc/auto#transformers.AutoModel
         if type(hf_model_config) in AutoModelForObjectDetection._model_mapping:
             model = AutoModelForObjectDetection.from_pretrained(
-                self.model_name,
-                id2label=self.id2label,
-                label2id=self.label2id,
-                ignore_mismatched_sizes=True,
-            )
-        elif (
-            type(hf_model_config) in AutoModelForZeroShotObjectDetection._model_mapping
-        ):
-            run = wandb.run
-            run.tags += ("zero-shot",)
-            model = AutoModelForZeroShotObjectDetection.from_pretrained(
                 self.model_name,
                 id2label=self.id2label,
                 label2id=self.label2id,
