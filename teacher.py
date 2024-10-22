@@ -151,7 +151,7 @@ class Teacher:
             type(hf_model_config) in AutoModelForZeroShotObjectDetection._model_mapping
         ):
             run = wandb.run
-            run.tags += ["zero-shot"]
+            run.tags += ("zero-shot",)
             model = AutoModelForZeroShotObjectDetection.from_pretrained(
                 self.model_name,
                 id2label=self.id2label,
