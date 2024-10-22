@@ -77,7 +77,7 @@ In order to change the standard WandB directory, add the following line to the b
 ```
 export WANDB_DIR="/home/dbogdoll/mcity_data_engine/logs/wandb"
 ```
-In order to execute jobs, the [following tools](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch) need to be installed:
+In order to execute jobs on your own machine, the [following tools](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch) need to be installed:
 
 - [Docker](https://docs.docker.com/engine/install/ubuntu/) incl. [post-installation](https://docs.docker.com/engine/install/linux-postinstall/)
 - [CUDA](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#ubuntu)
@@ -91,6 +91,10 @@ wandb launch --uri "git@github.com:daniel-bogdoll/mcity_data_engine.git" --job-n
 ```
 
 Locally, you will need to clean up old docker images once in a while. Run ```docker image prune --all --filter until=48h``` to delete docker images older than 48 hours.
+
+### Huggingface
+
+For object detection, the data engine supports HF models of the types [AutoModelForObjectDetection](https://huggingface.co/docs/transformers/en/model_doc/auto#transformers.AutoModelForObjectDetection) and [AutoModelForZeroShotObjectDetection](https://huggingface.co/docs/transformers/en/model_doc/auto#transformers.AutoModelForZeroShotObjectDetection). At this point, [multi-GPU training is not working](https://github.com/huggingface/transformers/pull/33561) for the object detection pipeline.
 
 ## Datasets
 
