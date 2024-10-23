@@ -4,40 +4,51 @@ import fiftyone.utils.coco as fouc
 
 import logging
 
-from datasets import Dataset, NamedSplit, Split
+from datasets import Dataset, Split
 
 
 class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
-    """A PyTorch Dataset class for loading data from a FiftyOne dataset in COCO format.
-
-        fiftyone_dataset (fiftyone.core.dataset.DatasetView): A FiftyOne dataset or view to be used for training or testing.
-        transforms (callable, optional): A function/transform that takes in an image and target and returns a transformed version.
-        gt_field (str, optional): The name of the field in fiftyone_dataset that contains the desired labels to load. Default is "ground_truth".
-        classes (list of str, optional): A list of class strings to define the mapping between class names and indices. If None, all classes present in the given fiftyone_dataset will be used.
+    """
+    A custom PyTorch Dataset for loading COCO-style datasets from FiftyOne.
+    This dataset class is designed to work with FiftyOne datasets and provides
+    functionality to load images and their corresponding annotations in a format
+    compatible with PyTorch. It avoids any reference to the original FiftyOne dataset to remain pickable.
 
     Attributes:
-        samples (fiftyone.core.dataset.DatasetView): The FiftyOne dataset or view.
-        transforms (callable, optional): The transform function to apply to images and targets.
-        gt_field (str): The name of the field in fiftyone_dataset that contains the desired labels.
-        img_paths (list of str): List of image file paths from the FiftyOne dataset.
-        classes (list of str): List of class names.
-        labels_map_rev (dict): A dictionary mapping class names to indices.
+        transforms (callable, optional): A function/transform that takes in an
+            image and returns a transformed version. Default is None.
+        gt_field (str): The name of the ground truth field in the FiftyOne dataset.
+            Default is "ground_truth".
+        img_paths (list): List of image file paths.
+        labels (list): List of labels corresponding to the images.
+        metadata (dict): Dictionary containing metadata for each image.
+        classes (list): List of distinct class labels.
+        labels_map_rev (dict): Dictionary mapping class labels to indices.
+
+    Args:
+        fiftyone_dataset (fiftyone.core.dataset.Dataset): The FiftyOne dataset to load.
+        transforms (callable, optional): A function/transform that takes in an
+            image and returns a transformed version. Default is None.
+        gt_field (str, optional): The name of the ground truth field in the
+            FiftyOne dataset. Default is "ground_truth".
+        classes (list, optional): List of class labels. If not provided, the
+            distinct labels from the dataset will be used.
 
     Methods:
         __getitem__(idx):
-            Retrieves the image and target at the specified index.
-
+            Returns the image and target at the specified index.
         __getitems__(indices):
-            Retrieves a list of samples for the specified indices.
-
+            Returns a list of samples for the specified indices.
         __len__():
             Returns the number of samples in the dataset.
-
         get_classes():
-            Returns the list of class names.
-
+            Returns the list of class labels.
         get_splits():
-            Returns a set of unique split names from the dataset.
+            Returns the set of splits (tags) in the dataset.
+
+    References:
+        - https://github.com/voxel51/fiftyone-examples/blob/master/examples/pytorch_detection_training.ipynb
+        - https://github.com/voxel51/fiftyone/issues/1302
     """
 
     def __init__(
@@ -47,30 +58,29 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         gt_field="ground_truth",
         classes=None,
     ):
-        self.samples = fiftyone_dataset
         self.transforms = transforms
         self.gt_field = gt_field
-
-        self.img_paths = self.samples.values("filepath")
-
+        self.img_paths, self.labels = fiftyone_dataset.values(
+            ["filepath", f"{gt_field}.detections"]
+        )
+        self.metadata = {
+            sample.filepath: sample.metadata for sample in fiftyone_dataset
+        }
         self.classes = classes
         if not self.classes:
             # Get list of distinct labels that exist in the view
-            self.classes = self.samples.distinct("%s.detections.label" % gt_field)
-
+            self.classes = fiftyone_dataset.distinct(f"{gt_field}.detections.label")
         self.labels_map_rev = {c: i for i, c in enumerate(self.classes)}
 
     def __getitem__(self, idx):
         img_path = self.img_paths[idx]
-        sample = self.samples[img_path]
-        metadata = sample.metadata
+        metadata = self.metadata.get(img_path, None)
+        detections = self.labels[idx]
         img = Image.open(img_path).convert("RGB")
-
         boxes = []
         labels = []
         area = []
         iscrowd = []
-        detections = sample[self.gt_field].detections
         for det in detections:
             category_id = self.labels_map_rev[det.label]
             coco_obj = fouc.COCOObject.from_label(
@@ -90,10 +100,8 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         target["image_id"] = torch.as_tensor([idx])
         target["area"] = torch.as_tensor(area, dtype=torch.float32)
         target["iscrowd"] = torch.as_tensor(iscrowd, dtype=torch.int64)
-
         if self.transforms is not None:
             img = self.transforms(img)
-
         return img, target
 
     def __getitems__(self, indices):
@@ -108,7 +116,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
 
     def get_splits(self):
         splits = set()
-        for sample in self.samples.iter_samples():
+        for sample in self.labels:
             split = sample.tags[0]  # Assuming the split is the first tag
             splits.add(split)
         return splits
