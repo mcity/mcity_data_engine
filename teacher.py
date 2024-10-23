@@ -6,8 +6,11 @@ from functools import partial
 
 import numpy as np
 import torch
+from torch.cuda import Stream
+from torch.utils.data import DataLoader
+from torchvision import transforms
 
-from config.config import WORKFLOWS
+from config.config import WORKFLOWS, NUM_WORKERS
 from transformers import (
     AutoConfig,
     AutoProcessor,
@@ -17,10 +20,152 @@ from transformers import (
     Trainer,
     EarlyStoppingCallback,
 )
-import fiftyone as fo
+
+from tqdm import tqdm
+
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from datasets import Split
 from config.config import NUM_WORKERS
+
+from transformers import BatchEncoding
+from transformers.models.owlvit.processing_owlvit import OwlViTProcessor
+from transformers.utils.import_utils import requires_backends, is_torch_available
+from transformers.utils.generic import is_torch_device
+from typing import List, Union
+
+
+class CustomBatchEncoding(BatchEncoding):
+    def to(
+        self, device: Union[str, "torch.device"], non_blocking: bool = False
+    ) -> "CustomBatchEncoding":
+        """
+        Send all values to device by calling `v.to(device, non_blocking=non_blocking)` (PyTorch only).
+
+        Args:
+            device (`str` or `torch.device`): The device to put the tensors on.
+            non_blocking (`bool`): Whether to perform the copy asynchronously with respect to the host.
+
+        Returns:
+            [`CustomBatchEncoding`]: The same instance after modification.
+        """
+        requires_backends(self, ["torch"])
+        import torch
+
+        if (
+            isinstance(device, str)
+            or is_torch_device(device)
+            or isinstance(device, int)
+        ):
+            self.data = {
+                k: v.to(device=device, non_blocking=non_blocking)
+                for k, v in self.data.items()
+                if isinstance(v, torch.Tensor)
+            }
+        else:
+            logging.warning(
+                f"Attempting to cast a CustomBatchEncoding to type {str(device)}. This is not supported."
+            )
+        return self
+
+
+class CustomOwlViTProcessor(OwlViTProcessor):
+    def __call__(
+        self,
+        text=None,
+        images=None,
+        query_images=None,
+        padding="max_length",
+        return_tensors="np",
+        **kwargs,
+    ):
+        if text is None and query_images is None and images is None:
+            raise ValueError(
+                "You have to specify at least one text or query image or image. All three cannot be none."
+            )
+
+        if text is not None:
+            if isinstance(text, str) or (
+                isinstance(text, List) and not isinstance(text[0], List)
+            ):
+                encodings = [
+                    self.tokenizer(
+                        text, padding=padding, return_tensors=return_tensors, **kwargs
+                    )
+                ]
+
+            elif isinstance(text, List) and isinstance(text[0], List):
+                encodings = []
+
+                # Maximum number of queries across batch
+                max_num_queries = max([len(t) for t in text])
+
+                # Pad all batch samples to max number of text queries
+                for t in text:
+                    if len(t) != max_num_queries:
+                        t = t + [" "] * (max_num_queries - len(t))
+
+                    encoding = self.tokenizer(
+                        t, padding=padding, return_tensors=return_tensors, **kwargs
+                    )
+                    encodings.append(encoding)
+            else:
+                raise TypeError(
+                    "Input text should be a string, a list of strings or a nested list of strings"
+                )
+
+            if return_tensors == "np":
+                input_ids = np.concatenate(
+                    [encoding["input_ids"] for encoding in encodings], axis=0
+                )
+                attention_mask = np.concatenate(
+                    [encoding["attention_mask"] for encoding in encodings], axis=0
+                )
+
+            elif return_tensors == "pt" and is_torch_available():
+                import torch
+
+                input_ids = torch.cat(
+                    [encoding["input_ids"] for encoding in encodings], dim=0
+                )
+                attention_mask = torch.cat(
+                    [encoding["attention_mask"] for encoding in encodings], dim=0
+                )
+
+            else:
+                raise ValueError("Target return tensor type could not be returned")
+
+            encoding = CustomBatchEncoding()
+            encoding["input_ids"] = input_ids
+            encoding["attention_mask"] = attention_mask
+
+        if query_images is not None:
+            encoding = CustomBatchEncoding()
+            query_pixel_values = self.image_processor(
+                query_images, return_tensors=return_tensors, **kwargs
+            ).pixel_values
+            encoding["query_pixel_values"] = query_pixel_values
+
+        if images is not None:
+            image_features = self.image_processor(
+                images, return_tensors=return_tensors, **kwargs
+            )
+
+        if text is not None and images is not None:
+            encoding["pixel_values"] = image_features.pixel_values
+            return encoding
+        elif query_images is not None and images is not None:
+            encoding["pixel_values"] = image_features.pixel_values
+            return encoding
+        elif text is not None or query_images is not None:
+            return encoding
+        else:
+            return CustomBatchEncoding(
+                data=dict(**image_features), tensor_type=return_tensors
+            )
+
+
+def zeroshot_collate_fn(batch):
+    return list(zip(*batch))
 
 
 def transform_batch(examples, image_processor, return_pixel_mask=False):
@@ -105,97 +250,110 @@ class Teacher:
         return data
 
     def zero_shot_inference(self):
-        # TODO: Does this make sense as part of the teacher class?
+        transform = transforms.Compose([transforms.ToTensor()])
+
+        self.dataset = self.dataset.take(200)
+        pytorch_dataset = FiftyOneTorchDatasetCOCO(
+            self.dataset,
+            transforms=transform,
+        )
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        classes = [
+            "car",
+            "truck",
+            "bus",
+            "trailer",
+            "motorbike/cycler",  # TODO Maybe split into two and then merge again for eval?
+            "pedestrian",
+            "van",
+            "pickup",
+        ]
+
         hf_model_config = AutoConfig.from_pretrained(self.model_name)
         if type(hf_model_config) in AutoModelForZeroShotObjectDetection._model_mapping:
-            processor = AutoProcessor.from_pretrained(self.model_name)
-            model = AutoModelForZeroShotObjectDetection.from_pretrained(self.model_name)
+            processor = CustomOwlViTProcessor.from_pretrained(
+                self.model_name, do_rescale=False
+            )
+            # processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
+            model = AutoModelForZeroShotObjectDetection.from_pretrained(
+                self.model_name
+            ).to(device)
         else:
             model = None
             logging.error(
                 "HuggingFace AutoModel does not support " + str(type(hf_model_config))
             )
 
-        print(self.categories)
-        print(self.model_name)
-        if (
-            self.model_name == "IDEA-Research/grounding-dino-tiny"
-        ):  # https://huggingface.co/IDEA-Research/grounding-dino-tiny
-            class_names = (
-                "car.truck.bus.trailer.mototorbike/cycler.pedestrian.van.pickup."
-            )
-        else:
-            class_names = [  # TODO Assign based on self.categories
-                [
-                    "car",
-                    "truck",
-                    "bus",
-                    "trailer",
-                    "motorbike/cycler",
-                    "pedestrian",
-                    "van",
-                    "pickup",
-                ]
-            ]
-        v51_pred_key = "pred_" + self.model_name
-        v51_eval_key = "eval" + self.model_name
-        for sample in self.dataset.iter_samples(
-            progress=True, autosave=True
-        ):  # dataset.select_fields()
-            image = Image.open(sample.filepath)
-            width, height = image.size  # FIXME Read from V51 metadata
-            inputs = processor(text=class_names, images=image, return_tensors="pt")
-
-            with torch.no_grad():
-                outputs = model(**inputs)
-            original_size = torch.Tensor([image.size[::-1]])
-
-            # Convert outputs (bounding boxes and class logits) to final bounding boxes and scores
-            if self.model_name == "IDEA-Research/grounding-dino-tiny":
-                results = processor.post_process_grounded_object_detection(
-                    outputs,
-                    inputs.input_ids,
-                    box_threshold=0.4,
-                    text_threshold=0.3,
-                    target_sizes=[image.size[::-1]],
-                )
-            else:
-                results = processor.post_process_object_detection(
-                    outputs=outputs,
-                    threshold=0.2,
-                    target_sizes=original_size,  # TODO Move threshold to config
-                )
-            i = 0  # Retrieve predictions for the first image for the corresponding text queries
-            boxes, scores, labels = (
-                results[i]["boxes"],
-                results[i]["scores"],
-                results[i]["labels"],
-            )
-
-            # Convert to V51 format [top-left-x, top-left-y, width, height] in rel. coordinates between [0, 1]
-            detections = []
-            for box, score, label in zip(boxes, scores, labels):
-                top_left_x = box[0].item() / width
-                top_left_y = box[1].item() / height
-                box_width = (box[2] - box[0]).item() / width
-                box_height = (box[3] - box[1]).item() / height
-
-                detection = fo.Detection(
-                    label=class_names[0][label],
-                    bounding_box=[top_left_x, top_left_y, box_width, box_height],
-                    confidence=score.item(),
-                )
-                detections.append(detection)
-
-            sample[v51_pred_key] = fo.Detections(detections=detections)
-
-        # Evaluate model
-        results = self.dataset.evaluate_detections(
-            v51_pred_key,
-            gt_field="ground_truth",
-            eval_key=v51_eval_key,
-            compute_mAP=True,
+        data_loader = DataLoader(
+            pytorch_dataset,
+            batch_size=8,
+            num_workers=NUM_WORKERS,
+            pin_memory=True,
+            collate_fn=zeroshot_collate_fn,
+            prefetch_factor=8,  # Prefetch data
+            persistent_workers=True,  # Keep workers alive
         )
+
+        batch_classes = classes * data_loader.batch_size
+
+        tokenized_text = processor.tokenizer(
+            batch_classes, padding="max_length", return_tensors="pt"
+        ).to(device)
+
+        # Create a separate CUDA stream for data transfer
+        data_transfer_stream = Stream()
+
+        with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=False,  # Disable stack tracing to reduce memory usage
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                "./logs/tensorboard/zeroshot_profile/"
+            ),
+        ) as prof:
+            for images, targets in tqdm(data_loader):
+                with torch.profiler.record_function("image loading"):
+                    images = [(image).to(device, non_blocking=True) for image in images]
+                with torch.profiler.record_function("inputs_by_processor"):
+                    # Use the separate CUDA stream for data transfer
+                    # with torch.cuda.stream(data_transfer_stream):
+                    inputs = processor(
+                        text=None, images=images, return_tensors="pt"
+                    ).to(device, non_blocking=True)
+                    # Ensure the main stream waits for the data transfer to complete
+                    # torch.cuda.synchronize()
+                    ## https://github.com/huggingface/transformers/blob/main/src/transformers/models/owlv2/processing_owlv2.py#L49
+
+                    # inputs = processor(
+                    #    text=None, images=images, return_tensors="pt"
+                    # ).to(device, non_blocking=True)
+                # with torch.profiler.record_function("inputs_to_device"):
+                #    inputs = {
+                #        k: v.to(device, non_blocking=True) for k, v in inputs.items()
+                #    }
+                with torch.profiler.record_function("inputs_update"):
+                    inputs.update(tokenized_text)
+
+                with torch.profiler.record_function("inference"):
+                    with torch.amp.autocast("cuda"):
+                        with torch.no_grad():
+                            outputs = model(**inputs)
+
+                with torch.profiler.record_function("post-processing"):
+                    results = processor.post_process_object_detection(
+                        outputs=outputs, threshold=0.2
+                    )
+
+                with torch.profiler.record_function("processing"):
+                    for result in results:
+                        print(result)
+
+                prof.step()  # Notify profiler of the end of a step
 
     def train(self):
         pytorch_dataset = FiftyOneTorchDatasetCOCO(self.dataset)
