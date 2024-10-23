@@ -92,7 +92,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         target["iscrowd"] = torch.as_tensor(iscrowd, dtype=torch.int64)
 
         if self.transforms is not None:
-            img, target = self.transforms(img, target)
+            img = self.transforms(img)
 
         return img, target
 
