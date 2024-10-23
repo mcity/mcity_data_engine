@@ -11,20 +11,6 @@ import logging
 from config.config import NUM_WORKERS, PERSISTENT
 
 
-def delete_all_datasets():
-    """
-    Deletes all local V51 datasets.
-
-    This function logs a warning message indicating that all local V51 datasets
-    are being deleted. It then iterates through all the datasets listed by the
-    `fo.list_datasets()` function and deletes each one using the `fo.delete_dataset()`
-    function.
-    """
-    logging.warning("Deleting all local V51 datasets")
-    for dataset_name in fo.list_datasets():
-        fo.delete_dataset(dataset_name)
-
-
 def load_dataset_info(dataset_name, config_path="./config/datasets.yaml"):
     """
     Load dataset information from a YAML configuration file.
