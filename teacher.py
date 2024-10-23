@@ -3,6 +3,7 @@ import logging
 from PIL import Image
 
 from functools import partial
+import re
 
 import numpy as np
 import torch
@@ -22,6 +23,8 @@ from transformers import (
 )
 
 from tqdm import tqdm
+
+import fiftyone as fo
 
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from datasets import Split
@@ -250,25 +253,19 @@ class Teacher:
         return data
 
     def zero_shot_inference(self):
+        pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
+        eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
         transform = transforms.Compose([transforms.ToTensor()])
 
-        self.dataset = self.dataset.take(200)
         pytorch_dataset = FiftyOneTorchDatasetCOCO(
             self.dataset,
             transforms=transform,
         )
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        classes = [
-            "car",
-            "truck",
-            "bus",
-            "trailer",
-            "motorbike/cycler",  # TODO Maybe split into two and then merge again for eval?
-            "pedestrian",
-            "van",
-            "pickup",
-        ]
+        classes = (
+            self.dataset.default_classes
+        )  # TODO Maybe split "motorbike/cycler" into two and then merge again for eval?
 
         hf_model_config = AutoConfig.from_pretrained(self.model_name)
         if type(hf_model_config) in AutoModelForZeroShotObjectDetection._model_mapping:
@@ -287,12 +284,10 @@ class Teacher:
 
         data_loader = DataLoader(
             pytorch_dataset,
-            batch_size=8,
+            batch_size=12,  # TODO Improve configuration
             num_workers=NUM_WORKERS,
             pin_memory=True,
             collate_fn=zeroshot_collate_fn,
-            prefetch_factor=8,  # Prefetch data
-            persistent_workers=True,  # Keep workers alive
         )
 
         batch_classes = classes * data_loader.batch_size
@@ -301,59 +296,57 @@ class Teacher:
             batch_classes, padding="max_length", return_tensors="pt"
         ).to(device)
 
-        # Create a separate CUDA stream for data transfer
-        data_transfer_stream = Stream()
+        for images, targets in tqdm(data_loader):
+            images = [(image).to(device, non_blocking=True) for image in images]
 
-        with torch.profiler.profile(
-            activities=[
-                torch.profiler.ProfilerActivity.CPU,
-                torch.profiler.ProfilerActivity.CUDA,
-            ],
-            record_shapes=True,
-            profile_memory=True,
-            with_stack=False,  # Disable stack tracing to reduce memory usage
-            on_trace_ready=torch.profiler.tensorboard_trace_handler(
-                "./logs/tensorboard/zeroshot_profile/"
-            ),
-        ) as prof:
-            for images, targets in tqdm(data_loader):
-                with torch.profiler.record_function("image loading"):
-                    images = [(image).to(device, non_blocking=True) for image in images]
-                with torch.profiler.record_function("inputs_by_processor"):
-                    # Use the separate CUDA stream for data transfer
-                    # with torch.cuda.stream(data_transfer_stream):
-                    inputs = processor(
-                        text=None, images=images, return_tensors="pt"
-                    ).to(device, non_blocking=True)
-                    # Ensure the main stream waits for the data transfer to complete
-                    # torch.cuda.synchronize()
-                    ## https://github.com/huggingface/transformers/blob/main/src/transformers/models/owlv2/processing_owlv2.py#L49
+            inputs = processor(text=None, images=images, return_tensors="pt").to(
+                device, non_blocking=True
+            )
+            inputs.update(tokenized_text)
 
-                    # inputs = processor(
-                    #    text=None, images=images, return_tensors="pt"
-                    # ).to(device, non_blocking=True)
-                # with torch.profiler.record_function("inputs_to_device"):
-                #    inputs = {
-                #        k: v.to(device, non_blocking=True) for k, v in inputs.items()
-                #    }
-                with torch.profiler.record_function("inputs_update"):
-                    inputs.update(tokenized_text)
+            with torch.amp.autocast("cuda"):
+                with torch.no_grad():
+                    outputs = model(**inputs)
 
-                with torch.profiler.record_function("inference"):
-                    with torch.amp.autocast("cuda"):
-                        with torch.no_grad():
-                            outputs = model(**inputs)
+            results = processor.post_process_object_detection(
+                outputs=outputs, threshold=0.2
+            )
 
-                with torch.profiler.record_function("post-processing"):
-                    results = processor.post_process_object_detection(
-                        outputs=outputs, threshold=0.2
+            for result, target in zip(results, targets):
+                boxes, scores, labels = (
+                    result["boxes"],
+                    result["scores"],
+                    result["labels"],
+                )
+
+                detections = []
+                for box, score, label in zip(boxes, scores, labels):
+                    top_left_x = box[0].item()
+                    top_left_y = box[1].item()
+                    box_width = (box[2] - box[0]).item()
+                    box_height = (box[3] - box[1]).item()
+
+                    detection = fo.Detection(
+                        label=classes[label],
+                        bounding_box=[top_left_x, top_left_y, box_width, box_height],
+                        confidence=score.item(),
                     )
+                    detections.append(detection)
 
-                with torch.profiler.record_function("processing"):
-                    for result in results:
-                        print(result)
+                img_path = pytorch_dataset.img_paths[
+                    target["image_id"].item()
+                ]  # ID is stored in annotation
+                sample = self.dataset[img_path]
+                sample[pred_key] = fo.Detections(detections=detections)
+                sample.save()
 
-                prof.step()  # Notify profiler of the end of a step
+        # Populate dataset with evaluation results
+        eval = self.dataset.evaluate_detections(
+            pred_key,
+            gt_field="ground_truth",
+            eval_key=eval_key,
+            compute_mAP=True,
+        )
 
     def train(self):
         pytorch_dataset = FiftyOneTorchDatasetCOCO(self.dataset)
