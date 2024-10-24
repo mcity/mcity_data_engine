@@ -1,0 +1,18 @@
+{
+    "overrides": {
+        "entry_point": [
+            "python",
+            "wandb_runs/teacher_zero_shot_run.py"
+        ],
+        "run_config": {
+            "batch_size": 8,
+            "detection_threshold": 0.2,
+            "v51_dataset_name": "mcity_fisheye_2000",
+            "v51_dataset_splits:": [
+                "train",
+                "val"
+            ],
+            "model_name": "google/owlv2-base-patch16-ensemble"
+        }
+    }
+}
