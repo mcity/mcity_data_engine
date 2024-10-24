@@ -213,26 +213,53 @@ def main(args):
                     )
             except Exception as e:
                 logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
+                logging.error("Stack trace:", exc_info=True)
                 if run:
                     run.finish(exit_code=1)
                 continue
 
     elif SELECTED_WORKFLOW == "zero_shot_teacher":
-        # Evaluation with Zero Shot models
         zero_shot_teacher_models = WORKFLOWS["train_teacher"][
             "hf_models_zeroshot_objectdetection"
         ]
-        for MODEL_NAME in (
-            pbar := tqdm(zero_shot_teacher_models, desc="Zero Shot Teacher Models")
-        ):
-            # try:
-            pbar.set_description("Evaluating Zero Shot Teacher model " + MODEL_NAME)
-            config = {"model_name": MODEL_NAME}
-            teacher = Teacher(dataset=dataset, config=config)
-            teacher.zero_shot_inference()
-            # except Exception as e:
-            #    logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
-            #    continue
+        wandb_project = "Data Engine Teacher"
+        config_file_path = "wandb_runs/teacher_zero_shot_config.json"
+        with open(config_file_path, "r") as file:
+            config = json.load(file)
+
+        for MODEL_NAME in (pbar := tqdm(zero_shot_teacher_models, desc="Zero Shot")):
+            run = None
+            try:
+                pbar.set_description("Evaluating Zero Shot Teacher model " + MODEL_NAME)
+                config["overrides"]["run_config"]["model_name"] = MODEL_NAME
+                if args.queue == None:
+
+                    run = wandb.init(
+                        name=MODEL_NAME,
+                        allow_val_change=True,
+                        sync_tensorboard=True,
+                        group="Teacher",
+                        job_type="eval",
+                        config=config,
+                        project=wandb_project,
+                    )
+                    wandb_config = wandb.config["overrides"]["run_config"]
+
+                    run.tags += (wandb_config["v51_dataset_name"], "local", "zero-shot")
+
+                    teacher = Teacher(dataset=dataset, config=wandb_config)
+                    batch_size = wandb_config["batch_size"]
+                    detection_threshold = wandb_config["detection_threshold"]
+                    teacher.zero_shot_inference(
+                        batch_size=batch_size, detection_threshold=detection_threshold
+                    )
+
+            except Exception as e:
+                logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
+                logging.error("Stack trace:", exc_info=True)
+                if run:
+                    run.finish(exit_code=1)
+                continue
     else:
         logging.error(
             str(SELECTED_WORKFLOW)
@@ -245,10 +272,7 @@ def main(args):
         logging.info(dataset)
         fo.pprint(dataset.stats(include_media=True))
         session = fo.launch_app(
-            dataset,
-            spaces=spaces,
-            address=V51_ADDRESS,
-            port=V51_PORT,
+            dataset, spaces=spaces, address=V51_ADDRESS, port=V51_PORT
         )
 
     time_stop = time.time()
