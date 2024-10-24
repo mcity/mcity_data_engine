@@ -9,42 +9,36 @@ from datasets import Dataset, Split
 
 class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
     """
-    A custom PyTorch Dataset for loading COCO-style datasets from FiftyOne.
-    This dataset class is designed to work with FiftyOne datasets and provides
-    functionality to load images and their corresponding annotations in a format
-    compatible with PyTorch. It avoids any reference to the original FiftyOne dataset to remain pickable.
+    FiftyOneTorchDatasetCOCO is a custom PyTorch Dataset for loading COCO-style datasets from FiftyOne.
 
     Attributes:
-        transforms (callable, optional): A function/transform that takes in an
-            image and returns a transformed version. Default is None.
+        transforms (callable, optional): A function/transform that takes in an image and returns a transformed version.
         gt_field (str): The name of the ground truth field in the FiftyOne dataset.
-            Default is "ground_truth".
-        img_paths (list): List of image file paths.
-        labels (list): List of labels corresponding to the images.
-        metadata (dict): Dictionary containing metadata for each image.
-        classes (list): List of distinct class labels.
-        labels_map_rev (dict): Dictionary mapping class labels to indices.
-
-    Args:
-        fiftyone_dataset (fiftyone.core.dataset.Dataset): The FiftyOne dataset to load.
-        transforms (callable, optional): A function/transform that takes in an
-            image and returns a transformed version. Default is None.
-        gt_field (str, optional): The name of the ground truth field in the
-            FiftyOne dataset. Default is "ground_truth".
-        classes (list, optional): List of class labels. If not provided, the
-            distinct labels from the dataset will be used.
+        img_paths (list): List of image file paths from the FiftyOne dataset.
+        labels (dict): Dictionary mapping image file paths to their corresponding detections.
+        metadata (dict): Dictionary mapping image file paths to their corresponding metadata.
+        splits (dict): Dictionary mapping image file paths to their corresponding split tags.
+        classes (list): List of distinct labels in the dataset.
+        labels_map_rev (dict): Dictionary mapping class labels to their corresponding indices.
 
     Methods:
-        __getitem__(idx):
+        __init__(self, fiftyone_dataset, transforms=None, gt_field="ground_truth", classes=None):
+            Initializes the FiftyOneTorchDatasetCOCO with the given parameters.
+
+        __getitem__(self, idx):
             Returns the image and target at the specified index.
-        __getitems__(indices):
+
+        __getitems__(self, indices):
             Returns a list of samples for the specified indices.
-        __len__():
+
+        __len__(self):
             Returns the number of samples in the dataset.
-        get_classes():
-            Returns the list of class labels.
-        get_splits():
-            Returns the set of splits (tags) in the dataset.
+
+        get_classes(self):
+            Returns the list of classes in the dataset.
+
+        get_splits(self):
+            Returns the set of split tags in the dataset.
 
     References:
         - https://github.com/voxel51/fiftyone-examples/blob/master/examples/pytorch_detection_training.ipynb
