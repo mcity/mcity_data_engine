@@ -1,4 +1,5 @@
 import logging
+import multiprocessing as mp
 
 from PIL import Image
 
@@ -7,11 +8,11 @@ import re
 
 import numpy as np
 import torch
-from torch.cuda import Stream
 from torch.utils.data import DataLoader
 from torchvision import transforms
+import torch.multiprocessing as mp
 
-from config.config import WORKFLOWS, NUM_WORKERS
+from config.config import NUM_WORKERS
 from transformers import (
     AutoConfig,
     AutoProcessor,
@@ -261,56 +262,77 @@ class Teacher:
             self.dataset,
             transforms=transform,
         )
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        classes = (
-            self.dataset.default_classes
-        )  # TODO Maybe split "motorbike/cycler" into two and then merge again for eval?
-
-        hf_model_config = AutoConfig.from_pretrained(self.model_name)
-        if type(hf_model_config) in AutoModelForZeroShotObjectDetection._model_mapping:
-            processor = CustomOwlViTProcessor.from_pretrained(
-                self.model_name, do_rescale=False
-            )
-            # processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
-            model = AutoModelForZeroShotObjectDetection.from_pretrained(
-                self.model_name
-            ).to(device)
-        else:
-            model = None
-            logging.error(
-                "HuggingFace AutoModel does not support " + str(type(hf_model_config))
-            )
-
         data_loader = DataLoader(
             pytorch_dataset,
-            batch_size=12,  # TODO Improve configuration
+            batch_size=8,  # TODO Improve configuration (12 for OwlV2)
             num_workers=NUM_WORKERS,
             pin_memory=True,
             collate_fn=zeroshot_collate_fn,
         )
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        batch_classes = classes * data_loader.batch_size
+        classes_v51 = (
+            self.dataset.default_classes
+        )  # TODO Maybe split "motorbike/cycler" into two and then merge again for eval?
 
-        tokenized_text = processor.tokenizer(
-            batch_classes, padding="max_length", return_tensors="pt"
-        ).to(device)
+        hf_model_config = AutoConfig.from_pretrained(self.model_name)
+
+        # Set processor and classes
+        if type(hf_model_config).__name__ == "GroundingDinoConfig":
+            processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
+            # https://huggingface.co/docs/transformers/v4.45.2/en/model_doc/grounding-dino
+            classes = ".".join(classes_v51) + "."
+            batch_classes = [classes] * data_loader.batch_size
+            tokenized_text = processor.tokenizer(
+                batch_classes, padding="max_length", return_tensors="pt"
+            ).to(device)
+
+        elif type(hf_model_config).__name__ == "Owlv2Config":
+            processor = CustomOwlViTProcessor.from_pretrained(
+                self.model_name, do_rescale=False
+            )
+            classes = classes_v51
+            batch_classes = classes * data_loader.batch_size
+            tokenized_text = processor.tokenizer(
+                batch_classes, padding="max_length", return_tensors="pt"
+            ).to(device)
+        else:
+            logging.error(
+                "HuggingFace AutoModel does not support " + str(type(hf_model_config))
+            )
+
+        model = AutoModelForZeroShotObjectDetection.from_pretrained(self.model_name).to(
+            device
+        )
 
         for images, targets in tqdm(data_loader):
             images = [(image).to(device, non_blocking=True) for image in images]
 
-            inputs = processor(text=None, images=images, return_tensors="pt").to(
-                device, non_blocking=True
-            )
-            inputs.update(tokenized_text)
+            if type(hf_model_config).__name__ == "GroundingDinoConfig":
+                inputs = processor(
+                    text=tokenized_text, images=images, return_tensors="pt"
+                ).to(device)
+            elif type(hf_model_config).__name__ == "Owlv2Config":
+                inputs = processor(text=None, images=images, return_tensors="pt").to(
+                    device, non_blocking=True
+                )
+                inputs.update(tokenized_text)
 
             with torch.amp.autocast("cuda"):
                 with torch.no_grad():
                     outputs = model(**inputs)
 
-            results = processor.post_process_object_detection(
-                outputs=outputs, threshold=0.2
-            )
+            if type(hf_model_config).__name__ == "GroundingDinoConfig":
+                results = processor.post_process_grounded_object_detection(
+                    outputs,
+                    inputs.input_ids,
+                    box_threshold=0.2,
+                    target_sizes=[(image.shape[1], image.shape[2]) for image in images],
+                )
+            elif type(hf_model_config).__name__ == "Owlv2Config":
+                results = processor.post_process_object_detection(
+                    outputs=outputs, threshold=0.2
+                )
 
             for result, target in zip(results, targets):
                 boxes, scores, labels = (
@@ -326,8 +348,13 @@ class Teacher:
                     box_width = (box[2] - box[0]).item()
                     box_height = (box[3] - box[1]).item()
 
+                    if type(hf_model_config).__name__ == "GroundingDinoConfig":
+                        label = label
+                    elif type(hf_model_config).__name__ == "Owlv2Config":
+                        label = classes[label]
+
                     detection = fo.Detection(
-                        label=classes[label],
+                        label=label,
                         bounding_box=[top_left_x, top_left_y, box_width, box_height],
                         confidence=score.item(),
                     )
