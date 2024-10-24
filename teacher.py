@@ -363,17 +363,23 @@ class Teacher:
                     if type(hf_model_config).__name__ == "GroundingDinoConfig":
                         # Outputs do not comply with given labels
                         # There can be either multiple labels per output ("bike van") or incomplete ones ("motorcyc")
-                        label = label.split()[0]
-                        if label not in classes_v51:
+                        processed_label = label.split()[0]
+                        if processed_label not in classes_v51:
                             matches = get_close_matches(
-                                label, classes_v51, n=1, cutoff=0.6
+                                processed_label, classes_v51, n=1, cutoff=0.6
                             )
-                            label = matches[0] if matches else None
-                        if label == None:
+                            processed_label = matches[0] if matches else None
+                        if processed_label == None:
+                            logging.warning(
+                                "Skipped detection with model "
+                                + type(hf_model_config).__name__
+                                + " due to unclear detection label: "
+                                + label
+                            )
                             continue
                         label = class_parts_dict[
-                            label
-                        ]  # Assign original label for correct evaluation
+                            processed_label
+                        ]  # Original label for eval
                         top_left_x = box[0].item()
                         top_left_y = box[1].item()
                         box_width = (box[2] - box[0]).item()
