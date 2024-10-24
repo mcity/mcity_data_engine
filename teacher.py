@@ -1,16 +1,17 @@
 import logging
-import multiprocessing as mp
 
 from PIL import Image
+from difflib import get_close_matches
 
 from functools import partial
 import re
+import time
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
-import torch.multiprocessing as mp
+from torch.utils.tensorboard import SummaryWriter
 
 from config.config import NUM_WORKERS
 from transformers import (
@@ -253,7 +254,7 @@ class Teacher:
             data["pixel_mask"] = torch.stack([x["pixel_mask"] for x in batch])
         return data
 
-    def zero_shot_inference(self):
+    def zero_shot_inference(self, batch_size=8, detection_threshold=0.2):
         pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
         eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
         transform = transforms.Compose([transforms.ToTensor()])
@@ -264,16 +265,25 @@ class Teacher:
         )
         data_loader = DataLoader(
             pytorch_dataset,
-            batch_size=8,  # TODO Improve configuration (12 for OwlV2)
+            batch_size=batch_size,
             num_workers=NUM_WORKERS,
             pin_memory=True,
             collate_fn=zeroshot_collate_fn,
         )
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        classes_v51 = (
-            self.dataset.default_classes
-        )  # TODO Maybe split "motorbike/cycler" into two and then merge again for eval?
+        classes_v51 = self.dataset.default_classes
+
+        # Process combined label types like "motorbike/cycler"
+        processed_classes = [
+            part for classname in classes_v51 for part in classname.split("/")
+        ]
+        class_parts_dict = {
+            part: classname
+            for classname in classes_v51
+            for part in classname.split("/")
+        }
+        classes_v51 = processed_classes
 
         hf_model_config = AutoConfig.from_pretrained(self.model_name)
 
@@ -281,7 +291,7 @@ class Teacher:
         if type(hf_model_config).__name__ == "GroundingDinoConfig":
             processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
             # https://huggingface.co/docs/transformers/v4.45.2/en/model_doc/grounding-dino
-            classes = ".".join(classes_v51) + "."
+            classes = ". ".join(classes_v51) + "."
             batch_classes = [classes] * data_loader.batch_size
             tokenized_text = processor.tokenizer(
                 batch_classes,
@@ -307,15 +317,17 @@ class Teacher:
         model = AutoModelForZeroShotObjectDetection.from_pretrained(self.model_name).to(
             device
         )
+        writer = SummaryWriter(log_dir="logs/tensorboard/teacher_zeroshot")
 
-        for images, targets in tqdm(data_loader):
+        for step, (images, targets) in enumerate(tqdm(data_loader)):
+            start_time = time.time()
             images = [(image).to(device, non_blocking=True) for image in images]
-
             if type(hf_model_config).__name__ == "GroundingDinoConfig":
                 inputs = processor(text=None, images=images, return_tensors="pt").to(
                     device
                 )
                 inputs.update(tokenized_text)
+
             elif type(hf_model_config).__name__ == "Owlv2Config":
                 inputs = processor(text=None, images=images, return_tensors="pt").to(
                     device, non_blocking=True
@@ -330,12 +342,12 @@ class Teacher:
                 results = processor.post_process_grounded_object_detection(
                     outputs,
                     inputs.input_ids,
-                    box_threshold=0.2,
-                    target_sizes=[(image.shape[1], image.shape[2]) for image in images],
+                    box_threshold=detection_threshold,
+                    text_threshold=detection_threshold,
                 )
             elif type(hf_model_config).__name__ == "Owlv2Config":
                 results = processor.post_process_object_detection(
-                    outputs=outputs, threshold=0.2
+                    outputs=outputs, threshold=detection_threshold
                 )
 
             for result, target in zip(results, targets):
@@ -347,15 +359,31 @@ class Teacher:
 
                 detections = []
                 for box, score, label in zip(boxes, scores, labels):
-                    top_left_x = box[0].item()
-                    top_left_y = box[1].item()
-                    box_width = (box[2] - box[0]).item()
-                    box_height = (box[3] - box[1]).item()
 
                     if type(hf_model_config).__name__ == "GroundingDinoConfig":
-                        label = label
+                        # Outputs do not comply with given labels
+                        # There can be either multiple labels per output ("bike van") or incomplete ones ("motorcyc")
+                        label = label.split()[0]
+                        if label not in classes_v51:
+                            matches = get_close_matches(
+                                label, classes_v51, n=1, cutoff=0.6
+                            )
+                            label = matches[0] if matches else None
+                        if label == None:
+                            continue
+                        label = class_parts_dict[
+                            label
+                        ]  # Assign original label for correct evaluation
+                        top_left_x = box[0].item()
+                        top_left_y = box[1].item()
+                        box_width = (box[2] - box[0]).item()
+                        box_height = (box[3] - box[1]).item()
                     elif type(hf_model_config).__name__ == "Owlv2Config":
-                        label = classes[label]
+                        label = class_parts_dict[classes[label]]
+                        top_left_x = box[0].item()
+                        top_left_y = box[1].item()
+                        box_width = (box[2] - box[0]).item()
+                        box_height = (box[3] - box[1]).item()
 
                     detection = fo.Detection(
                         label=label,
@@ -371,7 +399,14 @@ class Teacher:
                 sample[pred_key] = fo.Detections(detections=detections)
                 sample.save()
 
+            end_time = time.time()  # End time for the batch
+            batch_duration = end_time - start_time  # Duration in seconds
+
+            # Log the batch duration to TensorBoard
+            writer.add_scalar("Inference/Batch_Duration", batch_duration, step)
+
         torch.cuda.empty_cache()
+        writer.close()
 
         # Populate dataset with evaluation results
         eval = self.dataset.evaluate_detections(
