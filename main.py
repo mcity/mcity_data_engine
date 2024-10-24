@@ -13,6 +13,8 @@ from config.config import (
     V51_EMBEDDING_MODELS,
     ANOMALIB_IMAGE_MODELS,
     WORKFLOWS,
+    V51_ADDRESS,
+    V51_PORT,
 )
 
 from tqdm import tqdm
@@ -242,8 +244,12 @@ def main(args):
         dataset.save()
         logging.info(dataset)
         fo.pprint(dataset.stats(include_media=True))
-        session = fo.launch_app(dataset, spaces=spaces)
-        session.wait()  # (-1) for indefinitely
+        session = fo.launch_app(
+            dataset,
+            spaces=spaces,
+            address=V51_ADDRESS,
+            port=V51_PORT,
+        )
 
     time_stop = time.time()
     logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
