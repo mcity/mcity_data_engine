@@ -62,40 +62,51 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         self.gt_field = gt_field
         self.img_paths = [sample.filepath for sample in fiftyone_dataset]
         self.labels = {
-            sample.filepath: sample[gt_field].detections for sample in fiftyone_dataset
+            sample.filepath: sample[gt_field].detections
+            for sample in fiftyone_dataset
+            if gt_field in sample
         }
         self.metadata = {
             sample.filepath: sample.metadata for sample in fiftyone_dataset
         }
-        self.splits = {sample.filepath: sample.tags[0] for sample in fiftyone_dataset}
+        self.splits = {
+            sample.filepath: sample.tags[0]
+            for sample in fiftyone_dataset
+            if sample.tags
+        }
         self.classes = classes
         if not self.classes:
-            # Get list of distinct labels that exist in the view
-            self.classes = fiftyone_dataset.distinct(f"{gt_field}.detections.label")
+            # Check if any sample has the gt_field
+            if any(gt_field in sample for sample in fiftyone_dataset):
+                # Get list of distinct labels that exist in the view
+                self.classes = fiftyone_dataset.distinct(f"{gt_field}.detections.label")
+            else:
+                self.classes = []
         self.labels_map_rev = {c: i for i, c in enumerate(self.classes)}
 
     def __getitem__(self, idx):
         img_path = self.img_paths[idx]
         metadata = self.metadata[img_path]
-        detections = self.labels[img_path]
-        split = self.splits[img_path]
+        detections = self.labels.get(img_path, [])
         img = Image.open(img_path).convert("RGB")
         boxes = []
         labels = []
         area = []
         iscrowd = []
-        for det in detections:
-            category_id = self.labels_map_rev[det.label]
-            coco_obj = fouc.COCOObject.from_label(
-                det,
-                metadata,
-                category_id=category_id,
-            )
-            x, y, w, h = coco_obj.bbox
-            boxes.append([x, y, w, h])
-            labels.append(coco_obj.category_id)
-            area.append(coco_obj.area)
-            iscrowd.append(coco_obj.iscrowd)
+
+        if detections:
+            for det in detections:
+                category_id = self.labels_map_rev[det.label]
+                coco_obj = fouc.COCOObject.from_label(
+                    det,
+                    metadata,
+                    category_id=category_id,
+                )
+                x, y, w, h = coco_obj.bbox
+                boxes.append([x, y, w, h])
+                labels.append(coco_obj.category_id)
+                area.append(coco_obj.area)
+                iscrowd.append(coco_obj.iscrowd)
 
         target = {}
         target["boxes"] = torch.as_tensor(boxes, dtype=torch.float32)
@@ -183,7 +194,6 @@ def gen_factory(torch_dataset, split_name):
     The FiftyOne dataset is iterated to collect sample data, which is then used within the generator function.
     """
     img_paths = torch_dataset.img_paths
-    gt_field = torch_dataset.gt_field
     labels_map_rev = torch_dataset.labels_map_rev
     splits = torch_dataset.splits
     metadata = torch_dataset.metadata
