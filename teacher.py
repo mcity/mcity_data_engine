@@ -284,7 +284,10 @@ class Teacher:
             classes = ".".join(classes_v51) + "."
             batch_classes = [classes] * data_loader.batch_size
             tokenized_text = processor.tokenizer(
-                batch_classes, padding="max_length", return_tensors="pt"
+                batch_classes,
+                padding="max_length",
+                return_tensors="pt",
+                max_length=256,  # Adjust max_length to match vision hidden state
             ).to(device)
 
         elif type(hf_model_config).__name__ == "Owlv2Config":
@@ -309,9 +312,10 @@ class Teacher:
             images = [(image).to(device, non_blocking=True) for image in images]
 
             if type(hf_model_config).__name__ == "GroundingDinoConfig":
-                inputs = processor(
-                    text=tokenized_text, images=images, return_tensors="pt"
-                ).to(device)
+                inputs = processor(text=None, images=images, return_tensors="pt").to(
+                    device
+                )
+                inputs.update(tokenized_text)
             elif type(hf_model_config).__name__ == "Owlv2Config":
                 inputs = processor(text=None, images=images, return_tensors="pt").to(
                     device, non_blocking=True
@@ -366,6 +370,8 @@ class Teacher:
                 sample = self.dataset[img_path]
                 sample[pred_key] = fo.Detections(detections=detections)
                 sample.save()
+
+        torch.cuda.empty_cache()
 
         # Populate dataset with evaluation results
         eval = self.dataset.evaluate_detections(
