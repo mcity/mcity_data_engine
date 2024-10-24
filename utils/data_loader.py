@@ -60,12 +60,14 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
     ):
         self.transforms = transforms
         self.gt_field = gt_field
-        self.img_paths, self.labels = fiftyone_dataset.values(
-            ["filepath", f"{gt_field}.detections"]
-        )
+        self.img_paths = [sample.filepath for sample in fiftyone_dataset]
+        self.labels = {
+            sample.filepath: sample[gt_field].detections for sample in fiftyone_dataset
+        }
         self.metadata = {
             sample.filepath: sample.metadata for sample in fiftyone_dataset
         }
+        self.splits = {sample.filepath: sample.tags[0] for sample in fiftyone_dataset}
         self.classes = classes
         if not self.classes:
             # Get list of distinct labels that exist in the view
@@ -74,8 +76,9 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         img_path = self.img_paths[idx]
-        metadata = self.metadata.get(img_path, None)
-        detections = self.labels[idx]
+        metadata = self.metadata[img_path]
+        detections = self.labels[img_path]
+        split = self.splits[img_path]
         img = Image.open(img_path).convert("RGB")
         boxes = []
         labels = []
@@ -115,11 +118,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         return self.classes
 
     def get_splits(self):
-        splits = set()
-        for sample in self.labels:
-            split = sample.tags[0]  # Assuming the split is the first tag
-            splits.add(split)
-        return splits
+        return set(self.splits.values())
 
 
 class TorchToHFDatasetCOCO:
@@ -186,22 +185,20 @@ def gen_factory(torch_dataset, split_name):
     img_paths = torch_dataset.img_paths
     gt_field = torch_dataset.gt_field
     labels_map_rev = torch_dataset.labels_map_rev
-    samples_data = {
-        sample.filepath: {
-            "tags": sample.tags,
-            "metadata": sample.metadata,
-            "detections": sample[gt_field].detections,
-        }
-        for sample in torch_dataset.samples.iter_samples()
-    }
+    splits = torch_dataset.splits
+    metadata = torch_dataset.metadata
+    labels = torch_dataset.labels
 
     def _gen():
         for idx, img_path in enumerate(img_paths):
-            sample_data = samples_data[img_path]
-            split = sample_data["tags"][0]
+            split = splits[img_path]
             if split != split_name:
                 continue
 
+            sample_data = {
+                "metadata": metadata[img_path],
+                "detections": labels[img_path],
+            }
             target = create_target(sample_data, labels_map_rev, idx)
             yield {
                 "image": img_path,
