@@ -195,7 +195,7 @@ pprintpp==0.4.0
 priority==2.0.0
 prompt_toolkit==3.0.48
 proto-plus==1.24.0
-protobuf==4.25.5
+protobuf==5.26.1
 psutil==6.0.0
 ptyprocess==0.7.0
 pure_eval==0.2.3
@@ -269,7 +269,6 @@ tabulate==0.9.0
 tenacity==9.0.0
 tensorboard==2.18.0
 tensorboard-data-server==0.7.2
-tensorboard-plugin-profile==2.17.0
 termcolor==2.4.0
 texttable==1.7.0
 threadpoolctl==3.5.0
