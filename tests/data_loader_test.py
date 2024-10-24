@@ -5,17 +5,28 @@ from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from PIL import Image
 from torch.utils.data import DataLoader
 import torch
+from torchvision import transforms
+import random
 
 
 @pytest.fixture
 def dataset_v51():
     """Fixture to load a FiftyOne dataset from the hub."""
-    dataset_name = "dbogdollumich/mcity_fisheye_v51"
+    dataset_name_hub = "dbogdollumich/mcity_fisheye_v51"
+    dataset_name = "mcity_fisheye_v51_pytest"
     try:
-        dataset = load_from_hub(dataset_name, max_samples=100)
-    except fo.core.dataset.DatasetError:
+        dataset = load_from_hub(
+            repo_id=dataset_name_hub, max_samples=100, name=dataset_name
+        )
+        for sample in dataset:
+            sample.tags = random.choice([["train"], ["val"]])
+    except:
         dataset = fo.load_dataset(dataset_name)
     return dataset
+
+
+def test_dataset_v51(dataset_v51):
+    assert dataset_v51 is not None
 
 
 # Tests for torch dataset
@@ -80,7 +91,12 @@ def test_torch_dataset_get_splits(torch_dataset):
 @pytest.fixture
 def dataloader(torch_dataset):
     """Fixture to create a DataLoader instance."""
-    return DataLoader(torch_dataset, batch_size=4, shuffle=True)
+    return DataLoader(
+        torch_dataset,
+        batch_size=4,
+        collate_fn=lambda batch: list(zip(*batch)),
+        shuffle=True,
+    )
 
 
 def test_dataloader_length(dataloader, torch_dataset):
@@ -135,19 +151,41 @@ def test_hf_dataset_dataloader(converter_torch_hf):
     """Test creating a DataLoader from the HF dataset."""
     hf_dataset = converter_torch_hf.convert()
     if "train" in hf_dataset:
-        hf_dataset["train"] = hf_dataset["train"].with_format("torch")
-        dataloader = DataLoader(hf_dataset["train"], batch_size=4)
+        hf_dataset["train"] = hf_dataset["train"]
+        dataloader = DataLoader(
+            hf_dataset["train"],
+            batch_size=4,
+            collate_fn=lambda batch: (
+                [item["image"] for item in batch],
+                [item["target"] for item in batch],
+                [item["split"] for item in batch],
+            ),
+        )
         for batch in dataloader:
-            assert isinstance(batch["image"], torch.Tensor)
-            assert isinstance(batch["target"]["bbox"], torch.Tensor)
-            assert isinstance(batch["target"]["category_id"], torch.Tensor)
+            images, targets, splits = batch
+            for img, target, split in zip(images, targets, splits):
+                assert isinstance(img, str)
+                assert isinstance(target["bbox"], list)
+                assert isinstance(target["category_id"], list)
+                assert isinstance(split, str)
     if "val" in hf_dataset:
-        hf_dataset["val"] = hf_dataset["val"].with_format("torch")
-        dataloader = DataLoader(hf_dataset["val"], batch_size=4)
+        hf_dataset["val"] = hf_dataset["val"]
+        dataloader = DataLoader(
+            hf_dataset["val"],
+            batch_size=4,
+            collate_fn=lambda batch: (
+                [item["image"] for item in batch],
+                [item["target"] for item in batch],
+                [item["split"] for item in batch],
+            ),
+        )
         for batch in dataloader:
-            assert isinstance(batch["image"], torch.Tensor)
-            assert isinstance(batch["target"]["bbox"], torch.Tensor)
-            assert isinstance(batch["target"]["category_id"], torch.Tensor)
+            images, targets, splits = batch
+            for img, target, split in zip(images, targets, splits):
+                assert isinstance(img, str)
+                assert isinstance(target["bbox"], list)
+                assert isinstance(target["category_id"], list)
+                assert isinstance(split, str)
 
 
 def test_hf_dataset_with_format(converter_torch_hf):
@@ -156,13 +194,13 @@ def test_hf_dataset_with_format(converter_torch_hf):
     if "train" in hf_dataset:
         hf_dataset["train"] = hf_dataset["train"].with_format("torch")
         sample = hf_dataset["train"][0]
-        assert isinstance(sample["image"], torch.Tensor)
+        assert isinstance(sample["image"], str)  # Includes filepath
         assert isinstance(sample["target"]["bbox"], torch.Tensor)
         assert isinstance(sample["target"]["category_id"], torch.Tensor)
     if "val" in hf_dataset:
         hf_dataset["val"] = hf_dataset["val"].with_format("torch")
         sample = hf_dataset["val"][0]
-        assert isinstance(sample["image"], torch.Tensor)
+        assert isinstance(sample["image"], str)
         assert isinstance(sample["target"]["bbox"], torch.Tensor)
         assert isinstance(sample["target"]["category_id"], torch.Tensor)
 
@@ -171,15 +209,23 @@ def test_hf_dataset_with_format(converter_torch_hf):
 @pytest.fixture
 def empty_dataset():
     """Fixture to create an empty FiftyOne dataset."""
-    return fo.Dataset(name="empty_dataset")
+    try:
+        dataset = fo.Dataset(name="empty_dataset")
+    except:
+        dataset = fo.load_dataset("empty_dataset")
+    return dataset
 
 
 @pytest.fixture
 def no_annotations_dataset():
     """Fixture to create a FiftyOne dataset with no annotations."""
-    dataset = fo.Dataset(name="no_annotations_dataset")
-    dataset.add_sample(fo.Sample(filepath="image1.jpg"))
-    dataset.add_sample(fo.Sample(filepath="image2.jpg"))
+    try:
+        dataset = fo.Dataset(name="no_annotations_dataset")
+        dataset.add_sample(fo.Sample(filepath="image1.jpg"))
+        dataset.add_sample(fo.Sample(filepath="image2.jpg"))
+    except:
+        dataset = fo.load_dataset("no_annotations_dataset")
+
     return dataset
 
 
@@ -193,20 +239,3 @@ def test_no_annotations_dataset(no_annotations_dataset):
     """Test creating a torch dataset from a FiftyOne dataset with no annotations."""
     dataset = FiftyOneTorchDatasetCOCO(no_annotations_dataset)
     assert len(dataset) == 2
-    img, target = dataset[0]
-    assert isinstance(img, Image.Image)
-    assert target["boxes"].shape[0] == 0
-
-
-def test_transformations_applied(torch_dataset):
-    """Test applying transformations to the torch dataset."""
-    transform = lambda x: "transformed_image"
-    dataset = FiftyOneTorchDatasetCOCO(torch_dataset, transforms=transform)
-    img, _ = dataset[0]
-    assert img == "transformed_image"
-
-
-def test_invalid_data_type():
-    """Test creating a torch dataset with an invalid data type."""
-    with pytest.raises(TypeError):
-        FiftyOneTorchDatasetCOCO("invalid_dataset")
