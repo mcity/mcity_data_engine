@@ -406,10 +406,10 @@ class Teacher:
                 sample.save()
 
             end_time = time.time()  # End time for the batch
-            batch_duration = end_time - start_time  # Duration in seconds
-
+            batch_duration = end_time - start_time
+            batches_per_second = 1 / batch_duration
             # Log the batch duration to TensorBoard
-            writer.add_scalar("inference/seconds_per_batch", batch_duration, step)
+            writer.add_scalar("inference/batches_per_second", batches_per_second, step)
 
         torch.cuda.empty_cache()
         writer.close()
