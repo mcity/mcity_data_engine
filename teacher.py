@@ -33,7 +33,7 @@ from datasets import Split
 from config.config import NUM_WORKERS
 
 from transformers import BatchEncoding
-from transformers.models.owlvit.processing_owlvit import OwlViTProcessor
+from transformers.models.owlv2.processing_owlv2 import Owlv2Processor
 from transformers.utils.import_utils import requires_backends, is_torch_available
 from transformers.utils.generic import is_torch_device
 from typing import List, Union
@@ -73,7 +73,7 @@ class CustomBatchEncoding(BatchEncoding):
         return self
 
 
-class CustomOwlViTProcessor(OwlViTProcessor):
+class CustomOwlv2Processor(Owlv2Processor):
     def __call__(
         self,
         text=None,
@@ -259,6 +259,7 @@ class Teacher:
         eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
         transform = transforms.Compose([transforms.ToTensor()])
 
+        self.dataset = self.dataset.take(50)  # FIXME Remove after testing
         pytorch_dataset = FiftyOneTorchDatasetCOCO(
             self.dataset,
             transforms=transform,
@@ -291,7 +292,7 @@ class Teacher:
         if type(hf_model_config).__name__ == "GroundingDinoConfig":
             processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
             # https://huggingface.co/docs/transformers/v4.45.2/en/model_doc/grounding-dino
-            classes = ". ".join(classes_v51) + "."
+            classes = " . ".join(classes_v51) + " . "
             batch_classes = [classes] * data_loader.batch_size
             tokenized_text = processor.tokenizer(
                 batch_classes,
@@ -301,9 +302,16 @@ class Teacher:
             ).to(device)
 
         elif type(hf_model_config).__name__ == "Owlv2Config":
-            processor = CustomOwlViTProcessor.from_pretrained(
+            processor = CustomOwlv2Processor.from_pretrained(
                 self.model_name, do_rescale=False
             )
+            classes = classes_v51
+            batch_classes = classes * data_loader.batch_size
+            tokenized_text = processor.tokenizer(
+                batch_classes, padding="max_length", return_tensors="pt"
+            ).to(device)
+        elif type(hf_model_config).__name__ == "OwlViTConfig":
+            processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
             classes = classes_v51
             batch_classes = classes * data_loader.batch_size
             tokenized_text = processor.tokenizer(
@@ -333,6 +341,11 @@ class Teacher:
                     device, non_blocking=True
                 )
                 inputs.update(tokenized_text)
+            elif type(hf_model_config).__name__ == "OwlViTConfig":
+                inputs = processor(text=None, images=images, return_tensors="pt").to(
+                    device
+                )
+                inputs.update(tokenized_text)
 
             with torch.amp.autocast("cuda"):
                 with torch.no_grad():
@@ -345,7 +358,7 @@ class Teacher:
                     box_threshold=detection_threshold,
                     text_threshold=detection_threshold,
                 )
-            elif type(hf_model_config).__name__ == "Owlv2Config":
+            elif type(hf_model_config).__name__ in ["Owlv2Config", "OwlViTConfig"]:
                 results = processor.post_process_object_detection(
                     outputs=outputs, threshold=detection_threshold
                 )
@@ -362,6 +375,7 @@ class Teacher:
 
                     if type(hf_model_config).__name__ == "GroundingDinoConfig":
                         # Outputs do not comply with given labels
+                        # Grounding DINO outputs multiple pairs of object boxes and noun phrases for a given (Image, Text) pair
                         # There can be either multiple labels per output ("bike van") or incomplete ones ("motorcyc")
                         processed_label = label.split()[0]
                         if processed_label not in classes_v51:
@@ -384,7 +398,10 @@ class Teacher:
                         top_left_y = box[1].item()
                         box_width = (box[2] - box[0]).item()
                         box_height = (box[3] - box[1]).item()
-                    elif type(hf_model_config).__name__ == "Owlv2Config":
+                    elif type(hf_model_config).__name__ in [
+                        "Owlv2Config",
+                        "OwlViTConfig",
+                    ]:
                         label = class_parts_dict[classes[label]]
                         top_left_x = box[0].item()
                         top_left_y = box[1].item()
@@ -405,10 +422,10 @@ class Teacher:
                 sample[pred_key] = fo.Detections(detections=detections)
                 sample.save()
 
-            end_time = time.time()  # End time for the batch
+            # Log inference performance
+            end_time = time.time()
             batch_duration = end_time - start_time
             batches_per_second = 1 / batch_duration
-            # Log the batch duration to TensorBoard
             writer.add_scalar("inference/batches_per_second", batches_per_second, step)
 
         torch.cuda.empty_cache()
