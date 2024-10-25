@@ -253,6 +253,7 @@ def main(args):
                     teacher.zero_shot_inference(
                         batch_size=batch_size, detection_threshold=detection_threshold
                     )
+                    run.finish(exit_code=0)
 
             except Exception as e:
                 logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
