@@ -6,6 +6,7 @@ from difflib import get_close_matches
 from functools import partial
 import re
 import time
+import requests
 
 import numpy as np
 import torch
@@ -254,12 +255,128 @@ class Teacher:
             data["pixel_mask"] = torch.stack([x["pixel_mask"] for x in batch])
         return data
 
-    def zero_shot_inference(self, batch_size=8, detection_threshold=0.2):
+    def _initialize_zero_shot_processor(
+        self, hf_model_config, model_name, batch_size, classes_v51, device
+    ):
+        """
+        Initializes and returns the processor, batch classes, tokenized text, and batch tasks
+        for zero-shot learning based on the provided HuggingFace model configuration.
+
+        Args:
+            hf_model_config (object): The HuggingFace model configuration object.
+            model_name (str): The name of the pre-trained model.
+            batch_size (int): The size of the batch.
+            classes_v51 (list): A list of class names.
+            device (str): The device to which tensors should be moved (e.g., 'cpu' or 'cuda').
+
+        Returns:
+            tuple: A tuple containing:
+                - processor (object or None): The processor object initialized from the pre-trained model.
+                - batch_classes (list or None): The list of batch classes.
+                - tokenized_text (torch.Tensor or None): The tokenized text tensor.
+                - batch_tasks (list or None): The list of batch tasks (only for OmDetTurboConfig).
+        """
+        processor, batch_classes, tokenized_text, batch_tasks = None, None, None, None
+        if type(hf_model_config).__name__ == "GroundingDinoConfig":
+            processor = AutoProcessor.from_pretrained(model_name, do_rescale=False)
+            # https://huggingface.co/docs/transformers/v4.45.2/en/model_doc/grounding-dino
+            classes = " . ".join(classes_v51) + " . "
+            batch_classes = [classes] * batch_size
+            tokenized_text = processor.tokenizer(
+                batch_classes,
+                padding="max_length",
+                return_tensors="pt",
+                max_length=256,  # Adjust max_length to match vision hidden state
+            ).to(device)
+
+        elif type(hf_model_config).__name__ == "Owlv2Config":
+            processor = CustomOwlv2Processor.from_pretrained(
+                model_name, do_rescale=False
+            )
+            classes = classes_v51
+            batch_classes = classes * batch_size
+            tokenized_text = processor.tokenizer(
+                batch_classes, padding="max_length", return_tensors="pt"
+            ).to(device)
+        elif type(hf_model_config).__name__ == "OwlViTConfig":
+            processor = AutoProcessor.from_pretrained(model_name, do_rescale=False)
+            classes = classes_v51
+            batch_classes = classes * batch_size
+            tokenized_text = processor.tokenizer(
+                batch_classes, padding="max_length", return_tensors="pt"
+            ).to(device)
+        elif type(hf_model_config).__name__ == "OmDetTurboConfig":
+            processor = AutoProcessor.from_pretrained(model_name, do_rescale=False)
+            classes = classes_v51
+            batch_classes = [classes] * batch_size
+            task = "Detect {}.".format(", ".join(classes))
+            batch_tasks = [task] * batch_size
+        else:
+            logging.error(
+                "HuggingFace AutoModel does not support " + str(type(hf_model_config))
+            )
+
+        return processor, batch_classes, tokenized_text, batch_tasks
+
+    def find_max_batch_size_zero_shot(self, batch_size):
+        transform = transforms.Compose([transforms.ToTensor()])
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        while True:
+            try:
+                pytorch_dataset = FiftyOneTorchDatasetCOCO(
+                    self.dataset,
+                    transforms=transform,
+                )
+
+                data_loader = DataLoader(
+                    pytorch_dataset,
+                    batch_size=batch_size,
+                    num_workers=NUM_WORKERS,
+                    pin_memory=True,
+                    collate_fn=zeroshot_collate_fn,
+                )
+
+                processor = AutoProcessor.from_pretrained(
+                    self.model_name, do_rescale=False
+                )
+                model = AutoModelForZeroShotObjectDetection.from_pretrained(
+                    self.model_name
+                ).to(device)
+                batch_classes = ["this", "is", "a", "test"] * batch_size
+
+                test_rounds = 2
+                for i, (images, targets) in enumerate(
+                    tqdm(data_loader, desc="Identifying zero shot batch_size")
+                ):
+                    inputs = processor(
+                        text=batch_classes, images=images, return_tensors="pt"
+                    ).to(device)
+
+                    with torch.amp.autocast("cuda"):
+                        with torch.no_grad():
+                            outputs = model(**inputs)
+
+                    if round >= test_rounds:
+                        return batch_size
+
+            except RuntimeError as e:
+                if "CUDA out of memory" in str(e):
+                    if batch_size > 1:
+                        batch_size = batch_size / 2
+                    else:
+                        return batch_size
+                else:
+                    raise e
+
+    def zero_shot_inference(self, batch_size=32, detection_threshold=0.2):
+        batch_size = self.find_max_batch_size_zero_shot(batch_size)
+        logging.warning(batch_size)
         pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
         eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
         transform = transforms.Compose([transforms.ToTensor()])
 
-        self.dataset = self.dataset.take(50)  # FIXME Remove after testing
+        # self.dataset = self.dataset.take(50)  # FIXME Remove after testing
         pytorch_dataset = FiftyOneTorchDatasetCOCO(
             self.dataset,
             transforms=transform,
@@ -285,15 +402,24 @@ class Teacher:
             for part in classname.split("/")
         }
         classes_v51 = processed_classes
-
         hf_model_config = AutoConfig.from_pretrained(self.model_name)
+
+        # processor, batch_classes, tokenized_text, batch_tasks = (
+        #    self._initialize_zero_shot_processor(
+        #        hf_model_config=hf_model_config,
+        #        model_name=self.model_name,
+        #        batch_size=batch_size,
+        #        classes_v51=classes_v51,
+        #        device=device,
+        #    )
+        # )
 
         # Set processor and classes
         if type(hf_model_config).__name__ == "GroundingDinoConfig":
             processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
             # https://huggingface.co/docs/transformers/v4.45.2/en/model_doc/grounding-dino
             classes = " . ".join(classes_v51) + " . "
-            batch_classes = [classes] * data_loader.batch_size
+            batch_classes = [classes] * batch_size
             tokenized_text = processor.tokenizer(
                 batch_classes,
                 padding="max_length",
@@ -305,18 +431,21 @@ class Teacher:
             processor = CustomOwlv2Processor.from_pretrained(
                 self.model_name, do_rescale=False
             )
-            classes = classes_v51
-            batch_classes = classes * data_loader.batch_size
+            batch_classes = classes_v51 * batch_size
             tokenized_text = processor.tokenizer(
                 batch_classes, padding="max_length", return_tensors="pt"
             ).to(device)
         elif type(hf_model_config).__name__ == "OwlViTConfig":
             processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
-            classes = classes_v51
-            batch_classes = classes * data_loader.batch_size
+            batch_classes = classes_v51 * batch_size
             tokenized_text = processor.tokenizer(
                 batch_classes, padding="max_length", return_tensors="pt"
             ).to(device)
+        elif type(hf_model_config).__name__ == "OmDetTurboConfig":
+            processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
+            batch_classes = [classes_v51] * batch_size
+            task = "Detect {}.".format(", ".join(classes))
+            batch_tasks = [task] * batch_size
         else:
             logging.error(
                 "HuggingFace AutoModel does not support " + str(type(hf_model_config))
@@ -329,7 +458,21 @@ class Teacher:
 
         for step, (images, targets) in enumerate(tqdm(data_loader)):
             start_time = time.time()
+            if len(images) != batch_size:  # For final batch, if batch not full
+                processor, batch_classes, tokenized_text, batch_tasks = (
+                    self._initialize_zero_shot_processor(
+                        hf_model_config,
+                        self.model_name,
+                        len(images),  # Key difference
+                        classes_v51,
+                        device,
+                    )
+                )
+            target_sizes = [
+                tuple(img.shape[1:]) for img in images
+            ]  # style [(480,640),(480,640)] h,w
             images = [(image).to(device, non_blocking=True) for image in images]
+
             if type(hf_model_config).__name__ == "GroundingDinoConfig":
                 inputs = processor(text=None, images=images, return_tensors="pt").to(
                     device
@@ -342,10 +485,17 @@ class Teacher:
                 )
                 inputs.update(tokenized_text)
             elif type(hf_model_config).__name__ == "OwlViTConfig":
-                inputs = processor(text=None, images=images, return_tensors="pt").to(
-                    device
-                )
-                inputs.update(tokenized_text)
+                inputs = processor(
+                    text=batch_classes, images=images, return_tensors="pt"
+                ).to(device)
+                # inputs.update(tokenized_text)
+            elif type(hf_model_config).__name__ == "OmDetTurboConfig":
+                inputs = processor(
+                    text=batch_classes,
+                    images=images,
+                    task=batch_tasks,
+                    return_tensors="pt",
+                ).to(device)
 
             with torch.amp.autocast("cuda"):
                 with torch.no_grad():
@@ -360,19 +510,28 @@ class Teacher:
                 )
             elif type(hf_model_config).__name__ in ["Owlv2Config", "OwlViTConfig"]:
                 results = processor.post_process_object_detection(
-                    outputs=outputs, threshold=detection_threshold
+                    outputs=outputs,
+                    threshold=detection_threshold,
+                    target_sizes=target_sizes,
                 )
-
+            elif type(hf_model_config).__name__ == "OmDetTurboConfig":
+                results = processor.post_process_grounded_object_detection(
+                    outputs,
+                    classes=batch_classes,
+                    score_threshold=detection_threshold,
+                    nms_threshold=detection_threshold,
+                    target_sizes=target_sizes,
+                )
             for result, target in zip(results, targets):
-                boxes, scores, labels = (
-                    result["boxes"],
-                    result["scores"],
-                    result["labels"],
-                )
+                boxes, scores = result["boxes"], result["scores"]
+
+                if "labels" in result:
+                    labels = result["labels"]
+                elif "classes" in result:  # OmDet deviates from the other models
+                    labels = result["classes"]
 
                 detections = []
                 for box, score, label in zip(boxes, scores, labels):
-
                     if type(hf_model_config).__name__ == "GroundingDinoConfig":
                         # Outputs do not comply with given labels
                         # Grounding DINO outputs multiple pairs of object boxes and noun phrases for a given (Image, Text) pair
@@ -398,11 +557,31 @@ class Teacher:
                         top_left_y = box[1].item()
                         box_width = (box[2] - box[0]).item()
                         box_height = (box[3] - box[1]).item()
-                    elif type(hf_model_config).__name__ in [
-                        "Owlv2Config",
-                        "OwlViTConfig",
-                    ]:
-                        label = class_parts_dict[classes[label]]
+
+                    elif type(hf_model_config).__name__ == "Owlv2Config":
+                        label = class_parts_dict[classes_v51[label]]
+                        top_left_x = box[0].item()
+                        top_left_y = box[1].item()
+                        box_width = (box[2] - box[0]).item()
+                        box_height = (box[3] - box[1]).item()
+
+                    elif type(hf_model_config).__name__ == "OwlViTConfig":
+                        # Get image size
+                        img_path = pytorch_dataset.img_paths[
+                            target["image_id"].item()
+                        ]  # ID is stored in annotation
+                        sample = self.dataset[img_path]
+                        img_width = sample.metadata.width
+                        img_height = sample.metadata.height
+
+                        # Convert bbox to V51 type
+                        label = class_parts_dict[classes_v51[label]]
+                        top_left_x = box[0].item() / img_width
+                        top_left_y = box[1].item() / img_height
+                        box_width = (box[2].item() - box[0].item()) / img_width
+                        box_height = (box[3].item() - box[1].item()) / img_height
+                    elif type(hf_model_config).__name__ == "OmDetTurboConfig":
+                        label = class_parts_dict[label]
                         top_left_x = box[0].item()
                         top_left_y = box[1].item()
                         box_width = (box[2] - box[0]).item()
