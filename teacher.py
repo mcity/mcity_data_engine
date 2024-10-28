@@ -322,13 +322,17 @@ class Teacher:
         transform = transforms.Compose([transforms.ToTensor()])
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        while True:
-            try:
-                pytorch_dataset = FiftyOneTorchDatasetCOCO(
-                    self.dataset,
-                    transforms=transform,
-                )
+        pytorch_dataset = FiftyOneTorchDatasetCOCO(
+            self.dataset,
+            transforms=transform,
+        )
 
+        processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
+        model = AutoModelForZeroShotObjectDetection.from_pretrained(self.model_name).to(
+            device
+        )
+        while batch_size > 1:
+            try:
                 data_loader = DataLoader(
                     pytorch_dataset,
                     batch_size=batch_size,
@@ -337,17 +341,13 @@ class Teacher:
                     collate_fn=zeroshot_collate_fn,
                 )
 
-                processor = AutoProcessor.from_pretrained(
-                    self.model_name, do_rescale=False
-                )
-                model = AutoModelForZeroShotObjectDetection.from_pretrained(
-                    self.model_name
-                ).to(device)
                 batch_classes = ["this", "is", "a", "test"] * batch_size
 
-                test_rounds = 2
                 for i, (images, targets) in enumerate(
-                    tqdm(data_loader, desc="Identifying zero shot batch_size")
+                    tqdm(
+                        data_loader,
+                        desc=f"Testing zero shot batch_size {batch_size}",
+                    )
                 ):
                     inputs = processor(
                         text=batch_classes, images=images, return_tensors="pt"
@@ -357,21 +357,19 @@ class Teacher:
                         with torch.no_grad():
                             outputs = model(**inputs)
 
-                    if round >= test_rounds:
-                        return batch_size
+                    return batch_size
 
             except RuntimeError as e:
                 if "CUDA out of memory" in str(e):
-                    if batch_size > 1:
-                        batch_size = batch_size / 2
-                    else:
-                        return batch_size
+                    batch_size //= 2
                 else:
+                    logging.error(f"Runtime error: {e}")
                     raise e
+
+        return batch_size
 
     def zero_shot_inference(self, batch_size=32, detection_threshold=0.2):
         batch_size = self.find_max_batch_size_zero_shot(batch_size)
-        logging.warning(batch_size)
         pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
         eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
         transform = transforms.Compose([transforms.ToTensor()])
@@ -456,7 +454,9 @@ class Teacher:
         )
         writer = SummaryWriter(log_dir="logs/tensorboard/teacher_zeroshot")
 
-        for step, (images, targets) in enumerate(tqdm(data_loader)):
+        for step, (images, targets) in enumerate(
+            tqdm(data_loader, desc="Zero Shot Teacher Model " + self.model_name)
+        ):
             start_time = time.time()
             if len(images) != batch_size:  # For final batch, if batch not full
                 processor, batch_classes, tokenized_text, batch_tasks = (
