@@ -7,6 +7,9 @@ from utils.logging import configure_logging
 from utils.wandb_helper import launch_to_queue_terminal
 import logging
 
+import torch
+import gc
+
 from config.config import (
     SELECTED_WORKFLOW,
     SELECTED_DATASET,
@@ -169,6 +172,8 @@ def main(args):
 
         # Train teacher models
         for MODEL_NAME in (pbar := tqdm(teacher_models, desc="Teacher Models")):
+            torch.cuda.empty_cache()
+            gc.collect()
             run = None
             try:
                 pbar.set_description("Training/Loading Teacher model " + MODEL_NAME)
@@ -217,6 +222,11 @@ def main(args):
                 if run:
                     run.finish(exit_code=1)
                 continue
+            finally:
+                if "teacher" in locals():
+                    del teacher
+                torch.cuda.empty_cache()
+                gc.collect()
 
     elif SELECTED_WORKFLOW == "zero_shot_teacher":
         zero_shot_teacher_models = WORKFLOWS["train_teacher"][
@@ -228,6 +238,8 @@ def main(args):
             config = json.load(file)
 
         for MODEL_NAME in (pbar := tqdm(zero_shot_teacher_models, desc="Zero Shot")):
+            torch.cuda.empty_cache()
+            gc.collect()
             run = None
             try:
                 pbar.set_description("Evaluating Zero Shot Teacher model " + MODEL_NAME)
@@ -254,13 +266,17 @@ def main(args):
                         batch_size=batch_size, detection_threshold=detection_threshold
                     )
                     run.finish(exit_code=0)
-
             except Exception as e:
                 logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
                 logging.error("Stack trace:", exc_info=True)
                 if run:
                     run.finish(exit_code=1)
                 continue
+            finally:
+                if "teacher" in locals():
+                    del teacher
+                torch.cuda.empty_cache()
+                gc.collect()
     else:
         logging.error(
             str(SELECTED_WORKFLOW)
@@ -273,7 +289,7 @@ def main(args):
         logging.info(dataset)
         fo.pprint(dataset.stats(include_media=True))
         session = fo.launch_app(
-            dataset, spaces=spaces, address=V51_ADDRESS, port=V51_PORT
+            dataset, spaces=spaces, address=V51_ADDRESS, port=V51_PORT, remote=True
         )
 
     time_stop = time.time()
