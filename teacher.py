@@ -293,23 +293,20 @@ class Teacher:
             processor = CustomOwlv2Processor.from_pretrained(
                 model_name, do_rescale=False
             )
-            classes = classes_v51
-            batch_classes = classes * batch_size
+            batch_classes = classes_v51 * batch_size
             tokenized_text = processor.tokenizer(
                 batch_classes, padding="max_length", return_tensors="pt"
             ).to(device)
         elif type(hf_model_config).__name__ == "OwlViTConfig":
             processor = AutoProcessor.from_pretrained(model_name, do_rescale=False)
-            classes = classes_v51
-            batch_classes = classes * batch_size
+            batch_classes = classes_v51 * batch_size
             tokenized_text = processor.tokenizer(
                 batch_classes, padding="max_length", return_tensors="pt"
             ).to(device)
         elif type(hf_model_config).__name__ == "OmDetTurboConfig":
             processor = AutoProcessor.from_pretrained(model_name, do_rescale=False)
-            classes = classes_v51
-            batch_classes = [classes] * batch_size
-            task = "Detect {}.".format(", ".join(classes))
+            batch_classes = [classes_v51] * batch_size
+            task = "Detect {}.".format(", ".join(classes_v51))
             batch_tasks = [task] * batch_size
         else:
             logging.error(
@@ -381,9 +378,15 @@ class Teacher:
         batch_size = self._find_max_batch_size_zero_shot(batch_size)
         pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
         eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
-        transform = transforms.Compose([transforms.ToTensor()])
 
-        self.dataset = self.dataset.take(8)  # FIXME Remove after testing
+        hf_model_config = AutoConfig.from_pretrained(self.model_name)
+
+        transform = (
+            None
+            if type(hf_model_config).__name__ == "OmDetTurboConfig"
+            else transforms.Compose([transforms.ToTensor()])
+        )
+
         pytorch_dataset = FiftyOneTorchDatasetCOCO(
             self.dataset,
             transforms=transform,
@@ -409,54 +412,16 @@ class Teacher:
             for part in classname.split("/")
         }
         classes_v51 = processed_classes
-        hf_model_config = AutoConfig.from_pretrained(self.model_name)
 
-        # processor, batch_classes, tokenized_text, batch_tasks = (
-        #    self._initialize_zero_shot_processor(
-        #        hf_model_config=hf_model_config,
-        #        model_name=self.model_name,
-        #        batch_size=batch_size,
-        #        classes_v51=classes_v51,
-        #        device=device,
-        #    )
-        # )
-
-        # Set processor and classes
-        if type(hf_model_config).__name__ == "GroundingDinoConfig":
-            processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
-            # https://huggingface.co/docs/transformers/v4.45.2/en/model_doc/grounding-dino
-            classes = " . ".join(classes_v51) + " . "
-            batch_classes = [classes] * batch_size
-            tokenized_text = processor.tokenizer(
-                batch_classes,
-                padding="max_length",
-                return_tensors="pt",
-                max_length=256,  # Adjust max_length to match vision hidden state
-            ).to(device)
-
-        elif type(hf_model_config).__name__ == "Owlv2Config":
-            processor = CustomOwlv2Processor.from_pretrained(
-                self.model_name, do_rescale=False
+        processor, batch_classes, tokenized_text, batch_tasks = (
+            self._initialize_zero_shot_processor(
+                hf_model_config=hf_model_config,
+                model_name=self.model_name,
+                batch_size=batch_size,
+                classes_v51=classes_v51,
+                device=device,
             )
-            batch_classes = classes_v51 * batch_size
-            tokenized_text = processor.tokenizer(
-                batch_classes, padding="max_length", return_tensors="pt"
-            ).to(device)
-        elif type(hf_model_config).__name__ == "OwlViTConfig":
-            processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
-            batch_classes = classes_v51 * batch_size
-            tokenized_text = processor.tokenizer(
-                batch_classes, padding="max_length", return_tensors="pt"
-            ).to(device)
-        elif type(hf_model_config).__name__ == "OmDetTurboConfig":
-            processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
-            batch_classes = [classes_v51] * batch_size
-            task = "Detect {}.".format(", ".join(classes))
-            batch_tasks = [task] * batch_size
-        else:
-            logging.error(
-                "HuggingFace AutoModel does not support " + str(type(hf_model_config))
-            )
+        )
 
         model = AutoModelForZeroShotObjectDetection.from_pretrained(self.model_name).to(
             device
@@ -477,10 +442,12 @@ class Teacher:
                         device,
                     )
                 )
-            target_sizes = [
-                tuple(img.shape[1:]) for img in images
-            ]  # style [(480,640),(480,640)] h,w
-            images = [(image).to(device, non_blocking=True) for image in images]
+
+            if type(hf_model_config).__name__ == "OmDetTurboConfig":
+                target_sizes = [img.size[::-1] for img in images]
+            else:
+                target_sizes = [tuple(img.shape[1:]) for img in images]
+                images = [(image).to(device, non_blocking=True) for image in images]
 
             if type(hf_model_config).__name__ == "GroundingDinoConfig":
                 inputs = processor(text=None, images=images, return_tensors="pt").to(
@@ -575,10 +542,8 @@ class Teacher:
                         box_height = (box[3] - box[1]).item()
 
                     elif type(hf_model_config).__name__ == "OwlViTConfig":
-                        # Get image size
-                        img_path = pytorch_dataset.img_paths[
-                            target["image_id"].item()
-                        ]  # ID is stored in annotation
+                        # Get image size (ID is stored in annotation)
+                        img_path = pytorch_dataset.img_paths[target["image_id"].item()]
                         sample = self.dataset[img_path]
                         img_width = sample.metadata.width
                         img_height = sample.metadata.height
@@ -590,11 +555,18 @@ class Teacher:
                         box_width = (box[2].item() - box[0].item()) / img_width
                         box_height = (box[3].item() - box[1].item()) / img_height
                     elif type(hf_model_config).__name__ == "OmDetTurboConfig":
+                        # Get image size
+                        img_path = pytorch_dataset.img_paths[target["image_id"].item()]
+                        sample = self.dataset[img_path]
+                        img_width = sample.metadata.width
+                        img_height = sample.metadata.height
+
+                        # Convert bbox to V51 type
                         label = class_parts_dict[label]
-                        top_left_x = box[0].item()
-                        top_left_y = box[1].item()
-                        box_width = (box[2] - box[0]).item()
-                        box_height = (box[3] - box[1]).item()
+                        top_left_x = box[0].item() / img_width
+                        top_left_y = box[1].item() / img_height
+                        box_width = (box[2].item() - box[0].item()) / img_width
+                        box_height = (box[3].item() - box[1].item()) / img_height
 
                     detection = fo.Detection(
                         label=label,
@@ -603,9 +575,7 @@ class Teacher:
                     )
                     detections.append(detection)
 
-                img_path = pytorch_dataset.img_paths[
-                    target["image_id"].item()
-                ]  # ID is stored in annotation
+                img_path = pytorch_dataset.img_paths[target["image_id"].item()]
                 sample = self.dataset[img_path]
                 sample[pred_key] = fo.Detections(detections=detections)
                 sample.save()
