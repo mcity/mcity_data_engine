@@ -6,7 +6,7 @@ from difflib import get_close_matches
 from functools import partial
 import re
 import time
-import requests
+import gc
 
 import numpy as np
 import torch
@@ -318,7 +318,8 @@ class Teacher:
 
         return processor, batch_classes, tokenized_text, batch_tasks
 
-    def find_max_batch_size_zero_shot(self, batch_size):
+    def _find_max_batch_size_zero_shot(self, batch_size):
+
         transform = transforms.Compose([transforms.ToTensor()])
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -331,6 +332,7 @@ class Teacher:
         model = AutoModelForZeroShotObjectDetection.from_pretrained(self.model_name).to(
             device
         )
+        config = AutoConfig.from_pretrained(self.model_name)
         while batch_size > 1:
             try:
                 data_loader = DataLoader(
@@ -341,7 +343,12 @@ class Teacher:
                     collate_fn=zeroshot_collate_fn,
                 )
 
-                batch_classes = ["this", "is", "a", "test"] * batch_size
+                if type(config).__name__ == "OmDetTurboConfig":
+                    batch_classes = [["this", "is", "a", "test"]] * batch_size
+                elif type(config).__name__ == "GroundingDinoConfig":
+                    batch_classes = ["this . is . a . test ."] * batch_size
+                else:
+                    batch_classes = ["this", "is", "a", "test"] * batch_size
 
                 for i, (images, targets) in enumerate(
                     tqdm(
@@ -365,16 +372,18 @@ class Teacher:
                 else:
                     logging.error(f"Runtime error: {e}")
                     raise e
-
+            finally:
+                torch.cuda.empty_cache()
+                gc.collect()
         return batch_size
 
     def zero_shot_inference(self, batch_size=32, detection_threshold=0.2):
-        batch_size = self.find_max_batch_size_zero_shot(batch_size)
+        batch_size = self._find_max_batch_size_zero_shot(batch_size)
         pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
         eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
         transform = transforms.Compose([transforms.ToTensor()])
 
-        # self.dataset = self.dataset.take(50)  # FIXME Remove after testing
+        self.dataset = self.dataset.take(8)  # FIXME Remove after testing
         pytorch_dataset = FiftyOneTorchDatasetCOCO(
             self.dataset,
             transforms=transform,
@@ -605,7 +614,8 @@ class Teacher:
             end_time = time.time()
             batch_duration = end_time - start_time
             batches_per_second = 1 / batch_duration
-            writer.add_scalar("inference/batches_per_second", batches_per_second, step)
+            frames_per_second = batches_per_second / batch_size
+            writer.add_scalar("inference/frames_per_second", frames_per_second, step)
 
         torch.cuda.empty_cache()
         writer.close()
