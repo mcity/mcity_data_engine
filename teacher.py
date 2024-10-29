@@ -534,14 +534,10 @@ class Teacher:
                         box_width = (box[2] - box[0]).item()
                         box_height = (box[3] - box[1]).item()
 
-                    elif type(hf_model_config).__name__ == "Owlv2Config":
-                        label = class_parts_dict[classes_v51[label]]
-                        top_left_x = box[0].item()
-                        top_left_y = box[1].item()
-                        box_width = (box[2] - box[0]).item()
-                        box_height = (box[3] - box[1]).item()
-
-                    elif type(hf_model_config).__name__ == "OwlViTConfig":
+                    elif type(hf_model_config).__name__ in [
+                        "Owlv2Config",
+                        "OwlViTConfig",
+                    ]:
                         # Get image size (ID is stored in annotation)
                         img_path = pytorch_dataset.img_paths[target["image_id"].item()]
                         sample = self.dataset[img_path]
