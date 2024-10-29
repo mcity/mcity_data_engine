@@ -3,7 +3,7 @@ import os
 SELECTED_WORKFLOW = "zero_shot_teacher"  # Selection from WORKFLOWS
 SELECTED_DATASET = "mcity_fisheye_2000"  # Choose from datasets.yaml
 
-PERSISTENT = True  # If V51 database is stored
+PERSISTENT = False  # If V51 database is stored
 
 # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
 V51_EMBEDDING_MODELS = [
@@ -83,10 +83,17 @@ WORKFLOWS = {
             "hustvl/yolos-base",
         ],
         "hf_models_zeroshot_objectdetection": [
-            # "IDEA-Research/grounding-dino-tiny",
-            # "google/owlvit-base-patch32",
+            "IDEA-Research/grounding-dino-tiny",
+            "google/owlvit-base-patch16",
+            "google/owlvit-base-patch32",
+            "google/owlvit-large-patch14",
+            "google/owlv2-base-patch16",
             "google/owlv2-base-patch16-ensemble",
-            # "omlab/omdet-turbo-swin-tiny-hf",
+            "google/owlv2-base-patch16-finetuned",
+            "google/owlv2-large-patch14",
+            "google/owlv2-large-patch14-ensemble",
+            "google/owlv2-large-patch14-finetuned",
+            "omlab/omdet-turbo-swin-tiny-hf",
         ],
     },
 }
@@ -103,3 +110,5 @@ WANDB_CONFIG = {
 cpu_count = os.cpu_count()
 NUM_WORKERS = 32 if cpu_count > 32 else cpu_count
 GLOBAL_SEED = 0
+V51_ADDRESS = "localhost"
+V51_PORT = 5151
