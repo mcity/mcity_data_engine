@@ -385,7 +385,6 @@ class Teacher:
                 if type(hf_model_config).__name__ == "OmDetTurboConfig"
                 else transforms.Compose([transforms.ToTensor()])
             )
-            self.dataset = self.dataset.take(40)
             pytorch_dataset = FiftyOneTorchDatasetCOCO(
                 self.dataset,
                 transforms=transform,
