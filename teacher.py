@@ -8,6 +8,9 @@ import re
 import time
 import gc
 
+import os
+import json
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -224,11 +227,16 @@ def transform_batch(examples, image_processor, return_pixel_mask=False):
 
 
 class Teacher:
-    def __init__(self, dataset, config=None):
+    def __init__(self, dataset, config=None, detections_path="./output/detections/"):
         self.dataset = dataset
         self.config = config
         self.model_name = config["model_name"]
+        self.model_name_key = re.sub(r"[\W-]+", "_", self.model_name)
+        self.dataset_name = config["v51_dataset_name"]
 
+        self.detections_root = os.path.join(
+            detections_path, self.dataset_name, self.model_name_key
+        )
         self.categories = dataset.default_classes
         self.id2label = {index: x for index, x in enumerate(self.categories, start=0)}
         self.label2id = {v: k for k, v in self.id2label.items()}
@@ -374,217 +382,262 @@ class Teacher:
                 gc.collect()
         return batch_size
 
-    def zero_shot_inference(self, batch_size=32, detection_threshold=0.2):
-        batch_size = self._find_max_batch_size_zero_shot(batch_size)
-        pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
-        eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
+    def zero_shot_inference(self, batch_size=16, detection_threshold=0.2):
 
-        hf_model_config = AutoConfig.from_pretrained(self.model_name)
+        # Read labels from file if already saved
+        if os.path.exists("test.txt"):
+            with open(self.detections_filepath, "r") as json_file:
+                data = json.load(json_file)
 
-        transform = (
-            None
-            if type(hf_model_config).__name__ == "OmDetTurboConfig"
-            else transforms.Compose([transforms.ToTensor()])
-        )
-
-        pytorch_dataset = FiftyOneTorchDatasetCOCO(
-            self.dataset,
-            transforms=transform,
-        )
-        data_loader = DataLoader(
-            pytorch_dataset,
-            batch_size=batch_size,
-            num_workers=NUM_WORKERS,
-            pin_memory=True,
-            collate_fn=zeroshot_collate_fn,
-        )
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        classes_v51 = self.dataset.default_classes
-
-        # Process combined label types like "motorbike/cycler"
-        processed_classes = [
-            part for classname in classes_v51 for part in classname.split("/")
-        ]
-        class_parts_dict = {
-            part: classname
-            for classname in classes_v51
-            for part in classname.split("/")
-        }
-        classes_v51 = processed_classes
-
-        processor, batch_classes, tokenized_text, batch_tasks = (
-            self._initialize_zero_shot_processor(
-                hf_model_config=hf_model_config,
-                model_name=self.model_name,
-                batch_size=batch_size,
-                classes_v51=classes_v51,
-                device=device,
-            )
-        )
-
-        model = AutoModelForZeroShotObjectDetection.from_pretrained(self.model_name).to(
-            device
-        )
-        writer = SummaryWriter(log_dir="logs/tensorboard/teacher_zeroshot")
-
-        for step, (images, targets) in enumerate(
-            tqdm(data_loader, desc="Zero Shot Teacher Model " + self.model_name)
-        ):
-            start_time = time.time()
-            if len(images) != batch_size:  # For final batch, if batch not full
-                processor, batch_classes, tokenized_text, batch_tasks = (
-                    self._initialize_zero_shot_processor(
-                        hf_model_config,
-                        self.model_name,
-                        len(images),  # Key difference
-                        classes_v51,
-                        device,
-                    )
-                )
-
-            if type(hf_model_config).__name__ == "OmDetTurboConfig":
-                target_sizes = [img.size[::-1] for img in images]
-            else:
-                target_sizes = [tuple(img.shape[1:]) for img in images]
-                images = [(image).to(device, non_blocking=True) for image in images]
-
-            if type(hf_model_config).__name__ == "GroundingDinoConfig":
-                inputs = processor(text=None, images=images, return_tensors="pt").to(
-                    device
-                )
-                inputs.update(tokenized_text)
-
-            elif type(hf_model_config).__name__ == "Owlv2Config":
-                inputs = processor(text=None, images=images, return_tensors="pt").to(
-                    device, non_blocking=True
-                )
-                inputs.update(tokenized_text)
-            elif type(hf_model_config).__name__ == "OwlViTConfig":
-                inputs = processor(
-                    text=batch_classes, images=images, return_tensors="pt"
-                ).to(device)
-                # inputs.update(tokenized_text)
-            elif type(hf_model_config).__name__ == "OmDetTurboConfig":
-                inputs = processor(
-                    text=batch_classes,
-                    images=images,
-                    task=batch_tasks,
-                    return_tensors="pt",
-                ).to(device)
-
-            with torch.amp.autocast("cuda"):
-                with torch.no_grad():
-                    outputs = model(**inputs)
-
-            if type(hf_model_config).__name__ == "GroundingDinoConfig":
-                results = processor.post_process_grounded_object_detection(
-                    outputs,
-                    inputs.input_ids,
-                    box_threshold=detection_threshold,
-                    text_threshold=detection_threshold,
-                )
-            elif type(hf_model_config).__name__ in ["Owlv2Config", "OwlViTConfig"]:
-                results = processor.post_process_object_detection(
-                    outputs=outputs,
-                    threshold=detection_threshold,
-                    target_sizes=target_sizes,
-                )
-            elif type(hf_model_config).__name__ == "OmDetTurboConfig":
-                results = processor.post_process_grounded_object_detection(
-                    outputs,
-                    classes=batch_classes,
-                    score_threshold=detection_threshold,
-                    nms_threshold=detection_threshold,
-                    target_sizes=target_sizes,
-                )
-            for result, target in zip(results, targets):
-                boxes, scores = result["boxes"], result["scores"]
-
-                if "labels" in result:
-                    labels = result["labels"]
-                elif "classes" in result:  # OmDet deviates from the other models
-                    labels = result["classes"]
-
+            for img_path, detections_data in data.items():
+                # Create fo.Detection objects from the extracted data
                 detections = []
-                for box, score, label in zip(boxes, scores, labels):
-                    if type(hf_model_config).__name__ == "GroundingDinoConfig":
-                        # Outputs do not comply with given labels
-                        # Grounding DINO outputs multiple pairs of object boxes and noun phrases for a given (Image, Text) pair
-                        # There can be either multiple labels per output ("bike van") or incomplete ones ("motorcyc")
-                        processed_label = label.split()[0]
-                        if processed_label not in classes_v51:
-                            matches = get_close_matches(
-                                processed_label, classes_v51, n=1, cutoff=0.6
-                            )
-                            processed_label = matches[0] if matches else None
-                        if processed_label == None:
-                            logging.warning(
-                                "Skipped detection with model "
-                                + type(hf_model_config).__name__
-                                + " due to unclear detection label: "
-                                + label
-                            )
-                            continue
-                        label = class_parts_dict[
-                            processed_label
-                        ]  # Original label for eval
-                        top_left_x = box[0].item()
-                        top_left_y = box[1].item()
-                        box_width = (box[2] - box[0]).item()
-                        box_height = (box[3] - box[1]).item()
-
-                    elif type(hf_model_config).__name__ in [
-                        "Owlv2Config",
-                        "OwlViTConfig",
-                    ]:
-                        # Get image size (ID is stored in annotation)
-                        img_path = pytorch_dataset.img_paths[target["image_id"].item()]
-                        sample = self.dataset[img_path]
-                        img_width = sample.metadata.width
-                        img_height = sample.metadata.height
-
-                        # Convert bbox to V51 type
-                        label = class_parts_dict[classes_v51[label]]
-                        top_left_x = box[0].item() / img_width
-                        top_left_y = box[1].item() / img_height
-                        box_width = (box[2].item() - box[0].item()) / img_width
-                        box_height = (box[3].item() - box[1].item()) / img_height
-                    elif type(hf_model_config).__name__ == "OmDetTurboConfig":
-                        # Get image size
-                        img_path = pytorch_dataset.img_paths[target["image_id"].item()]
-                        sample = self.dataset[img_path]
-                        img_width = sample.metadata.width
-                        img_height = sample.metadata.height
-
-                        # Convert bbox to V51 type
-                        label = class_parts_dict[label]
-                        top_left_x = box[0].item() / img_width
-                        top_left_y = box[1].item() / img_height
-                        box_width = (box[2].item() - box[0].item()) / img_width
-                        box_height = (box[3].item() - box[1].item()) / img_height
-
+                for detection_data in detections_data:
                     detection = fo.Detection(
-                        label=label,
-                        bounding_box=[top_left_x, top_left_y, box_width, box_height],
-                        confidence=score.item(),
+                        label=detection_data["label"],
+                        bounding_box=detection_data["bounding_box"],
+                        confidence=detection_data["confidence"],
                     )
                     detections.append(detection)
 
-                img_path = pytorch_dataset.img_paths[target["image_id"].item()]
+                # Attach label to V51 dataset
                 sample = self.dataset[img_path]
                 sample[pred_key] = fo.Detections(detections=detections)
                 sample.save()
+        else:  # Load zero shot model, run inference, and save results
+            batch_size = self._find_max_batch_size_zero_shot(batch_size)
+            pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
+            eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
 
-            # Log inference performance
-            end_time = time.time()
-            batch_duration = end_time - start_time
-            batches_per_second = 1 / batch_duration
-            frames_per_second = batches_per_second / batch_size
-            writer.add_scalar("inference/frames_per_second", frames_per_second, step)
+            hf_model_config = AutoConfig.from_pretrained(self.model_name)
 
-        torch.cuda.empty_cache()
-        writer.close()
+            transform = (
+                None
+                if type(hf_model_config).__name__ == "OmDetTurboConfig"
+                else transforms.Compose([transforms.ToTensor()])
+            )
+
+            self.dataset = self.dataset.take(16)  # FIXME remove after testing
+            pytorch_dataset = FiftyOneTorchDatasetCOCO(
+                self.dataset,
+                transforms=transform,
+            )
+            data_loader = DataLoader(
+                pytorch_dataset,
+                batch_size=batch_size,
+                num_workers=NUM_WORKERS,
+                pin_memory=True,
+                collate_fn=zeroshot_collate_fn,
+            )
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+            classes_v51 = self.dataset.default_classes
+
+            # Process combined label types like "motorbike/cycler"
+            processed_classes = [
+                part for classname in classes_v51 for part in classname.split("/")
+            ]
+            class_parts_dict = {
+                part: classname
+                for classname in classes_v51
+                for part in classname.split("/")
+            }
+            classes_v51 = processed_classes
+
+            processor, batch_classes, tokenized_text, batch_tasks = (
+                self._initialize_zero_shot_processor(
+                    hf_model_config=hf_model_config,
+                    model_name=self.model_name,
+                    batch_size=batch_size,
+                    classes_v51=classes_v51,
+                    device=device,
+                )
+            )
+
+            model = AutoModelForZeroShotObjectDetection.from_pretrained(
+                self.model_name
+            ).to(device)
+            writer = SummaryWriter(log_dir="logs/tensorboard/teacher_zeroshot")
+
+            for step, (images, targets) in enumerate(
+                tqdm(data_loader, desc="Zero Shot Teacher Model " + self.model_name)
+            ):
+                start_time = time.time()
+                if len(images) != batch_size:  # For final batch, if batch not full
+                    processor, batch_classes, tokenized_text, batch_tasks = (
+                        self._initialize_zero_shot_processor(
+                            hf_model_config,
+                            self.model_name,
+                            len(images),  # Key difference
+                            classes_v51,
+                            device,
+                        )
+                    )
+
+                if type(hf_model_config).__name__ == "OmDetTurboConfig":
+                    target_sizes = [img.size[::-1] for img in images]
+                else:
+                    target_sizes = [tuple(img.shape[1:]) for img in images]
+                    images = [(image).to(device, non_blocking=True) for image in images]
+
+                if type(hf_model_config).__name__ == "GroundingDinoConfig":
+                    inputs = processor(
+                        text=None, images=images, return_tensors="pt"
+                    ).to(device)
+                    inputs.update(tokenized_text)
+
+                elif type(hf_model_config).__name__ == "Owlv2Config":
+                    inputs = processor(
+                        text=None, images=images, return_tensors="pt"
+                    ).to(device, non_blocking=True)
+                    inputs.update(tokenized_text)
+                elif type(hf_model_config).__name__ == "OwlViTConfig":
+                    inputs = processor(
+                        text=batch_classes, images=images, return_tensors="pt"
+                    ).to(device)
+                    # inputs.update(tokenized_text)
+                elif type(hf_model_config).__name__ == "OmDetTurboConfig":
+                    inputs = processor(
+                        text=batch_classes,
+                        images=images,
+                        task=batch_tasks,
+                        return_tensors="pt",
+                    ).to(device)
+
+                with torch.amp.autocast("cuda"):
+                    with torch.no_grad():
+                        outputs = model(**inputs)
+
+                if type(hf_model_config).__name__ == "GroundingDinoConfig":
+                    results = processor.post_process_grounded_object_detection(
+                        outputs,
+                        inputs.input_ids,
+                        box_threshold=detection_threshold,
+                        text_threshold=detection_threshold,
+                    )
+                elif type(hf_model_config).__name__ in ["Owlv2Config", "OwlViTConfig"]:
+                    results = processor.post_process_object_detection(
+                        outputs=outputs,
+                        threshold=detection_threshold,
+                        target_sizes=target_sizes,
+                    )
+                elif type(hf_model_config).__name__ == "OmDetTurboConfig":
+                    results = processor.post_process_grounded_object_detection(
+                        outputs,
+                        classes=batch_classes,
+                        score_threshold=detection_threshold,
+                        nms_threshold=detection_threshold,
+                        target_sizes=target_sizes,
+                    )
+                for result, target in zip(results, targets):
+                    boxes, scores = result["boxes"], result["scores"]
+
+                    if "labels" in result:
+                        labels = result["labels"]
+                    elif "classes" in result:  # OmDet deviates from the other models
+                        labels = result["classes"]
+
+                    detections = []
+                    for box, score, label in zip(boxes, scores, labels):
+                        if type(hf_model_config).__name__ == "GroundingDinoConfig":
+                            # Outputs do not comply with given labels
+                            # Grounding DINO outputs multiple pairs of object boxes and noun phrases for a given (Image, Text) pair
+                            # There can be either multiple labels per output ("bike van") or incomplete ones ("motorcyc")
+                            processed_label = label.split()[0]
+                            if processed_label not in classes_v51:
+                                matches = get_close_matches(
+                                    processed_label, classes_v51, n=1, cutoff=0.6
+                                )
+                                processed_label = matches[0] if matches else None
+                            if processed_label == None:
+                                logging.warning(
+                                    "Skipped detection with model "
+                                    + type(hf_model_config).__name__
+                                    + " due to unclear detection label: "
+                                    + label
+                                )
+                                continue
+                            label = class_parts_dict[
+                                processed_label
+                            ]  # Original label for eval
+                            top_left_x = box[0].item()
+                            top_left_y = box[1].item()
+                            box_width = (box[2] - box[0]).item()
+                            box_height = (box[3] - box[1]).item()
+
+                        elif type(hf_model_config).__name__ in [
+                            "Owlv2Config",
+                            "OwlViTConfig",
+                        ]:
+                            # Get image size (ID is stored in annotation)
+                            img_path = pytorch_dataset.img_paths[
+                                target["image_id"].item()
+                            ]
+                            sample = self.dataset[img_path]
+                            img_width = sample.metadata.width
+                            img_height = sample.metadata.height
+
+                            # Convert bbox to V51 type
+                            label = class_parts_dict[classes_v51[label]]
+                            top_left_x = box[0].item() / img_width
+                            top_left_y = box[1].item() / img_height
+                            box_width = (box[2].item() - box[0].item()) / img_width
+                            box_height = (box[3].item() - box[1].item()) / img_height
+                        elif type(hf_model_config).__name__ == "OmDetTurboConfig":
+                            # Get image size
+                            img_path = pytorch_dataset.img_paths[
+                                target["image_id"].item()
+                            ]
+                            sample = self.dataset[img_path]
+                            img_width = sample.metadata.width
+                            img_height = sample.metadata.height
+
+                            # Convert bbox to V51 type
+                            label = class_parts_dict[label]
+                            top_left_x = box[0].item() / img_width
+                            top_left_y = box[1].item() / img_height
+                            box_width = (box[2].item() - box[0].item()) / img_width
+                            box_height = (box[3].item() - box[1].item()) / img_height
+
+                        detection = fo.Detection(
+                            label=label,
+                            bounding_box=[
+                                top_left_x,
+                                top_left_y,
+                                box_width,
+                                box_height,
+                            ],
+                            confidence=score.item(),
+                        )
+
+                        detections.append(detection)
+
+                    # Attach label to V51 dataset
+                    img_path = pytorch_dataset.img_paths[target["image_id"].item()]
+                    sample = self.dataset[img_path]
+                    sample[pred_key] = fo.Detections(detections=detections)
+                    sample.save()
+
+                # Store labels https://docs.voxel51.com/api/fiftyone.core.collections.html#fiftyone.core.collections.SampleCollection.export
+                self.dataset.export(
+                    export_dir=self.detections_root,
+                    dataset_type=fo.types.COCODetectionDataset,
+                    label_field=pred_key,
+                    data_path="data.json",
+                    export_media="manifest",
+                )
+
+                # Log inference performance
+                end_time = time.time()
+                batch_duration = end_time - start_time
+                batches_per_second = 1 / batch_duration
+                frames_per_second = batches_per_second * batch_size
+                writer.add_scalar(
+                    "inference/frames_per_second", frames_per_second, step
+                )
+
+            torch.cuda.empty_cache()
+            writer.close()
 
         # Populate dataset with evaluation results
         eval = self.dataset.evaluate_detections(
