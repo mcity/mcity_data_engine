@@ -325,6 +325,9 @@ class Teacher:
 
     def _find_max_batch_size_zero_shot(self, batch_size):
 
+        MAX_SUCCESSFUL_BATCHES = 2
+        REDUCTION_FACTOR = 2
+
         transform = transforms.Compose([transforms.ToTensor()])
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -338,7 +341,8 @@ class Teacher:
             device
         )
         config = AutoConfig.from_pretrained(self.model_name)
-        while batch_size > 1:
+        successful_batches = 0
+        while batch_size > 1 and successful_batches < MAX_SUCCESSFUL_BATCHES:
             try:
                 data_loader = DataLoader(
                     pytorch_dataset,
@@ -355,11 +359,8 @@ class Teacher:
                 else:
                     batch_classes = ["this", "is", "a", "test"] * batch_size
 
-                for i, (images, targets) in enumerate(
-                    tqdm(
-                        data_loader,
-                        desc=f"Testing zero shot batch_size {batch_size}",
-                    )
+                for images, targets in tqdm(
+                    data_loader, desc=f"Testing zero shot batch_size {batch_size}"
                 ):
                     inputs = processor(
                         text=batch_classes, images=images, return_tensors="pt"
@@ -369,11 +370,14 @@ class Teacher:
                         with torch.no_grad():
                             outputs = model(**inputs)
 
-                    return batch_size
+                    # Will only reach this if no CUDA OOM occured
+                    successful_batches += 1
+                    if successful_batches >= MAX_SUCCESSFUL_BATCHES:
+                        break
 
             except RuntimeError as e:
                 if "CUDA out of memory" in str(e):
-                    batch_size //= 2
+                    batch_size //= REDUCTION_FACTOR
                 else:
                     logging.error(f"Runtime error: {e}")
                     raise e
@@ -413,7 +417,7 @@ class Teacher:
                 fo.delete_dataset("temp_dataset")
 
         else:  # Load zero shot model, run inference, and save results
-            batch_size = self._find_max_batch_size_zero_shot(batch_size)
+            # batch_size = self._find_max_batch_size_zero_shot(batch_size)
 
             hf_model_config = AutoConfig.from_pretrained(self.model_name)
 
