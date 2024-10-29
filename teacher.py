@@ -383,31 +383,37 @@ class Teacher:
         return batch_size
 
     def zero_shot_inference(self, batch_size=16, detection_threshold=0.2):
+        pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
+        eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
 
         # Read labels from file if already saved
-        if os.path.exists("test.txt"):
-            with open(self.detections_filepath, "r") as json_file:
-                data = json.load(json_file)
+        if os.path.isdir(self.detections_root):
+            try:
+                temp_dataset = fo.Dataset.from_dir(
+                    dataset_dir=self.detections_root,
+                    dataset_type=fo.types.COCODetectionDataset,
+                    name="temp_dataset",
+                    data_path="data.json",
+                )
 
-            for img_path, detections_data in data.items():
-                # Create fo.Detection objects from the extracted data
-                detections = []
-                for detection_data in detections_data:
-                    detection = fo.Detection(
-                        label=detection_data["label"],
-                        bounding_box=detection_data["bounding_box"],
-                        confidence=detection_data["confidence"],
-                    )
-                    detections.append(detection)
+                # Copy all detections from stored dataset into our dataset
+                for temp_sample in tqdm(
+                    temp_dataset,
+                    desc="Loading stored detections and evaluation results",
+                ):
+                    filepath = temp_sample.filepath
+                    sample = self.dataset[filepath]
+                    sample[pred_key] = temp_sample["detections"]
+                    sample.save()
+            except Exception as e:
+                logging.error(
+                    f"Data in {self.detections_root} could not be loaded. Error: {e}"
+                )
+            finally:
+                fo.delete_dataset("temp_dataset")
 
-                # Attach label to V51 dataset
-                sample = self.dataset[img_path]
-                sample[pred_key] = fo.Detections(detections=detections)
-                sample.save()
         else:  # Load zero shot model, run inference, and save results
             batch_size = self._find_max_batch_size_zero_shot(batch_size)
-            pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
-            eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
 
             hf_model_config = AutoConfig.from_pretrained(self.model_name)
 
@@ -417,7 +423,6 @@ class Teacher:
                 else transforms.Compose([transforms.ToTensor()])
             )
 
-            self.dataset = self.dataset.take(16)  # FIXME remove after testing
             pytorch_dataset = FiftyOneTorchDatasetCOCO(
                 self.dataset,
                 transforms=transform,
@@ -618,15 +623,6 @@ class Teacher:
                     sample[pred_key] = fo.Detections(detections=detections)
                     sample.save()
 
-                # Store labels https://docs.voxel51.com/api/fiftyone.core.collections.html#fiftyone.core.collections.SampleCollection.export
-                self.dataset.export(
-                    export_dir=self.detections_root,
-                    dataset_type=fo.types.COCODetectionDataset,
-                    label_field=pred_key,
-                    data_path="data.json",
-                    export_media="manifest",
-                )
-
                 # Log inference performance
                 end_time = time.time()
                 batch_duration = end_time - start_time
@@ -636,16 +632,26 @@ class Teacher:
                     "inference/frames_per_second", frames_per_second, step
                 )
 
+            # Populate dataset with evaluation results
+            self.dataset.evaluate_detections(
+                pred_key,
+                gt_field="ground_truth",
+                eval_key=eval_key,
+                compute_mAP=True,
+            )
+
+            # Store labels https://docs.voxel51.com/api/fiftyone.core.collections.html#fiftyone.core.collections.SampleCollection.export
+            self.dataset.export(
+                export_dir=self.detections_root,
+                dataset_type=fo.types.COCODetectionDataset,
+                data_path="data.json",
+                export_media=None,  # "manifest",
+                label_field=pred_key,
+                progress=True,
+            )
+
             torch.cuda.empty_cache()
             writer.close()
-
-        # Populate dataset with evaluation results
-        eval = self.dataset.evaluate_detections(
-            pred_key,
-            gt_field="ground_truth",
-            eval_key=eval_key,
-            compute_mAP=True,
-        )
 
     def train(self):
         pytorch_dataset = FiftyOneTorchDatasetCOCO(self.dataset)
