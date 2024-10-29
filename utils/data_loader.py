@@ -82,7 +82,8 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         img_path = self.img_paths[idx]
         metadata = self.metadata[img_path]
         detections = self.labels.get(img_path, [])
-        img = Image.open(img_path).convert("RGB")
+        with Image.open(img_path) as img:
+            img = img.convert("RGB")
         boxes = []
         labels = []
         area = []
