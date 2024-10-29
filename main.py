@@ -178,6 +178,7 @@ def main(args):
             try:
                 pbar.set_description("Training/Loading Teacher model " + MODEL_NAME)
                 config["overrides"]["run_config"]["model_name"] = MODEL_NAME
+                config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
                 if args.queue == None:
 
                     run = wandb.init(
@@ -238,12 +239,11 @@ def main(args):
             config = json.load(file)
 
         for MODEL_NAME in (pbar := tqdm(zero_shot_teacher_models, desc="Zero Shot")):
-            torch.cuda.empty_cache()
-            gc.collect()
             run = None
             try:
                 pbar.set_description("Evaluating Zero Shot Teacher model " + MODEL_NAME)
                 config["overrides"]["run_config"]["model_name"] = MODEL_NAME
+                config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
                 if args.queue == None:
 
                     run = wandb.init(
@@ -272,11 +272,6 @@ def main(args):
                 if run:
                     run.finish(exit_code=1)
                 continue
-            finally:
-                if "teacher" in locals():
-                    del teacher
-                torch.cuda.empty_cache()
-                gc.collect()
     else:
         logging.error(
             str(SELECTED_WORKFLOW)

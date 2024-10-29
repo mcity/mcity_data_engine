@@ -323,70 +323,30 @@ class Teacher:
 
         return processor, batch_classes, tokenized_text, batch_tasks
 
-    def _find_max_batch_size_zero_shot(self, batch_size):
+    def zero_shot_inference(self, batch_size=16, detection_threshold=0.2):
 
-        MAX_SUCCESSFUL_BATCHES = 2
-        REDUCTION_FACTOR = 2
-
-        transform = transforms.Compose([transforms.ToTensor()])
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        pytorch_dataset = FiftyOneTorchDatasetCOCO(
-            self.dataset,
-            transforms=transform,
-        )
-
-        processor = AutoProcessor.from_pretrained(self.model_name, do_rescale=False)
-        model = AutoModelForZeroShotObjectDetection.from_pretrained(self.model_name).to(
-            device
-        )
-        config = AutoConfig.from_pretrained(self.model_name)
-        successful_batches = 0
-        while batch_size > 1 and successful_batches < MAX_SUCCESSFUL_BATCHES:
+        successful_run = False
+        # Run inference with maximum batch size
+        while batch_size >= 1 and successful_run == False:
             try:
-                data_loader = DataLoader(
-                    pytorch_dataset,
-                    batch_size=batch_size,
-                    num_workers=NUM_WORKERS,
-                    pin_memory=True,
-                    collate_fn=zeroshot_collate_fn,
+                self._zero_shot_inference(
+                    batch_size=batch_size, detection_threshold=detection_threshold
                 )
-
-                if type(config).__name__ == "OmDetTurboConfig":
-                    batch_classes = [["this", "is", "a", "test"]] * batch_size
-                elif type(config).__name__ == "GroundingDinoConfig":
-                    batch_classes = ["this . is . a . test ."] * batch_size
-                else:
-                    batch_classes = ["this", "is", "a", "test"] * batch_size
-
-                for images, targets in tqdm(
-                    data_loader, desc=f"Testing zero shot batch_size {batch_size}"
-                ):
-                    inputs = processor(
-                        text=batch_classes, images=images, return_tensors="pt"
-                    ).to(device)
-
-                    with torch.amp.autocast("cuda"):
-                        with torch.no_grad():
-                            outputs = model(**inputs)
-
-                    # Will only reach this if no CUDA OOM occured
-                    successful_batches += 1
-                    if successful_batches >= MAX_SUCCESSFUL_BATCHES:
-                        break
+                successful_run = True
 
             except RuntimeError as e:
                 if "CUDA out of memory" in str(e):
-                    batch_size //= REDUCTION_FACTOR
+                    batch_size //= 2
+                    logging.info("Batch size reduced to " + str(batch_size))
                 else:
                     logging.error(f"Runtime error: {e}")
                     raise e
             finally:
-                torch.cuda.empty_cache()
                 gc.collect()
-        return batch_size
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
 
-    def zero_shot_inference(self, batch_size=16, detection_threshold=0.2):
+    def _zero_shot_inference(self, batch_size=16, detection_threshold=0.2):
         pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
         eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
 
@@ -407,8 +367,9 @@ class Teacher:
                 ):
                     filepath = temp_sample.filepath
                     sample = self.dataset[filepath]
-                    sample[pred_key] = temp_sample["detections"]
-                    sample.save()
+                    if "detections" in temp_sample:
+                        sample[pred_key] = temp_sample["detections"]
+                        sample.save()
             except Exception as e:
                 logging.error(
                     f"Data in {self.detections_root} could not be loaded. Error: {e}"
@@ -417,8 +378,6 @@ class Teacher:
                 fo.delete_dataset("temp_dataset")
 
         else:  # Load zero shot model, run inference, and save results
-            # batch_size = self._find_max_batch_size_zero_shot(batch_size)
-
             hf_model_config = AutoConfig.from_pretrained(self.model_name)
 
             transform = (
@@ -426,7 +385,7 @@ class Teacher:
                 if type(hf_model_config).__name__ == "OmDetTurboConfig"
                 else transforms.Compose([transforms.ToTensor()])
             )
-
+            self.dataset = self.dataset.take(40)
             pytorch_dataset = FiftyOneTorchDatasetCOCO(
                 self.dataset,
                 transforms=transform,
@@ -438,7 +397,7 @@ class Teacher:
                 pin_memory=True,
                 collate_fn=zeroshot_collate_fn,
             )
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device = torch.device("cuda")
 
             classes_v51 = self.dataset.default_classes
 
@@ -483,12 +442,14 @@ class Teacher:
                         )
                     )
 
+                # Get target sizes
                 if type(hf_model_config).__name__ == "OmDetTurboConfig":
                     target_sizes = [img.size[::-1] for img in images]
                 else:
                     target_sizes = [tuple(img.shape[1:]) for img in images]
                     images = [(image).to(device, non_blocking=True) for image in images]
 
+                # Process inputs
                 if type(hf_model_config).__name__ == "GroundingDinoConfig":
                     inputs = processor(
                         text=None, images=images, return_tensors="pt"
@@ -513,10 +474,12 @@ class Teacher:
                         return_tensors="pt",
                     ).to(device)
 
+                # Model inference
                 with torch.amp.autocast("cuda"):
                     with torch.no_grad():
                         outputs = model(**inputs)
 
+                # Process results
                 if type(hf_model_config).__name__ == "GroundingDinoConfig":
                     results = processor.post_process_grounded_object_detection(
                         outputs,
@@ -538,6 +501,8 @@ class Teacher:
                         nms_threshold=detection_threshold,
                         target_sizes=target_sizes,
                     )
+
+                # Store results in V51 dataset
                 for result, target in zip(results, targets):
                     boxes, scores = result["boxes"], result["scores"]
 
@@ -559,7 +524,7 @@ class Teacher:
                                 )
                                 processed_label = matches[0] if matches else None
                             if processed_label == None:
-                                logging.warning(
+                                logging.info(
                                     "Skipped detection with model "
                                     + type(hf_model_config).__name__
                                     + " due to unclear detection label: "
