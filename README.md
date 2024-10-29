@@ -28,6 +28,9 @@ Launch Voxel51 in one terminal:
 Launch the Mcity Data Engine in a second terminal:
 ```python main.py```
 
+Open Voxel51 in your browser:
+```http://localhost:5151/```
+
 To exclude the output of jupyter notebooks from git tracking, add the following lines to your ```.git/config```:
 
 ```
