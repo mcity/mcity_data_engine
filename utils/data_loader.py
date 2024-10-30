@@ -1,13 +1,8 @@
 import torch
-from PIL import Image
 import fiftyone.utils.coco as fouc
-import fiftyone as fo
 import numpy as np
-import pandas as pd
 
 from tqdm import tqdm
-
-import logging
 
 from datasets import Dataset, Split
 
@@ -15,7 +10,7 @@ from torchvision.io import decode_image
 
 # https://docs.python.org/2/library/multiprocessing.html#sharing-state-between-processes
 # https://pytorch.org/docs/stable/multiprocessing.html
-from multiprocessing import Process, Value, Array, Manager
+from multiprocessing import Manager
 
 
 class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
