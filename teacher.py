@@ -6,7 +6,6 @@ from difflib import get_close_matches
 from functools import partial
 import re
 import time
-import gc
 
 import os
 import json
@@ -339,10 +338,6 @@ class Teacher:
                 else:
                     logging.error(f"Runtime error: {e}")
                     raise e
-            finally:
-                gc.collect()
-                torch.cuda.empty_cache()
-                torch.cuda.ipc_collect()
 
     def _zero_shot_inference(self, batch_size=16, detection_threshold=0.2):
         pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
@@ -381,7 +376,6 @@ class Teacher:
         else:  # Load zero shot model, run inference, and save results
             hf_model_config = AutoConfig.from_pretrained(self.model_name)
 
-            self.dataset = self.dataset.take(400)
             pytorch_dataset = FiftyOneTorchDatasetCOCO(
                 self.dataset,
             )
@@ -598,20 +592,6 @@ class Teacher:
                 progress=True,
             )
 
-            # Cleanup
-            del (
-                pytorch_dataset,
-                model,
-                processor,
-                data_loader,
-                images,
-                targets,
-                inputs,
-                outputs,
-                results,
-            )
-            torch.cuda.empty_cache()
-            gc.collect()
             writer.close()
 
     def train(self):
