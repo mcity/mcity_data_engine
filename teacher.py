@@ -45,6 +45,11 @@ from typing import List, Union
 
 
 class CustomBatchEncoding(BatchEncoding):
+    """
+    Improved HF batch encoding with non_blocking=True option.
+    https://github.com/huggingface/transformers/blob/main/src/transformers/tokenization_utils_base.py#L192
+    """
+
     def to(
         self, device: Union[str, "torch.device"], non_blocking: bool = False
     ) -> "CustomBatchEncoding":
@@ -79,6 +84,10 @@ class CustomBatchEncoding(BatchEncoding):
 
 
 class CustomOwlv2Processor(Owlv2Processor):
+    """
+    Improved HF processor using CustomBatchEncoding encoding.
+    """
+
     def __call__(
         self,
         text=None,
