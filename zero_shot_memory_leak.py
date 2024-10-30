@@ -297,20 +297,20 @@ class Teacher:
         )
         print_memory("Pytorch dataset loaded")
 
-        data_loader = DataLoader(
-            pytorch_dataset,
-            batch_size=batch_size,
-            collate_fn=zeroshot_collate_fn,
-        )
-
         # data_loader = DataLoader(
         #    pytorch_dataset,
         #    batch_size=batch_size,
-        #    num_workers=NUM_WORKERS,
-        #    pin_memory=True,
         #    collate_fn=zeroshot_collate_fn,
-        #    persistent_workers=False,
         # )
+
+        data_loader = DataLoader(
+            pytorch_dataset,
+            batch_size=batch_size,
+            num_workers=NUM_WORKERS,
+            pin_memory=True,
+            collate_fn=zeroshot_collate_fn,
+            persistent_workers=False,
+        )
         print_memory("Dataloader loaded")
         device = torch.device("cuda")
 
@@ -453,7 +453,9 @@ class Teacher:
                         "OwlViTConfig",
                     ]:
                         # Get image size (ID is stored in annotation)
-                        img_path = pytorch_dataset.img_paths[target["image_id"].item()]
+                        # img_path = pytorch_dataset.img_paths[target["image_id"].item()]
+                        image_id = target["image_id"].item()
+                        img_path = pytorch_dataset.img_paths.iloc[image_id]["filepath"]
                         sample = self.dataset[img_path]
                         img_width = sample.metadata.width
                         img_height = sample.metadata.height
@@ -466,7 +468,8 @@ class Teacher:
                         box_height = (box[3].item() - box[1].item()) / img_height
                     elif type(hf_model_config).__name__ == "OmDetTurboConfig":
                         # Get image size
-                        img_path = pytorch_dataset.img_paths[target["image_id"].item()]
+                        image_id = target["image_id"].item()
+                        img_path = pytorch_dataset.img_paths.iloc[image_id]["filepath"]
                         sample = self.dataset[img_path]
                         img_width = sample.metadata.width
                         img_height = sample.metadata.height
@@ -492,7 +495,8 @@ class Teacher:
                     detections.append(detection)
 
                 # Attach label to V51 dataset
-                img_path = pytorch_dataset.img_paths[target["image_id"].item()]
+                image_id = target["image_id"].item()
+                img_path = pytorch_dataset.img_paths.iloc[image_id]["filepath"]
                 sample = self.dataset[img_path]
                 sample[pred_key] = fo.Detections(detections=detections)
                 sample.save()
