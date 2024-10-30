@@ -103,8 +103,8 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
                 iscrowd.append(coco_obj.iscrowd)
 
         target = {}
-        target["boxes"] = torch.as_tensor(boxes, dtype=torch.float32)
-        target["labels"] = torch.as_tensor(labels, dtype=torch.int64)
+        target["bbox"] = torch.as_tensor(boxes, dtype=torch.float32)
+        target["category_id"] = torch.as_tensor(labels, dtype=torch.int64)
         target["image_id"] = img_id
         target["area"] = torch.as_tensor(area, dtype=torch.float32)
         target["iscrowd"] = torch.as_tensor(iscrowd, dtype=torch.int64)
@@ -295,20 +295,21 @@ def gen_factory(torch_dataset, split_name):
     The FiftyOne dataset is iterated to collect sample data, which is then used within the generator function.
     """
     img_paths = torch_dataset.img_paths
-    labels_map_rev = torch_dataset.labels_map_rev
+    img_ids = torch_dataset.ids
     splits = torch_dataset.splits
     metadata = torch_dataset.metadata
     labels = torch_dataset.labels
+    labels_map_rev = torch_dataset.labels_map_rev
 
     def _gen():
-        for idx, img_path in enumerate(img_paths):
-            split = splits[img_path]
+        for idx, (img_path, img_id) in enumerate(zip(img_paths, img_ids)):
+            split = splits[img_id]
             if split != split_name:
                 continue
 
             sample_data = {
-                "metadata": metadata[img_path],
-                "detections": labels[img_path],
+                "metadata": metadata[idx],
+                "detections": labels[img_id],
             }
             target = create_target(sample_data, labels_map_rev, idx)
             yield {
