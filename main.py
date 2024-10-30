@@ -7,9 +7,6 @@ from utils.logging import configure_logging
 from utils.wandb_helper import launch_to_queue_terminal
 import logging
 
-import torch
-import gc
-
 from config.config import (
     SELECTED_WORKFLOW,
     SELECTED_DATASET,
@@ -172,8 +169,6 @@ def main(args):
 
         # Train teacher models
         for MODEL_NAME in (pbar := tqdm(teacher_models, desc="Teacher Models")):
-            torch.cuda.empty_cache()
-            gc.collect()
             run = None
             try:
                 pbar.set_description("Training/Loading Teacher model " + MODEL_NAME)
@@ -223,11 +218,6 @@ def main(args):
                 if run:
                     run.finish(exit_code=1)
                 continue
-            finally:
-                if "teacher" in locals():
-                    del teacher
-                torch.cuda.empty_cache()
-                gc.collect()
 
     elif SELECTED_WORKFLOW == "zero_shot_teacher":
         zero_shot_teacher_models = WORKFLOWS["train_teacher"][
@@ -272,6 +262,7 @@ def main(args):
                 if run:
                     run.finish(exit_code=1)
                 continue
+
     else:
         logging.error(
             str(SELECTED_WORKFLOW)
