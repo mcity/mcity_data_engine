@@ -45,9 +45,9 @@ def test_torch_dataset_length(torch_dataset):
 def test_torch_dataset_getitem(torch_dataset, index):
     """Test getting an item from the torch dataset."""
     img, target = torch_dataset[index]
-    assert isinstance(img, Image.Image)
-    assert "boxes" in target
-    assert "labels" in target
+    assert isinstance(img, torch.Tensor)
+    assert "bbox" in target
+    assert "category_id" in target
     assert "image_id" in target
     assert "area" in target
     assert "iscrowd" in target
@@ -64,8 +64,8 @@ def test_torch_dataset_getitems(torch_dataset):
     samples = torch_dataset.__getitems__([0, 1, 2])
     assert len(samples) == 3
     for img, target in samples:
-        assert isinstance(img, Image.Image)
-        assert "boxes" in target
+        assert isinstance(img, torch.Tensor)
+        assert "bbox" in target
 
 
 def test_torch_dataset_getitems_invalid_indices(torch_dataset):
@@ -111,9 +111,9 @@ def test_dataloader_batch(dataloader):
         assert len(imgs) == 4
         assert len(targets) == 4
         for img, target in zip(imgs, targets):
-            assert isinstance(img, Image.Image)
-            assert "boxes" in target
-            assert "labels" in target
+            assert isinstance(img, torch.Tensor)
+            assert "bbox" in target
+            assert "category_id" in target
             assert "image_id" in target
             assert "area" in target
             assert "iscrowd" in target
