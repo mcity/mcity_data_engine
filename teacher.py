@@ -321,6 +321,20 @@ class Teacher:
         return processor, batch_classes, tokenized_text, batch_tasks
 
     def zero_shot_inference(self, batch_size=16, detection_threshold=0.2):
+        """
+        Perform zero-shot inference with a specified batch size and detection threshold.
+
+        This method attempts to run inference with the given batch size. If a CUDA out of memory
+        error occurs, the batch size is halved and the inference is retried until a successful run
+        is achieved or the batch size is reduced to less than 1.
+
+        Args:
+            batch_size (int, optional): The initial batch size for inference. Defaults to 16.
+            detection_threshold (float, optional): The threshold for detection. Defaults to 0.2.
+
+        Raises:
+            RuntimeError: If an error other than "CUDA out of memory" occurs during inference.
+        """
 
         successful_run = False
         # Run inference with maximum batch size
@@ -340,6 +354,27 @@ class Teacher:
                     raise e
 
     def _zero_shot_inference(self, batch_size=16, detection_threshold=0.2):
+        """
+        Performs zero-shot inference on the dataset using a specified model.
+
+        This method either loads precomputed detections from a directory or runs
+        inference using a zero-shot model to generate detections. The results are
+        stored in the dataset and evaluated.
+
+        Args:
+            batch_size (int, optional): The number of samples to process in each batch. Default is 16.
+            detection_threshold (float, optional): The confidence threshold for detections. Default is 0.2.
+
+        Raises:
+            Exception: If there is an error loading precomputed detections from the directory.
+
+        Notes:
+            - If precomputed detections are available in the specified directory, they are loaded and added to the dataset.
+            - If precomputed detections are not available, the method initializes a zero-shot model, runs inference, and saves the results.
+            - The method supports multiple model configurations, including GroundingDinoConfig, Owlv2Config, OwlViTConfig, and OmDetTurboConfig.
+            - The results are stored in the dataset and evaluated using mean Average Precision (mAP).
+            - The method logs inference performance metrics to TensorBoard.
+        """
         pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
         eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
 
