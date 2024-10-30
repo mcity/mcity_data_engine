@@ -15,6 +15,8 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
+from torchvision.transforms.functional import to_pil_image
+
 from torch.utils.tensorboard import SummaryWriter
 
 from config.config import NUM_WORKERS
@@ -171,10 +173,6 @@ class CustomOwlv2Processor(Owlv2Processor):
             return CustomBatchEncoding(
                 data=dict(**image_features), tensor_type=return_tensors
             )
-
-
-def zeroshot_collate_fn(batch):
-    return list(zip(*batch))
 
 
 def transform_batch(examples, image_processor, return_pixel_mask=False):
@@ -367,7 +365,10 @@ class Teacher:
                 ):
                     filepath = temp_sample.filepath
                     sample = self.dataset[filepath]
-                    if "detections" in temp_sample:
+                    if (
+                        "detections" in temp_sample
+                        and temp_sample["detections"] is not None
+                    ):
                         sample[pred_key] = temp_sample["detections"]
                         sample.save()
             except Exception as e:
@@ -380,21 +381,16 @@ class Teacher:
         else:  # Load zero shot model, run inference, and save results
             hf_model_config = AutoConfig.from_pretrained(self.model_name)
 
-            transform = (
-                None
-                if type(hf_model_config).__name__ == "OmDetTurboConfig"
-                else transforms.Compose([transforms.ToTensor()])
-            )
+            self.dataset = self.dataset.take(400)
             pytorch_dataset = FiftyOneTorchDatasetCOCO(
                 self.dataset,
-                transforms=transform,
             )
             data_loader = DataLoader(
                 pytorch_dataset,
                 batch_size=batch_size,
                 num_workers=NUM_WORKERS,
                 pin_memory=True,
-                collate_fn=zeroshot_collate_fn,
+                collate_fn=lambda batch: list(zip(*batch)),
             )
             device = torch.device("cuda")
 
@@ -441,11 +437,10 @@ class Teacher:
                         )
                     )
 
-                # Get target sizes
+                target_sizes = [tuple(img.shape[1:]) for img in images]
                 if type(hf_model_config).__name__ == "OmDetTurboConfig":
-                    target_sizes = [img.size[::-1] for img in images]
+                    images = [to_pil_image(image) for image in images]
                 else:
-                    target_sizes = [tuple(img.shape[1:]) for img in images]
                     images = [(image).to(device, non_blocking=True) for image in images]
 
                 # Process inputs
@@ -511,7 +506,11 @@ class Teacher:
                         labels = result["classes"]
 
                     detections = []
-                    for box, score, label in zip(boxes, scores, labels):
+                    for box, score, label, img_size in zip(
+                        boxes, scores, labels, target_sizes
+                    ):
+                        img_width = img_size[1]
+                        img_height = img_size[0]
                         if type(hf_model_config).__name__ == "GroundingDinoConfig":
                             # Outputs do not comply with given labels
                             # Grounding DINO outputs multiple pairs of object boxes and noun phrases for a given (Image, Text) pair
@@ -542,30 +541,12 @@ class Teacher:
                             "Owlv2Config",
                             "OwlViTConfig",
                         ]:
-                            # Get image size (ID is stored in annotation)
-                            img_path = pytorch_dataset.img_paths[
-                                target["image_id"].item()
-                            ]
-                            sample = self.dataset[img_path]
-                            img_width = sample.metadata.width
-                            img_height = sample.metadata.height
-
-                            # Convert bbox to V51 type
                             label = class_parts_dict[classes_v51[label]]
                             top_left_x = box[0].item() / img_width
                             top_left_y = box[1].item() / img_height
                             box_width = (box[2].item() - box[0].item()) / img_width
                             box_height = (box[3].item() - box[1].item()) / img_height
                         elif type(hf_model_config).__name__ == "OmDetTurboConfig":
-                            # Get image size
-                            img_path = pytorch_dataset.img_paths[
-                                target["image_id"].item()
-                            ]
-                            sample = self.dataset[img_path]
-                            img_width = sample.metadata.width
-                            img_height = sample.metadata.height
-
-                            # Convert bbox to V51 type
                             label = class_parts_dict[label]
                             top_left_x = box[0].item() / img_width
                             top_left_y = box[1].item() / img_height
@@ -586,8 +567,7 @@ class Teacher:
                         detections.append(detection)
 
                     # Attach label to V51 dataset
-                    img_path = pytorch_dataset.img_paths[target["image_id"].item()]
-                    sample = self.dataset[img_path]
+                    sample = self.dataset[target["image_id"]]
                     sample[pred_key] = fo.Detections(detections=detections)
                     sample.save()
 
@@ -618,7 +598,20 @@ class Teacher:
                 progress=True,
             )
 
+            # Cleanup
+            del (
+                pytorch_dataset,
+                model,
+                processor,
+                data_loader,
+                images,
+                targets,
+                inputs,
+                outputs,
+                results,
+            )
             torch.cuda.empty_cache()
+            gc.collect()
             writer.close()
 
     def train(self):
