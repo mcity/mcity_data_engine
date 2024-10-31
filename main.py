@@ -252,8 +252,13 @@ def main(args):
                     teacher = Teacher(dataset=dataset, config=wandb_config)
                     batch_size = wandb_config["batch_size"]
                     detection_threshold = wandb_config["detection_threshold"]
+                    object_classes = wandb_config["object_classes"]
+                    if len(object_classes) == 0:
+                        object_classes = None
                     teacher.zero_shot_inference(
-                        batch_size=batch_size, detection_threshold=detection_threshold
+                        batch_size=batch_size,
+                        detection_threshold=detection_threshold,
+                        object_classes=object_classes,
                     )
                     run.finish(exit_code=0)
             except Exception as e:

@@ -270,7 +270,7 @@ class Teacher:
         return data
 
     def _initialize_zero_shot_processor(
-        self, hf_model_config, model_name, batch_size, classes_v51, device
+        self, hf_model_config, model_name, batch_size, object_classes, device
     ):
         """
         Initializes and returns the processor, batch classes, tokenized text, and batch tasks
@@ -280,7 +280,7 @@ class Teacher:
             hf_model_config (object): The HuggingFace model configuration object.
             model_name (str): The name of the pre-trained model.
             batch_size (int): The size of the batch.
-            classes_v51 (list): A list of class names.
+            object_classes (list): A list of class names.
             device (str): The device to which tensors should be moved (e.g., 'cpu' or 'cuda').
 
         Returns:
@@ -294,7 +294,7 @@ class Teacher:
         if type(hf_model_config).__name__ == "GroundingDinoConfig":
             processor = AutoProcessor.from_pretrained(model_name)  # , do_rescale=False
             # https://huggingface.co/docs/transformers/v4.45.2/en/model_doc/grounding-dino
-            classes = " . ".join(classes_v51) + " . "
+            classes = " . ".join(object_classes) + " . "
             batch_classes = [classes] * batch_size
             tokenized_text = processor.tokenizer(
                 batch_classes,
@@ -305,20 +305,20 @@ class Teacher:
 
         elif type(hf_model_config).__name__ == "Owlv2Config":
             processor = CustomOwlv2Processor.from_pretrained(model_name)
-            batch_classes = classes_v51 * batch_size
+            batch_classes = object_classes * batch_size
             tokenized_text = processor.tokenizer(
                 batch_classes, padding="max_length", return_tensors="pt"
             ).to(device)
         elif type(hf_model_config).__name__ == "OwlViTConfig":
             processor = AutoProcessor.from_pretrained(model_name)
-            batch_classes = classes_v51 * batch_size
+            batch_classes = object_classes * batch_size
             tokenized_text = processor.tokenizer(
                 batch_classes, padding="max_length", return_tensors="pt"
             ).to(device)
         elif type(hf_model_config).__name__ == "OmDetTurboConfig":
             processor = AutoProcessor.from_pretrained(model_name)
-            batch_classes = [classes_v51] * batch_size
-            task = "Detect {}.".format(", ".join(classes_v51))
+            batch_classes = [object_classes] * batch_size
+            task = "Detect {}.".format(", ".join(object_classes))
             batch_tasks = [task] * batch_size
         else:
             logging.error(
@@ -327,7 +327,9 @@ class Teacher:
 
         return processor, batch_classes, tokenized_text, batch_tasks
 
-    def zero_shot_inference(self, batch_size=16, detection_threshold=0.2):
+    def zero_shot_inference(
+        self, batch_size=16, detection_threshold=0.2, object_classes=None
+    ):
         """
         Perform zero-shot inference with a specified batch size and detection threshold.
 
@@ -348,7 +350,9 @@ class Teacher:
         while batch_size >= 1 and successful_run == False:
             try:
                 self._zero_shot_inference(
-                    batch_size=batch_size, detection_threshold=detection_threshold
+                    batch_size=batch_size,
+                    detection_threshold=detection_threshold,
+                    object_classes=object_classes,
                 )
                 successful_run = True
 
@@ -365,7 +369,9 @@ class Teacher:
         if batch_size < 1:
             logging.error("The model failed to run with batch_size = 1.")
 
-    def _zero_shot_inference(self, batch_size=16, detection_threshold=0.2):
+    def _zero_shot_inference(
+        self, batch_size=16, detection_threshold=0.2, object_classes=None
+    ):
         """
         Performs zero-shot inference on the dataset using a specified model.
 
@@ -435,25 +441,26 @@ class Teacher:
             )
             device = torch.device("cuda")
 
-            classes_v51 = self.dataset.default_classes
+            if object_classes is None:
+                object_classes = self.dataset.default_classes
 
             # Process combined label types like "motorbike/cycler"
             processed_classes = [
-                part for classname in classes_v51 for part in classname.split("/")
+                part for classname in object_classes for part in classname.split("/")
             ]
             class_parts_dict = {
                 part: classname
-                for classname in classes_v51
+                for classname in object_classes
                 for part in classname.split("/")
             }
-            classes_v51 = processed_classes
+            object_classes = processed_classes
 
             processor, batch_classes, tokenized_text, batch_tasks = (
                 self._initialize_zero_shot_processor(
                     hf_model_config=hf_model_config,
                     model_name=self.model_name,
                     batch_size=batch_size,
-                    classes_v51=classes_v51,
+                    object_classes=object_classes,
                     device=device,
                 )
             )
@@ -473,7 +480,7 @@ class Teacher:
                             hf_model_config,
                             self.model_name,
                             len(images),  # Key difference
-                            classes_v51,
+                            object_classes,
                             device,
                         )
                     )
@@ -557,9 +564,9 @@ class Teacher:
                             # Grounding DINO outputs multiple pairs of object boxes and noun phrases for a given (Image, Text) pair
                             # There can be either multiple labels per output ("bike van") or incomplete ones ("motorcyc")
                             processed_label = label.split()[0]
-                            if processed_label not in classes_v51:
+                            if processed_label not in object_classes:
                                 matches = get_close_matches(
-                                    processed_label, classes_v51, n=1, cutoff=0.6
+                                    processed_label, object_classes, n=1, cutoff=0.6
                                 )
                                 processed_label = matches[0] if matches else None
                             if processed_label == None:
@@ -582,7 +589,7 @@ class Teacher:
                             "Owlv2Config",
                             "OwlViTConfig",
                         ]:
-                            label = class_parts_dict[classes_v51[label]]
+                            label = class_parts_dict[object_classes[label]]
                             top_left_x = box[0].item() / img_width
                             top_left_y = box[1].item() / img_height
                             box_width = (box[2].item() - box[0].item()) / img_width
@@ -622,12 +629,15 @@ class Teacher:
                 )
 
             # Populate dataset with evaluation results
-            self.dataset.evaluate_detections(
-                pred_key,
-                gt_field="ground_truth",
-                eval_key=eval_key,
-                compute_mAP=True,
-            )
+            try:
+                self.dataset.evaluate_detections(
+                    pred_key,
+                    gt_field="ground_truth",
+                    eval_key=eval_key,
+                    compute_mAP=True,
+                )
+            except Exception as e:
+                logging.warning(f"Evaluation not possible. Error: {e}")
 
             # Store labels https://docs.voxel51.com/api/fiftyone.core.collections.html#fiftyone.core.collections.SampleCollection.export
             self.dataset.export(
