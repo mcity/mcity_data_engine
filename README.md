@@ -103,6 +103,21 @@ Locally, you will need to clean up old docker images once in a while. Run ```doc
 
 For object detection, the data engine supports HF models of the types [AutoModelForObjectDetection](https://huggingface.co/docs/transformers/en/model_doc/auto#transformers.AutoModelForObjectDetection) and [AutoModelForZeroShotObjectDetection](https://huggingface.co/docs/transformers/en/model_doc/auto#transformers.AutoModelForZeroShotObjectDetection). At this point, [multi-GPU training is not working](https://github.com/huggingface/transformers/pull/33561) for the object detection pipeline.
 
+### Custom models
+
+Custom models run in their own containers to avoid any conflicting requirements. To build a dockerfile, mount the repository, test it, and push it do Dockerhub, run the following commands:
+```
+cd custom_models/<model>
+docker build -t <dockerhub-account>/<image-name>:latest .
+docker run -v /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch <dockerhub-account>/<image-name>:latest <optional argument>
+docker image tag <dockerhub-account>/<image-name>:latest <dockerhub-account>/<image-name>:latest
+docker login
+docker push <dockerhub-account>/<image-name>:latest
+```
+To run such a container with [singularity](https://docs.sylabs.io/guides/latest/user-guide/introduction.html), run the following command:
+```
+singularity run --pwd /launch --bind /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch docker://<dockerhub-account>/<image-name>:latest <optional argument>
+```
 ## Datasets
 
 ### Huggingface Integration
