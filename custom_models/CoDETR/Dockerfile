@@ -10,7 +10,8 @@ RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-key F60F4B3D7FA2AF80
 # Installations
 RUN apt-get update && \
     apt-get install -y \
-    git 
+    git \
+    nano
 
 # Upgrade pip
 RUN pip install --upgrade pip
