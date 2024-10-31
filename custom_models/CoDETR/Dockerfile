@@ -1,5 +1,7 @@
 FROM pytorch/pytorch:1.11.0-cuda11.3-cudnn8-devel
 
+# Co-DETR: python=3.7.11,pytorch=1.11.0,cuda=11.3
+
 # Set the working directory to the mounted git repository
 WORKDIR /launch
 
@@ -15,6 +17,9 @@ RUN apt-get update && \
 
 # Upgrade pip
 RUN pip install --upgrade pip
+
+# Install MMCV
+RUN pip install mmcv-full -f https://download.openmmlab.com/mmcv/dist/cu113/torch1.11.0/index.html
 
 # Install package requirements
 COPY Co-DETR/requirements.txt /launch/requirements.txt
