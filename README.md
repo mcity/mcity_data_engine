@@ -8,6 +8,7 @@
   <img alt="Python Version" src="https://img.shields.io/badge/Python-3.12-blue"/>
   <img alt="PyTorch Version" src="https://img.shields.io/badge/PyTorch-2.5-blue"/>
   <img alt="CUDA Version" src="https://img.shields.io/badge/CUDA-12.4-blue"/>
+  <img alt="Visitors" src="https://visitor-badge.laobi.icu/badge?page_id=daniel-bogdoll.mcity_data_engine"/>
 </p>
 
 The Mcity Data Engine is an essential tool in the Mcity makerspace for transportation innovators making AI algorithms and seeking actionable data insights through machine learning.
