@@ -154,6 +154,52 @@ def process_mcity_fisheye_2000_filename(filename):
     return results
 
 
+def load_mcity_fisheye_3_months(dataset_info):
+    """
+    Loads the Mcity Fisheye 2000 dataset based on the provided dataset information.
+
+    Args:
+        dataset_info (dict): A dictionary containing the following keys:
+            - "name" (str): The name of the dataset.
+            - "local_path" (str): The local path to the dataset directory.
+            - "v51_type" (str): The type of the dataset, corresponding to a type in `fo.types`.
+            - "v51_splits" (list): A list of dataset splits to be loaded.
+
+    Returns:
+        fo.Dataset: The loaded dataset object.
+
+    Raises:
+        KeyError: If any of the required keys are missing in `dataset_info`.
+        AttributeError: If `v51_type` does not correspond to a valid type in `fo.types`.
+    """
+    dataset_name = dataset_info["name"]
+    dataset_dir = dataset_info["local_path"]
+    dataset_type = getattr(fo.types, dataset_info["v51_type"])
+    dataset_splits = dataset_info["v51_splits"]  # Use all available splits
+
+    if PERSISTENT == False:
+        try:
+            fo.delete_dataset(dataset_info["name"])
+        except:
+            pass
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = fo.Dataset(dataset_name)
+        for split in dataset_splits:
+            dataset.add_dir(
+                dataset_dir=dataset_dir,
+                dataset_type=dataset_type,
+                split=split,
+                tags=split,
+            )
+        dataset.compute_metadata(num_workers=NUM_WORKERS)
+        dataset.persistent = PERSISTENT  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
+    return dataset
+
+
 def load_fisheye_8k(dataset_info):
     """
     Loads a fisheye 8k dataset based on the provided dataset information.
