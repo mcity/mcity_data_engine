@@ -5,6 +5,9 @@ chmod +x tools/dist_train.sh
 chmod +x tools/slurm_train.sh
 chmod +x tools/dist_test.sh
 
+# Install the package in editable mode
+pip install -e .
+
 # Check if the first argument is "train", "slurm_train", or "test"
 if [ "$1" == "train" ]; then
     # Train with 8 GPUs
