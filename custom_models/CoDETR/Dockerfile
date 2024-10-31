@@ -13,13 +13,17 @@ RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-key F60F4B3D7FA2AF80
 RUN apt-get update && \
     apt-get install -y \
     git \
-    nano
+    nano \
+    libgl1-mesa-glx \
+    libglib2.0-0
 
 # Upgrade pip
 RUN pip install --upgrade pip
 
 # Install MMCV
-RUN pip install mmcv-full -f https://download.openmmlab.com/mmcv/dist/cu113/torch1.11.0/index.html
+RUN pip install mmcv-full==1.5.0 -f https://download.openmmlab.com/mmcv/dist/cu113/torch1.11.0/index.html
+# Address #https://github.com/Sense-X/Co-DETR/issues/86
+RUN pip install yapf==0.40.1    
 
 # Install package requirements
 COPY Co-DETR/requirements.txt /launch/requirements.txt
