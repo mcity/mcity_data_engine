@@ -3,7 +3,7 @@ import os
 SELECTED_WORKFLOW = "zero_shot_teacher"  # Selection from WORKFLOWS
 SELECTED_DATASET = "mcity_fisheye_2000"  # Choose from datasets.yaml
 
-PERSISTENT = False  # If V51 database is stored
+PERSISTENT = True  # If V51 database is stored
 
 # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
 V51_EMBEDDING_MODELS = [
@@ -84,6 +84,7 @@ WORKFLOWS = {
         ],
         "hf_models_zeroshot_objectdetection": [
             "IDEA-Research/grounding-dino-tiny",
+            "IDEA-Research/grounding-dino-base",
             "google/owlvit-base-patch16",
             "google/owlvit-base-patch32",
             "google/owlvit-large-patch14",
