@@ -12,7 +12,22 @@
                 "train",
                 "val"
             ],
-            "model_name": "google/owlv2-base-patch16-ensemble"
+            "model_name": "google/owlv2-base-patch16-ensemble",
+            "object_classes": [
+                "bicycle",
+                "bicyclist",
+                "cyclist",
+                "bike",
+                "rider",
+                "motorcyclist",
+                "pedestrian",
+                "person",
+                "walker",
+                "jogger",
+                "runner",
+                "skateboarder",
+                "scooter"
+            ]
         }
     }
 }
