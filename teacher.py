@@ -292,7 +292,7 @@ class Teacher:
         """
         processor, batch_classes, tokenized_text, batch_tasks = None, None, None, None
         if type(hf_model_config).__name__ == "GroundingDinoConfig":
-            processor = AutoProcessor.from_pretrained(model_name, do_rescale=False)
+            processor = AutoProcessor.from_pretrained(model_name)  # , do_rescale=False
             # https://huggingface.co/docs/transformers/v4.45.2/en/model_doc/grounding-dino
             classes = " . ".join(classes_v51) + " . "
             batch_classes = [classes] * batch_size
@@ -304,21 +304,19 @@ class Teacher:
             ).to(device)
 
         elif type(hf_model_config).__name__ == "Owlv2Config":
-            processor = CustomOwlv2Processor.from_pretrained(
-                model_name, do_rescale=False
-            )
+            processor = CustomOwlv2Processor.from_pretrained(model_name)
             batch_classes = classes_v51 * batch_size
             tokenized_text = processor.tokenizer(
                 batch_classes, padding="max_length", return_tensors="pt"
             ).to(device)
         elif type(hf_model_config).__name__ == "OwlViTConfig":
-            processor = AutoProcessor.from_pretrained(model_name, do_rescale=False)
+            processor = AutoProcessor.from_pretrained(model_name)
             batch_classes = classes_v51 * batch_size
             tokenized_text = processor.tokenizer(
                 batch_classes, padding="max_length", return_tensors="pt"
             ).to(device)
         elif type(hf_model_config).__name__ == "OmDetTurboConfig":
-            processor = AutoProcessor.from_pretrained(model_name, do_rescale=False)
+            processor = AutoProcessor.from_pretrained(model_name)
             batch_classes = [classes_v51] * batch_size
             task = "Detect {}.".format(", ".join(classes_v51))
             batch_tasks = [task] * batch_size
@@ -361,6 +359,11 @@ class Teacher:
                 else:
                     logging.error(f"Runtime error: {e}")
                     raise e
+            finally:
+                torch.cuda.empty_cache()
+
+        if batch_size < 1:
+            logging.error("The model failed to run with batch_size = 1.")
 
     def _zero_shot_inference(self, batch_size=16, detection_threshold=0.2):
         """
