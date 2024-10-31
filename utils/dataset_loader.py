@@ -156,7 +156,7 @@ def process_mcity_fisheye_2000_filename(filename):
 
 def load_mcity_fisheye_3_months(dataset_info):
     """
-    Loads the Mcity Fisheye 2000 dataset based on the provided dataset information.
+    Loads the Mcity Fisheye 3 months dataset based on the provided dataset information.
 
     Args:
         dataset_info (dict): A dictionary containing the following keys:
