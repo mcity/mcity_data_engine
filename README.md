@@ -109,7 +109,7 @@ Custom models run in their own containers to avoid any conflicting requirements.
 ```
 cd custom_models/<model>
 docker build -t <dockerhub-account>/<image-name>:latest .
-docker run -v /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch <dockerhub-account>/<image-name>:latest <optional argument>
+docker run --gpus all -v /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch <dockerhub-account>/<image-name>:latest <optional argument>
 docker image tag <dockerhub-account>/<image-name>:latest <dockerhub-account>/<image-name>:latest
 docker login
 docker push <dockerhub-account>/<image-name>:latest
