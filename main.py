@@ -24,6 +24,8 @@ from brain import Brain
 from ano_dec import Anodec
 from teacher import Teacher
 
+from utils.data_loader import FiftyOneTorchDatasetCOCO
+
 import wandb
 
 import sys
@@ -228,6 +230,7 @@ def main(args):
         with open(config_file_path, "r") as file:
             config = json.load(file)
 
+        pytorch_dataset = FiftyOneTorchDatasetCOCO(dataset)
         for MODEL_NAME in (pbar := tqdm(zero_shot_teacher_models, desc="Zero Shot")):
             run = None
             try:
@@ -256,6 +259,7 @@ def main(args):
                     if len(object_classes) == 0:
                         object_classes = None
                     teacher.zero_shot_inference(
+                        pytorch_dataset=pytorch_dataset,
                         batch_size=batch_size,
                         detection_threshold=detection_threshold,
                         object_classes=object_classes,

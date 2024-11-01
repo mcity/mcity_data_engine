@@ -328,7 +328,7 @@ class Teacher:
         return processor, batch_classes, tokenized_text, batch_tasks
 
     def zero_shot_inference(
-        self, batch_size=16, detection_threshold=0.2, object_classes=None
+        self, pytorch_dataset, batch_size=16, detection_threshold=0.2, object_classes=None
     ):
         """
         Perform zero-shot inference with a specified batch size and detection threshold.
@@ -346,10 +346,12 @@ class Teacher:
         """
 
         successful_run = False
+        
         # Run inference with maximum batch size
         while batch_size >= 1 and successful_run == False:
             try:
                 self._zero_shot_inference(
+                    pytorch_dataset=pytorch_dataset,
                     batch_size=batch_size,
                     detection_threshold=detection_threshold,
                     object_classes=object_classes,
@@ -370,7 +372,7 @@ class Teacher:
             logging.error("The model failed to run with batch_size = 1.")
 
     def _zero_shot_inference(
-        self, batch_size=16, detection_threshold=0.2, object_classes=None
+        self, pytorch_dataset, batch_size=16, detection_threshold=0.2, object_classes=None
     ):
         """
         Performs zero-shot inference on the dataset using a specified model.
@@ -428,10 +430,7 @@ class Teacher:
 
         else:  # Load zero shot model, run inference, and save results
             hf_model_config = AutoConfig.from_pretrained(self.model_name)
-
-            pytorch_dataset = FiftyOneTorchDatasetCOCO(
-                self.dataset,
-            )
+            
             data_loader = DataLoader(
                 pytorch_dataset,
                 batch_size=batch_size,
@@ -611,7 +610,7 @@ class Teacher:
                             ],
                             confidence=score.item(),
                         )
-
+                        detection["bbox_area"] = detection["bounding_box"][2] * detection["bounding_box"][3]
                         detections.append(detection)
 
                     # Attach label to V51 dataset
