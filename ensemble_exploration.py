@@ -100,7 +100,7 @@ class EnsembleExploration():
 
         self.view = self.dataset.match(F.any(conditions))
 
-        for field in tqdm(self.v51_detection_fields, desc="Generating filtered Voxel51 view for fast processing."):
+        for field in tqdm(self.v51_detection_fields, desc="Generating filtered Voxel51 view for fast processing"):
             self.view = self.view.filter_labels(f"{field}.detections",F("label").is_in(self.positive_classes), only_matches=False)
         self.n_samples = len(self.view)
 
@@ -137,7 +137,7 @@ class EnsembleExploration():
 
         # Get detections from V51 with efficient "values" method
         samples_detections = [] # List of lists of list [model][sample][detections]
-        for field in tqdm(self.v51_detection_fields, desc = "Collecting model detections."):
+        for field in tqdm(self.v51_detection_fields, desc = "Collecting model detections"):
             field_detections = self.view.values(f"{field}.detections")  # list of lists of detections per sample
             samples_detections.append(field_detections)
 
