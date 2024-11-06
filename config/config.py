@@ -1,7 +1,7 @@
 import os
 
-SELECTED_WORKFLOW = "zero_shot_teacher"  # Selection from WORKFLOWS
-SELECTED_DATASET = "mcity_fisheye_2000"  # Choose from datasets.yaml
+SELECTED_WORKFLOW = "ensemble_exploration"  # Selection from WORKFLOWS
+SELECTED_DATASET = "mcity_fisheye_3_months"  # Choose from datasets.yaml
 
 PERSISTENT = True  # If V51 database is stored
 
@@ -85,8 +85,8 @@ WORKFLOWS = {
         "hf_models_zeroshot_objectdetection": [
             "IDEA-Research/grounding-dino-tiny",
             "IDEA-Research/grounding-dino-base",
-            "google/owlvit-base-patch16",
-            "google/owlvit-base-patch32",
+            # "google/owlvit-base-patch16",
+            # "google/owlvit-base-patch32",
             "google/owlvit-large-patch14",
             "google/owlv2-base-patch16",
             "google/owlv2-base-patch16-ensemble",
@@ -97,6 +97,7 @@ WORKFLOWS = {
             "omlab/omdet-turbo-swin-tiny-hf",
         ],
     },
+    "ensemble_exploration": {}
 }
 
 # Define the global variable

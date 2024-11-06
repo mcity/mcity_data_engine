@@ -20,9 +20,12 @@ from config.config import (
 from tqdm import tqdm
 
 from utils.dataset_loader import *
+from workflows import *
+
 from brain import Brain
 from ano_dec import Anodec
 from teacher import Teacher
+from ensemble_exploration import EnsembleExploration
 
 from utils.data_loader import FiftyOneTorchDatasetCOCO
 
@@ -271,7 +274,35 @@ def main(args):
                 if run:
                     run.finish(exit_code=1)
                 continue
-
+    elif SELECTED_WORKFLOW == "ensemble_exploration":
+        run = None
+        try:
+            wandb_project = "Data Engine Ensemble Exploration"
+            config_file_path = "wandb_runs/ensemble_exploration_config.json"
+            with open(config_file_path, "r") as file:
+                config = json.load(file)
+            config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
+            if args.queue == None:
+                run = wandb.init(
+                            name="ensemble-exploration",
+                            allow_val_change=True,
+                            sync_tensorboard=True,
+                            group="Exploration",
+                            job_type="eval",
+                            config=config,
+                            project=wandb_project,
+                        )
+                wandb_config = wandb.config["overrides"]["run_config"]
+                run.tags += (wandb_config["v51_dataset_name"], "local", "ensemble-exploration")
+                explorer = EnsembleExploration(dataset, wandb_config)
+                explorer.ensemble_exploration()
+                run.finish(exit_code=0)
+        except Exception as e:
+                logging.error(f"An error occurred: {e}")
+                logging.error("Stack trace:", exc_info=True)
+                if run:
+                    run.finish(exit_code=1)
+    
     else:
         logging.error(
             str(SELECTED_WORKFLOW)
