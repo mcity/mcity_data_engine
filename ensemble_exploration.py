@@ -76,6 +76,16 @@ class EnsembleExploration():
             if pred_prefix in field:
                 self.v51_detection_fields.append(field)
 
+                # Make sure that some classes in 'positive_classes' are part of the classes used for detections
+                detection_classes = self.dataset.distinct("%s.detections.label" % field)
+                pos_set = set(self.positive_classes)
+                det_set = set(detection_classes)
+                common_classes = pos_set & det_set
+                if common_classes:
+                    logging.info(f"The classes {common_classes} are shared between the list of positive classes and detections in '{field}'.")
+                else:
+                    logging.warning(f"No classes in the list of positive classes {pos_set} are part of the classes used for detections in '{field}'.")
+
         if len(self.v51_detection_fields) < self.agreement_threshold:
             logging.error(f"Number of detection models used ({len(self.v51_detection_fields)}) is less than the agreement threshold ({self.agreement_threshold}). No agreements will be possible.")
             logging.warning("Detections can be generated with the workflow `zero_shot_teacher`")
