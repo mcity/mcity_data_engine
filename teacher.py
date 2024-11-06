@@ -8,7 +8,6 @@ import re
 import time
 
 import os
-import json
 
 import numpy as np
 import torch
@@ -562,7 +561,7 @@ class Teacher:
                             # Outputs do not comply with given labels
                             # Grounding DINO outputs multiple pairs of object boxes and noun phrases for a given (Image, Text) pair
                             # There can be either multiple labels per output ("bike van") or incomplete ones ("motorcyc")
-                            processed_label = label.split()[0]
+                            processed_label = label.split()[0]  # TODO Improve by not just concidering only the first label
                             if processed_label not in object_classes:
                                 matches = get_close_matches(
                                     processed_label, object_classes, n=1, cutoff=0.6
