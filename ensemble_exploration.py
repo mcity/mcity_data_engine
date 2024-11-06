@@ -1,6 +1,9 @@
 from fiftyone import ViewField as F
 from tqdm import tqdm
 import logging
+import time
+
+from torch.utils.tensorboard import SummaryWriter
 
 import numpy as np
 
@@ -59,10 +62,10 @@ class EnsembleExploration():
     def __init__(self,dataset,config):
         self.dataset = dataset
         self.config = config
-        self.positive_classes = config.positive_classes # List of classes that count as a detection
-        self.agreement_threshold = config.agreement_threshold # Threshold for agreement between models
-        self.iou_threshold = config.iou_threshold # Threshold for IoU between bboxes to consider them as overlapping
-        self.max_bbox_size = config.max_bbox_size # Value between [0,1] for the max size of considered bboxes
+        self.positive_classes = config["positive_classes"] # List of classes that count as a detection. Must be included in the classes used for detections
+        self.agreement_threshold = config["agreement_threshold"] # Threshold for agreement between models
+        self.iou_threshold = config["iou_threshold"] # Threshold for IoU between bboxes to consider them as overlapping
+        self.max_bbox_size = config["max_bbox_size"] # Value between [0,1] for the max size of considered bboxes
         self.v51_agreement_tag = "vru_overlap"
 
         # Get V51 fields that store detection results
@@ -72,6 +75,10 @@ class EnsembleExploration():
         for field in dataset_schema:
             if pred_prefix in field:
                 self.v51_detection_fields.append(field)
+
+        if len(self.v51_detection_fields) < self.agreement_threshold:
+            logging.error(f"Number of detection models used ({len(self.v51_detection_fields)}) is less than the agreement threshold ({self.agreement_threshold}). No agreements will be possible.")
+            logging.warning("Detections can be generated with the workflow `zero_shot_teacher`")
         
         # Get filtered V51 view for faster processing
         conditions = [
@@ -83,7 +90,7 @@ class EnsembleExploration():
 
         self.view = self.dataset.match(F.any(conditions))
 
-        for field in tqdm(self.positive_classes, desc="Generating filtered Voxel51 view for fast processing."):
+        for field in tqdm(self.v51_detection_fields, desc="Generating filtered Voxel51 view for fast processing."):
             self.view = self.view.filter_labels(f"{field}.detections",F("label").is_in(self.positive_classes), only_matches=False)
         self.n_samples = len(self.view)
 
@@ -116,6 +123,8 @@ class EnsembleExploration():
             None
         """
 
+        writer = SummaryWriter(log_dir="logs/tensorboard/teacher_zeroshot")
+
         # Get detections from V51 with efficient "values" method
         samples_detections = [] # List of lists of list [model][sample][detections]
         for field in tqdm(self.v51_detection_fields, desc = "Collecting model detections."):
@@ -135,7 +144,8 @@ class EnsembleExploration():
         n_unique_vru = 0
 
         # Iterate over all samples and check overlapping detections
-        for sample_index in tqdm(range(self.n_samples)):
+        for step, sample_index in enumerate(tqdm(range(self.n_samples), desc = "Finding detection agreements in samples")):
+            start_time = time.time()
             unique_vru_detections_set = set()
             all_bboxes = []                 # List of all bounding box detections per sample
             bbox_model_indices = []         # Track which model each bounding box belongs to
@@ -217,5 +227,13 @@ class EnsembleExploration():
             if len(unique_vru_detections_set) > 0:
                 n_samples_agreed += 1
                 n_unique_vru += len(unique_vru_detections_set)
+
+            # Log inference performance
+            end_time = time.time()
+            sample_duration = end_time - start_time
+            frames_per_second = 1 / sample_duration
+            writer.add_scalar(
+                "inference/frames_per_second", frames_per_second, step
+            )
 
         logging.info(f"Found {n_unique_vru} unique detections in {n_samples_agreed} samples. Based on {n_bboxes_agreed} total detections with {self.agreement_threshold} or more overlapping detections.")
