@@ -38,7 +38,7 @@ To exclude the output of jupyter notebooks from git tracking, add the following 
 
 ```
 [filter "strip-notebook-output"]
-clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --to=notebook --stdin --stdout --log-level=ERROR
+clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadataPreprocessor.enabled=True --to=notebook --stdin --stdout --log-level=ERROR
 ```
 
 > [!NOTE]
