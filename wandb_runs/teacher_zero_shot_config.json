@@ -5,20 +5,19 @@
             "wandb_runs/teacher_zero_shot_run.py"
         ],
         "run_config": {
-            "batch_size": 32,
+            "batch_size": 64,
             "detection_threshold": 0.2,
             "v51_dataset_name": "mcity_fisheye_2000",
-            "v51_dataset_splits:": [
-                "train",
-                "val"
-            ],
             "model_name": "google/owlv2-base-patch16-ensemble",
             "object_classes": [
+                "skater",
+                "child",
                 "bicycle",
                 "bicyclist",
                 "cyclist",
                 "bike",
                 "rider",
+                "motorcycle",
                 "motorcyclist",
                 "pedestrian",
                 "person",
@@ -26,7 +25,17 @@
                 "jogger",
                 "runner",
                 "skateboarder",
-                "scooter"
+                "scooter",
+                "vehicle",
+                "car",
+                "bus",
+                "truck",
+                "taxi",
+                "van",
+                "pickup truck",
+                "trailer",
+                "emergency vehicle",
+                "delivery driver"
             ]
         }
     }
