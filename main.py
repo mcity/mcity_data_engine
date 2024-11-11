@@ -103,19 +103,30 @@ def main(args):
 
     logging.info("Running workflow " + SELECTED_WORKFLOW.upper())
     if SELECTED_WORKFLOW == "brain_selection":
-        v51_brain = Brain(dataset, dataset_info)
-        # Compute model embeddings and index for similarity
-        v51_brain.compute_embeddings(V51_EMBEDDING_MODELS)
-        v51_brain.compute_similarity()
+        if args.queue == None:
+            wandb_project = "Data Engine Brain"
+            run = wandb.init(
+                name="brain-selection",
+                allow_val_change=True,
+                sync_tensorboard=True,
+                group="Brain",
+                job_type="eval",
+                project=wandb_project,
+            )
+            v51_brain = Brain(dataset, dataset_info)
+            # Compute model embeddings and index for similarity
+            v51_brain.compute_embeddings(V51_EMBEDDING_MODELS)
+            v51_brain.compute_similarity()
 
-        # Find representative and unique samples as center points for further selections
-        v51_brain.compute_representativeness()
-        v51_brain.compute_unique_images_greedy()
-        v51_brain.compute_unique_images_deterministic()
+            # Find representative and unique samples as center points for further selections
+            v51_brain.compute_representativeness()
+            v51_brain.compute_unique_images_greedy()
+            v51_brain.compute_unique_images_deterministic()
 
-        # Select samples similar to the center points to enlarge the dataset
-        v51_brain.compute_similar_images()
-        spaces = panel_embeddings(v51_brain)
+            # Select samples similar to the center points to enlarge the dataset
+            v51_brain.compute_similar_images()
+            spaces = panel_embeddings(v51_brain)
+            run.finish(exit_code=0)
 
     elif SELECTED_WORKFLOW == "learn_normality":
         config_file_path = "wandb_runs/anomalib_config.json"
