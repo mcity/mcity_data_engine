@@ -117,7 +117,7 @@ def process_mcity_fisheye_filename(filename):
     filename = os.path.basename(filename)
     results = {"filename": filename, "location": None, "name": None, "timestamp": None}
 
-    # TODO CHeck if some locations are duplicated (e.g. beal vs gs_Plymouth_Beal)
+    # TODO Check if some locations are duplicated (e.g. beal vs gs_Plymouth_Beal)
     available_locations = [
         "beal",
         "bishop",
