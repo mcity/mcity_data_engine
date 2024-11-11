@@ -7,6 +7,7 @@ from nuscenes.nuscenes import NuScenes
 import fiftyone as fo
 
 import logging
+from tqdm import tqdm
 
 from config.config import NUM_WORKERS, PERSISTENT
 
@@ -80,8 +81,8 @@ def load_mcity_fisheye_2000(dataset_info):
 
         # Add dataset specific metedata based on filename
         view = dataset.view()
-        for sample in view:  # https://docs.voxel51.com/api/fiftyone.core.sample.html
-            metadata = process_mcity_fisheye_2000_filename(sample["filepath"])
+        for sample in tqdm(view, desc="Deriving metadata from filenames"):  # https://docs.voxel51.com/api/fiftyone.core.sample.html
+            metadata = process_mcity_fisheye_filename(sample["filepath"])
             sample["location"] = metadata["location"]
             sample["name"] = metadata["name"]
             sample["timestamp"] = metadata["timestamp"]
@@ -91,7 +92,7 @@ def load_mcity_fisheye_2000(dataset_info):
     return dataset
 
 
-def process_mcity_fisheye_2000_filename(filename):
+def process_mcity_fisheye_filename(filename):
     """
     Processes a given filename to extract metadata including location, name, and timestamp.
 
@@ -116,6 +117,7 @@ def process_mcity_fisheye_2000_filename(filename):
     filename = os.path.basename(filename)
     results = {"filename": filename, "location": None, "name": None, "timestamp": None}
 
+    # TODO CHeck if some locations are duplicated (e.g. beal vs gs_Plymouth_Beal)
     available_locations = [
         "beal",
         "bishop",
@@ -126,12 +128,21 @@ def process_mcity_fisheye_2000_filename(filename):
         "gridsmart_sw",
         "Huron_Plymouth-Geddes",
         "Main_stadium",
+        "gs_Geddes_Huron",
+        "gs_Huron_Plymouth",
+        "gs_Plymouth_Beal",
+        "gs_Plymouth_Georgetown",
+        "gs_Plymouth_Bishop",
+        "gs_Plymouth_EPA"
     ]
 
     for location in available_locations:
         if location in filename:
             results["location"] = location
             break
+
+    if results["location"] is None:
+        logging.error(f"Filename {filename} could not be assigned to a known location")
 
     # Split string into first and second part based on first 4 digit year number
     match = re.search(r"\d{4}", filename)
@@ -146,11 +157,19 @@ def process_mcity_fisheye_2000_filename(filename):
     # Extract timestamp from second part
     match = re.search(r"\d{8}T\d{6}|\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", part2)
     if match:
-        timestamp_str = match.group(0)
-        if "T" in timestamp_str:
-            results["timestamp"] = datetime.strptime(timestamp_str, "%Y%m%dT%H%M%S")
+        extracted_timestamp = match.group(0)
+    
+        if re.match(r"\d{8}T\d{6}", extracted_timestamp):
+            results["timestamp"] = datetime.strptime(extracted_timestamp, "%Y%m%dT%H%M%S")
+        elif re.match(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", extracted_timestamp):
+            results["timestamp"] = datetime.strptime(extracted_timestamp, "%Y-%m-%d_%H-%M-%S")
+        elif re.match(r"\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}", extracted_timestamp):
+            results["timestamp"] = datetime.strptime(extracted_timestamp, "%Y-%m-%d %H-%M-%S")
         else:
-            results["timestamp"] = datetime.strptime(timestamp_str, "%Y-%m-%d_%H-%M-%S")
+            logging.error("Unknown timestamp format")
+    else:
+        logging.error("No valid timestamp found in string")
+        
     return results
 
 
@@ -196,9 +215,18 @@ def load_mcity_fisheye_3_months(dataset_info):
                 tags=split,
             )
         dataset.compute_metadata(num_workers=NUM_WORKERS)
+
+        # Add dataset specific metedata based on filename
+        view = dataset.view()
+        for sample in tqdm(view, desc="Deriving metadata from filenames"):  # https://docs.voxel51.com/api/fiftyone.core.sample.html
+            metadata = process_mcity_fisheye_filename(sample["filepath"])
+            sample["location"] = metadata["location"]
+            sample["name"] = metadata["name"]
+            sample["timestamp"] = metadata["timestamp"]
+            sample.save()
+
         dataset.persistent = PERSISTENT  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
     return dataset
-
 
 def load_fisheye_8k(dataset_info):
     """
