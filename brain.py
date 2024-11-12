@@ -93,16 +93,12 @@ class Brain:
             # Load or compute embeddings for the model
             if self.dataset.get_field(self.embedding_key) is not None:
                 logging.info("Loading embeddings from V51.")
-                self.embeddings_model = self.dataset.values(
-                    self.embedding_key
-                )
+                self.embeddings_model = self.dataset.values(self.embedding_key)
             elif os.path.exists(embedding_file_name):
                 logging.info("Loading embeddings from disk.")
                 with open(embedding_file_name, "rb") as f:
                     self.embeddings_model = pickle.load(f)
-                self.dataset.set_values(
-                    self.embedding_key, self.embeddings_model
-                )
+                self.dataset.set_values(self.embedding_key, self.embeddings_model)
             else:
                 logging.info("Computing embeddings.")
                 self.dataset.compute_embeddings(
@@ -110,6 +106,7 @@ class Brain:
                 )
                 self.embeddings_model = self.dataset.values(self.embedding_key)
 
+                # TODO Is this necessary? (since compute_embeddings is not stored into a variable)
                 self.dataset.set_values(self.embedding_key, self.embeddings_model)
                 with open(embedding_file_name, "wb") as f:
                     pickle.dump(self.embeddings_model, f)
