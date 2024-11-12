@@ -166,9 +166,9 @@ def process_mcity_fisheye_filename(filename):
         elif re.match(r"\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}", extracted_timestamp):
             results["timestamp"] = datetime.strptime(extracted_timestamp, "%Y-%m-%d %H-%M-%S")
         else:
-            logging.error("Unknown timestamp format")
+            logging.error(f"Unknown timestamp format: {match}")
     else:
-        logging.error("No valid timestamp found in string")
+        logging.error(f"No valid timestamp found in string: {part2}")
         
     return results
 
