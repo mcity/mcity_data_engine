@@ -155,7 +155,7 @@ def process_mcity_fisheye_filename(filename):
     results["name"] = re.sub(r"[-_]+$", "", part1)
 
     # Extract timestamp from second part
-    match = re.search(r"\d{8}T\d{6}|\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", part2)
+    match = re.search(r"\d{8}T\d{6}|\d{4}-\d{2}-\d{2}[_ ]\d{2}-\d{2}-\d{2}", part2)
     if match:
         extracted_timestamp = match.group(0)
     
