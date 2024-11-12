@@ -108,13 +108,9 @@ class Brain:
                 self.dataset.compute_embeddings(
                     model=self.model, embeddings_field=self.embedding_key
                 )
-                self.embeddings_model = self.dataset.values(
-                    self.compute_embeddingsembedding_key
-                )
+                self.embeddings_model = self.dataset.values(self.embedding_key)
 
-                self.dataset.set_values(
-                    self.embedding_key, self.embeddings_model
-                )
+                self.dataset.set_values(self.embedding_key, self.embeddings_model)
                 with open(embedding_file_name, "wb") as f:
                     pickle.dump(self.embeddings_model, f)
 
