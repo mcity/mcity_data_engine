@@ -1,9 +1,10 @@
 import fiftyone.brain as fob
 import fiftyone.zoo as foz
 from fiftyone import ViewField as F
+from torch.utils.tensorboard import SummaryWriter
 
 import numpy as np
-
+import time
 from tqdm import tqdm
 
 import re
@@ -21,15 +22,32 @@ Implementing Voxel51 brain methods.
 
 
 class Brain:
-    def __init__(self, dataset, dataset_info, embeddings_path="./output/embeddings/"):
+    def __init__(self, dataset, dataset_info, model_name, embeddings_path="./output/embeddings/"):
         self.dataset = dataset
         self.brains = dataset.list_brain_runs()
         self.dataset_name = dataset_info["name"]
+        self.v51_model_zoo = foz.list_zoo_models()
+        self.writer = SummaryWriter(log_dir="logs/tensorboard/teacher_zeroshot")
+
+        # Model
+        if model_name not in self.v51_model_zoo:
+            logging.warning("Model " + model_name + " is not part of the V51 model zoo.")
+        self.model = foz.load_zoo_model(model_name)
+
+        # Keys
+        self.model_name = model_name
+        self.model_name_key = re.sub(r"[\W-]+", "_", model_name)
+        self.embedding_key = "embedding_" + self.model_name_key
+        self.similiarity_key = "simil_" + self.model_name_key
+        self.uniqueness_key = "uniqueness_" + self.model_name_key
 
         # Storing variables
-        self.embeddings_vis = {}
-        self.embeddings_models = {}
-        self.similarities = {}
+        self.embeddings_vis = {}    # Multiple methods per model
+        self.embeddings_model = None
+        self.similarities = None
+
+        # WandB counter
+        self.steps = 0
 
         # Generate folder to store all embedding-related results
         self.embeddings_root = embeddings_path + self.dataset_name + "/"
@@ -45,115 +63,116 @@ class Brain:
             "value_compute_representativeness_neighbour": "representativeness_neighbour",
         }
 
-    def compute_embeddings(self, embedding_model_names):
+    def __del__(self):
+        self.writer.close()
+
+    def compute_embeddings(self):
         """
-        Computes and stores embeddings for the given list of embedding model names. Uses V51 pre-defined dim. reduction methods.
+        Computes and stores embeddings for the given model name. Uses V51 pre-defined dim. reduction methods.
 
         This method performs the following steps:
         1. Retrieves the list of pre-defined dimensionality reduction methods.
-        2. Iterates over the provided embedding model names.
-        3. Checks if each model is part of the V51 model zoo.
-        4. Loads or computes embeddings for each model.
+        4. Loads or computes embeddings for the model.
         5. Saves the computed embeddings to disk.
         6. Computes and stores visualizations for the embeddings using various dimensionality reduction methods.
 
         Parameters:
-        embedding_model_names (list): A list of model names for which embeddings need to be computed.
+        model_name: Model name for which embeddings need to be computed.
 
         Raises:
         Warning: If a model is not part of the V51 model zoo or does not provide embeddings.
         """
+        start_time = time.time()
 
         dim_reduction_methods = list(fob.brain_config.visualization_methods.keys())
         dim_reduction_methods.remove("manual")
+        
+        embedding_file_name = self.embeddings_root + self.model_name_key + ".pkl"
 
-        v51_model_zoo = foz.list_zoo_models()
-        for model_name in tqdm(
-            embedding_model_names, desc="Generating data embeddings"
-        ):
-            if model_name not in v51_model_zoo:
-                logging.warning(
-                    "Model " + v51_model_zoo + " is not part of the V51 model zoo."
+        if self.model.has_embeddings:
+            # Load or compute embeddings for the model
+            if self.dataset.get_field(self.embedding_key) is not None:
+                logging.info("Loading embeddings from V51.")
+                self.embeddings_model = self.dataset.values(
+                    self.embedding_key
+                )
+            elif os.path.exists(embedding_file_name):
+                logging.info("Loading embeddings from disk.")
+                with open(embedding_file_name, "rb") as f:
+                    self.embeddings_model = pickle.load(f)
+                self.dataset.set_values(
+                    self.embedding_key, self.embeddings_model
                 )
             else:
-                model = foz.load_zoo_model(model_name)
-                model_name_key = re.sub(r"[\W-]+", "_", model_name)
-                embedding_key = "embedding_" + model_name_key
-                embedding_file_name = self.embeddings_root + model_name_key + ".pkl"
+                logging.info("Computing embeddings.")
+                self.dataset.compute_embeddings(
+                    model=self.model, embeddings_field=self.embedding_key
+                )
+                self.embeddings_model = self.dataset.values(
+                    self.compute_embeddingsembedding_key
+                )
 
-                if model.has_embeddings:
-                    # Load or compute embeddings for the model
-                    if self.dataset.get_field(embedding_key) is not None:
-                        self.embeddings_models[model_name] = self.dataset.values(
-                            embedding_key
-                        )
-                    elif os.path.exists(embedding_file_name):
-                        with open(embedding_file_name, "rb") as f:
-                            self.embeddings_models[model_name] = pickle.load(f)
-                        self.dataset.set_values(
-                            embedding_key, self.embeddings_models[model_name]
-                        )
-                    else:
-                        self.dataset.compute_embeddings(
-                            model=model, embeddings_field=embedding_key
-                        )
-                        self.embeddings_models[model_name] = self.dataset.values(
-                            embedding_key
-                        )
+                self.dataset.set_values(
+                    self.embedding_key, self.embeddings_model
+                )
+                with open(embedding_file_name, "wb") as f:
+                    pickle.dump(self.embeddings_model, f)
 
-                        self.dataset.set_values(
-                            embedding_key, self.embeddings_models[model_name]
-                        )
-                        with open(embedding_file_name, "wb") as f:
-                            pickle.dump(self.embeddings_models[model_name], f)
+            for method in tqdm(dim_reduction_methods, "Dimensionality reductions"):
+                method_key = self.model_name_key + "_" + re.sub(r"[\W-]+", "_", method)
+                points_key = "points_" + method_key
+                vis_file_name = self.embeddings_root + method_key + ".pkl"
 
-                    for method in dim_reduction_methods:
-                        key = model_name_key + "_" + re.sub(r"[\W-]+", "_", method)
-                        points_key = "points_" + key
-                        vis_file_name = self.embeddings_root + key + ".pkl"
-
-                        if key in self.brains:
-                            brain_info = self.dataset.get_brain_info(key)
-                            self.embeddings_vis[key] = self.dataset.load_brain_results(
-                                key
-                            )
-
-                        elif os.path.exists(vis_file_name):
-                            with open(vis_file_name, "rb") as f:
-                                points = pickle.load(f)
-
-                            self.embeddings_vis[key] = fob.compute_visualization(
-                                self.dataset,
-                                method=method,
-                                points=points,
-                                embeddings=embedding_key,
-                                seed=GLOBAL_SEED,
-                                brain_key=key,
-                                num_workers=NUM_WORKERS,
-                            )
-                            self.dataset.set_values(
-                                points_key, self.embeddings_vis[key].current_points
-                            )
-
-                        else:
-                            self.embeddings_vis[key] = fob.compute_visualization(
-                                self.dataset,
-                                method=method,
-                                embeddings=embedding_key,
-                                seed=GLOBAL_SEED,
-                                brain_key=key,
-                                num_workers=NUM_WORKERS,
-                            )
-                            self.dataset.set_values(
-                                points_key, self.embeddings_vis[key].current_points
-                            )
-
-                            with open(vis_file_name, "wb") as f:
-                                pickle.dump(self.embeddings_vis[key].current_points, f)
-                else:
-                    logging.warning(
-                        "Model " + model_name + " does not provide embeddings."
+                if method_key in self.brains:
+                    logging.info("Loading vis from V51.")
+                    brain_info = self.dataset.get_brain_info(method_key)
+                    self.embeddings_vis[method_key] = self.dataset.load_brain_results(
+                        method_key
                     )
+
+                elif os.path.exists(vis_file_name):
+                    logging.info("Loading vis from disk.")
+                    with open(vis_file_name, "rb") as f:
+                        points = pickle.load(f)
+
+                    self.embeddings_vis[method_key] = fob.compute_visualization(
+                        self.dataset,
+                        method=method,
+                        points=points,
+                        embeddings=self.embedding_key,
+                        seed=GLOBAL_SEED,
+                        brain_key=method_key,
+                        num_workers=NUM_WORKERS,
+                    )
+                    self.dataset.set_values(
+                        points_key, self.embeddings_vis[method_key].current_points
+                    )
+
+                else:
+                    logging.info("Computing vis.")
+                    self.embeddings_vis[method_key] = fob.compute_visualization(
+                        self.dataset,
+                        method=method,
+                        embeddings=self.embedding_key,
+                        seed=GLOBAL_SEED,
+                        brain_key=method_key,
+                        num_workers=NUM_WORKERS,
+                    )
+                    self.dataset.set_values(
+                        points_key, self.embeddings_vis[method_key].current_points
+                    )
+
+                    with open(vis_file_name, "wb") as f:
+                        pickle.dump(self.embeddings_vis[method_key].current_points, f)
+        else:
+            logging.warning(
+                "Model " + self.model_name + " does not provide embeddings."
+            )
+        end_time = time.time()
+        duration = end_time - start_time
+        self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
+        self.steps += 1
+        
 
     def compute_similarity(self):
         """
@@ -172,29 +191,30 @@ class Brain:
               https://docs.voxel51.com/user_guide/brain.html#similarity
 
         Attributes:
-            self.embeddings_models (dict): A dictionary of embedding models.
+            self.embeddings_model (dict): A dictionary of embedding models.
             self.brains (dict): A dictionary to store brain results.
             self.similarities (dict): A dictionary to store similarity results.
             self.dataset (Dataset): The dataset object to compute similarities on.
 
         """
 
-        for embedding_name in tqdm(
-            self.embeddings_models, desc="Computing similarities"
-        ):
-            embedding = self.embeddings_models[embedding_name]
-            key = re.sub(r"[\W-]+", "_", embedding_name) + "_simil"
+        start_time = time.time()
+        if self.similiarity_key in self.brains:
+            logging.info("Loading similarities from V51.")
+            self.similarities = self.dataset.load_brain_results(self.similiarity_key)
 
-            if key in self.brains:
-                self.similarities[key] = self.dataset.load_brain_results(key)
-
-            else:
-                self.similarities[key] = fob.compute_similarity(
-                    self.dataset,
-                    embeddings=embedding,
-                    brain_key=key,
-                    num_workers=NUM_WORKERS,
-                )
+        else:
+            logging.info("Computing similarities.")
+            self.similarities = fob.compute_similarity(
+                self.dataset,
+                embeddings=self.embeddings_model,
+                brain_key=self.similiarity_key,
+                num_workers=NUM_WORKERS,
+            )
+        end_time = time.time()
+        duration = end_time - start_time
+        self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
+        self.steps += 1
 
     def compute_representativeness(self, threshold=0.99):
         """
@@ -227,37 +247,39 @@ class Brain:
             - https://docs.voxel51.com/brain.html#image-representativeness
         """
 
+        start_time = time.time()
         field = self.brain_taxonomy["field"]
         value = self.brain_taxonomy["value_compute_representativeness"]
         methods_cluster_center = ["cluster-center", "cluster-center-downweight"]
 
-        for embedding_name in tqdm(
-            self.embeddings_models, desc="Computing representative frames"
-        ):
-            embedding = self.embeddings_models[embedding_name]
-            for method in methods_cluster_center:
-                key = re.sub(
-                    r"[\W-]+",
-                    "_",
-                    embedding_name + "_" + method + "_representativeness",
-                )
+        for method in tqdm(methods_cluster_center, desc="Representativeness"):
+            method_key = re.sub(
+                r"[\W-]+",
+                "_",
+                self.model_name + "_" + method + "_representativeness",
+            )
 
-                if key in self.brains:
-                    self.similarities[key] = self.dataset.load_brain_results(key)
+            if method_key in self.brains:
+                self.similarities = self.dataset.load_brain_results(method_key)
 
-                fob.compute_representativeness(
-                    self.dataset,
-                    representativeness_field=key,
-                    method=method,
-                    embeddings=embedding,
-                )
+            logging.info("Computing representativeness.")
+            fob.compute_representativeness(
+                self.dataset,
+                representativeness_field=method_key,
+                method=method,
+                embeddings=self.embeddings_model,
+            )
 
-                # quant_threshold = self.dataset.quantiles(key, threshold)
-                # view = self.dataset.match(F(key) >= quant_threshold)
-                view = self.dataset.match(F(key) >= threshold)
-                for sample in view:
-                    sample[field] = value
-                    sample.save()
+            # quant_threshold = self.dataset.quantiles(key, threshold)
+            # view = self.dataset.match(F(key) >= quant_threshold)
+            view = self.dataset.match(F(method_key) >= threshold)
+            # TODO Speed up with values() and set_values()
+            for sample in view.iter_samples(progress=True, autosave=True):
+                sample[field] = value
+        end_time = time.time()
+        duration = end_time - start_time
+        self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
+        self.steps += 1
 
     def compute_unique_images_greedy(self, perct_unique=0.01):
         """
@@ -283,6 +305,7 @@ class Brain:
             - Voxel51 Brain documentation: https://docs.voxel51.com/user_guide/brain.html#cifar-10-example
         """
 
+        start_time = time.time()
         sample_count = len(self.dataset.view())
         num_of_unique = perct_unique * sample_count
         field = self.brain_taxonomy["field"]
@@ -296,12 +319,15 @@ class Brain:
             pass
 
         else:
-            for sim_key in tqdm(self.similarities, desc="Computing uniqueness greedy"):
-                self.similarities[sim_key].find_unique(num_of_unique)
-                for unique_id in self.similarities[sim_key].unique_ids:
-                    sample = self.dataset[unique_id]
-                    sample[field] = value
-                    sample.save()
+            self.similarities.find_unique(num_of_unique)
+            for unique_id in tqdm(self.similarities.unique_ids, desc="Tagging unique images"):
+                sample = self.dataset[unique_id]
+                sample[field] = value
+                sample.save()
+        end_time = time.time()
+        duration = end_time - start_time
+        self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
+        self.steps += 1
 
     def compute_unique_images_deterministic(self, threshold=0.99):
         """
@@ -322,25 +348,24 @@ class Brain:
             - https://docs.voxel51.com/api/fiftyone.brain.html#fiftyone.brain.compute_uniqueness
         """
 
+        start_time = time.time()
         field = self.brain_taxonomy["field"]
         value = self.brain_taxonomy["value_compute_uniqueness"]
 
-        for embedding_name in tqdm(
-            self.embeddings_models, desc="Computing uniqueness deterministic"
-        ):
-            embedding = self.embeddings_models[embedding_name]
-            key = re.sub(r"[\W-]+", "_", embedding_name) + "_uniqueness"
+        fob.compute_uniqueness(
+            self.dataset, embeddings=self.embeddings_model, uniqueness_field=self.uniqueness_key
+        )
 
-            fob.compute_uniqueness(
-                self.dataset, embeddings=embedding, uniqueness_field=key
-            )
-
-            # quant_threshold = self.dataset.quantiles(key, threshold)
-            # view = self.dataset.match(F(key) >= quant_threshold)
-            view = self.dataset.match(F(key) >= threshold)
-            for sample in view:
-                sample[field] = value
-                sample.save()
+        # quant_threshold = self.dataset.quantiles(key, threshold)
+        # view = self.dataset.match(F(key) >= quant_threshold)
+        view = self.dataset.match(F(self.uniqueness_key) >= threshold)
+        # TODO Improve with values() and set_values()
+        for sample in view.iter_samples(progress=True, autosave=True):
+            sample[field] = value
+        end_time = time.time()
+        duration = end_time - start_time
+        self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
+        self.steps += 1
 
     def find_samples_by_text(self, prompt, model_name):
         # https://docs.voxel51.com/api/fiftyone.core.collections.html#fiftyone.core.collections.SampleCollection.sort_by_similarity
@@ -367,6 +392,7 @@ class Brain:
         Returns:
         None
         """
+        start_time = time.time()
         field = self.brain_taxonomy["field"]
         field_neighbour_distance = "distance"
 
@@ -421,20 +447,23 @@ class Brain:
                 ),
             ]
 
-            for sim_key in tqdm(self.similarities, desc="Finding similar images"):
-                for unique_view, value in views_values:
-                    for sample in unique_view:
-                        view = self.dataset.sort_by_similarity(
-                            sample.id,
-                            k=neighbour_count,
-                            brain_key=sim_key,
-                            dist_field=field_neighbour_distance,
-                        )
-                        for sample_neighbour in view:
-                            distance = sample_neighbour[field_neighbour_distance]
-                            if (
-                                distance < dist_threshold
-                                and sample_neighbour[field] == None
-                            ):
-                                sample_neighbour[field] = value
-                                sample_neighbour.save()
+            for unique_view, value in tqdm(views_values, desc="Tagging similar images"):
+                for sample in unique_view:
+                    view = self.dataset.sort_by_similarity(
+                        sample.id,
+                        k=neighbour_count,
+                        brain_key=self.similiarity_key,
+                        dist_field=field_neighbour_distance,
+                    )
+                    for sample_neighbour in view:
+                        distance = sample_neighbour[field_neighbour_distance]
+                        if (
+                            distance < dist_threshold
+                            and sample_neighbour[field] == None
+                        ):
+                            sample_neighbour[field] = value
+                            sample_neighbour.save()
+        end_time = time.time()
+        duration = end_time - start_time
+        self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
+        self.steps += 1

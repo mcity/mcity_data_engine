@@ -5,12 +5,12 @@ import json
 
 from utils.logging import configure_logging
 from utils.wandb_helper import launch_to_queue_terminal
+
 import logging
 
 from config.config import (
     SELECTED_WORKFLOW,
     SELECTED_DATASET,
-    V51_EMBEDDING_MODELS,
     ANOMALIB_IMAGE_MODELS,
     WORKFLOWS,
     V51_ADDRESS,
@@ -31,43 +31,6 @@ from utils.data_loader import FiftyOneTorchDatasetCOCO
 import wandb
 
 import sys
-
-
-def panel_embeddings(v51_brain, color_field="unique"):
-    """
-    Creates a layout of panels for visualizing sample embeddings.
-
-    Args:
-        v51_brain: An object containing the embeddings visualization data.
-        color_field (str, optional): The field used to color the embeddings. Defaults to "unique".
-
-    Returns:
-        fo.Space: A layout space containing the samples panel and embeddings panel.
-    """
-    samples_panel = fo.Panel(type="Samples", pinned=True)
-
-    embeddings_panel = fo.Panel(
-        type="Embeddings",
-        state=dict(
-            brainResult=next(iter(v51_brain.embeddings_vis)), colorByField=color_field
-        ),
-    )
-
-    spaces = fo.Space(
-        children=[
-            fo.Space(
-                children=[
-                    fo.Space(children=[samples_panel]),
-                ],
-                orientation="horizontal",
-            ),
-            fo.Space(children=[embeddings_panel]),
-        ],
-        orientation="horizontal",
-    )
-
-    return spaces
-
 
 def signal_handler(sig, frame):
     print("You pressed Ctrl+C!")
@@ -103,30 +66,51 @@ def main(args):
 
     logging.info("Running workflow " + SELECTED_WORKFLOW.upper())
     if SELECTED_WORKFLOW == "brain_selection":
-        if args.queue == None:
-            wandb_project = "Data Engine Brain"
-            run = wandb.init(
-                name="brain-selection",
-                allow_val_change=True,
-                sync_tensorboard=True,
-                group="Brain",
-                job_type="eval",
-                project=wandb_project,
-            )
-            v51_brain = Brain(dataset, dataset_info)
-            # Compute model embeddings and index for similarity
-            v51_brain.compute_embeddings(V51_EMBEDDING_MODELS)
-            v51_brain.compute_similarity()
+        embedding_models = WORKFLOWS["brain_selection"]["embedding_models"]
+        config_file_path = "wandb_runs/brain_config.json"
+        with open(config_file_path, "r") as file:
+            config = json.load(file)
+        config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
+        wandb_project = "Data Engine Brain"
 
-            # Find representative and unique samples as center points for further selections
-            v51_brain.compute_representativeness()
-            v51_brain.compute_unique_images_greedy()
-            v51_brain.compute_unique_images_deterministic()
 
-            # Select samples similar to the center points to enlarge the dataset
-            v51_brain.compute_similar_images()
-            spaces = panel_embeddings(v51_brain)
-            run.finish(exit_code=0)
+        for MODEL_NAME in (pbar := tqdm(embedding_models, desc="Brain")):
+            run = None
+            try:
+                pbar.set_description("Generating/Loading embeddings with " + MODEL_NAME)
+                config["overrides"]["run_config"]["model_name"] = MODEL_NAME
+                
+                if args.queue == None:
+                    run = wandb.init(
+                        name=MODEL_NAME,
+                        allow_val_change=True,
+                        sync_tensorboard=True,
+                        group="Brain",
+                        job_type="eval",
+                        project=wandb_project,
+                        config=config
+                    )
+                    wandb_config = wandb.config["overrides"]["run_config"]
+                    run.tags += (wandb_config["v51_dataset_name"], wandb_config["v51_dataset_name"], "local")
+                    # Compute model embeddings and index for similarity
+                    v51_brain = Brain(dataset, dataset_info, MODEL_NAME)
+                    v51_brain.compute_embeddings()
+                    v51_brain.compute_similarity()
+
+                    # Find representative and unique samples as center points for further selections
+                    v51_brain.compute_representativeness()
+                    v51_brain.compute_unique_images_greedy()
+                    v51_brain.compute_unique_images_deterministic()
+
+                    # Select samples similar to the center points to enlarge the dataset
+                    v51_brain.compute_similar_images()
+                    run.finish(exit_code=0)
+            except Exception as e:
+                logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
+                logging.error("Stack trace:", exc_info=True)
+                if run:
+                    run.finish(exit_code=1)
+                continue
 
     elif SELECTED_WORKFLOW == "learn_normality":
         config_file_path = "wandb_runs/anomalib_config.json"
