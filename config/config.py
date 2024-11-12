@@ -3,7 +3,7 @@ import os
 SELECTED_WORKFLOW = "brain_selection"  # Selection from WORKFLOWS
 SELECTED_DATASET = "mcity_fisheye_3_months"  # Choose from datasets.yaml
 
-PERSISTENT = False  # If V51 database is stored
+PERSISTENT = True  # If V51 database is stored
 
 # Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/models/image/index.html
 ANOMALIB_IMAGE_MODELS = [
@@ -46,7 +46,7 @@ ANOMALIB_EVAL_METRICS = [
 # Workflows and associated parameters
 WORKFLOWS = {
     "brain_selection": {
-        "embedding_models":[    # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
+        "embedding_models": [  # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
             "clip-vit-base32-torch",
             "open-clip-torch",
             "dinov2-vitl14-torch",
@@ -125,7 +125,7 @@ WORKFLOWS = {
             "omlab/omdet-turbo-swin-tiny-hf",
         ],
     },
-    "ensemble_exploration": {}
+    "ensemble_exploration": {},
 }
 
 # Define the global variable

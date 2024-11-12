@@ -1,22 +1,20 @@
-import fiftyone as fo
-from fiftyone import ViewField as F
+import logging
+import os
 
 import anomalib.models
+import fiftyone as fo
+import torch
 from anomalib import TaskType
 from anomalib.data.image.folder import Folder
 from anomalib.data.utils import read_image
 from anomalib.deploy import ExportType, TorchInferencer
 from anomalib.engine import Engine
-
 from anomalib.loggers import AnomalibTensorBoardLogger
+from fiftyone import ViewField as F
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from torchvision.transforms.v2 import Compose, Resize
 
-import os
-from torchvision.transforms.v2 import Resize, Compose
-import torch
-import logging
-
-from config.config import NUM_WORKERS, GLOBAL_SEED, ANOMALIB_EVAL_METRICS
+from config.config import ANOMALIB_EVAL_METRICS, GLOBAL_SEED, NUM_WORKERS
 
 # https://docs.voxel51.com/tutorials/anomaly_detection.html
 # https://medium.com/@enrico.randellini/anomalib-a-library-for-image-anomaly-detection-and-localization-fb363639104f

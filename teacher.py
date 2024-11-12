@@ -1,46 +1,37 @@
 import logging
-
-from PIL import Image
-from difflib import get_close_matches
-
-from functools import partial
+import os
 import re
 import time
-
-import os
-
-import numpy as np
-import torch
-from torch.utils.data import DataLoader
-from torchvision import transforms
-from torchvision.transforms.functional import to_pil_image
-
-from torch.utils.tensorboard import SummaryWriter
-
-from config.config import NUM_WORKERS
-from transformers import (
-    AutoConfig,
-    AutoProcessor,
-    AutoModelForZeroShotObjectDetection,
-    AutoModelForObjectDetection,
-    TrainingArguments,
-    Trainer,
-    EarlyStoppingCallback,
-)
-
-from tqdm import tqdm
+from difflib import get_close_matches
+from functools import partial
+from typing import List, Union
 
 import fiftyone as fo
-
-from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
+import numpy as np
+import torch
 from datasets import Split
-from config.config import NUM_WORKERS
-
-from transformers import BatchEncoding
+from PIL import Image
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from torchvision import transforms
+from torchvision.transforms.functional import to_pil_image
+from tqdm import tqdm
+from transformers import (
+    AutoConfig,
+    AutoModelForObjectDetection,
+    AutoModelForZeroShotObjectDetection,
+    AutoProcessor,
+    BatchEncoding,
+    EarlyStoppingCallback,
+    Trainer,
+    TrainingArguments,
+)
 from transformers.models.owlv2.processing_owlv2 import Owlv2Processor
-from transformers.utils.import_utils import requires_backends, is_torch_available
 from transformers.utils.generic import is_torch_device
-from typing import List, Union
+from transformers.utils.import_utils import is_torch_available, requires_backends
+
+from config.config import NUM_WORKERS
+from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 
 
 class CustomBatchEncoding(BatchEncoding):
@@ -327,7 +318,11 @@ class Teacher:
         return processor, batch_classes, tokenized_text, batch_tasks
 
     def zero_shot_inference(
-        self, pytorch_dataset, batch_size=16, detection_threshold=0.2, object_classes=None
+        self,
+        pytorch_dataset,
+        batch_size=16,
+        detection_threshold=0.2,
+        object_classes=None,
     ):
         """
         Perform zero-shot inference with a specified batch size and detection threshold.
@@ -345,7 +340,7 @@ class Teacher:
         """
 
         successful_run = False
-        
+
         # Run inference with maximum batch size
         while batch_size >= 1 and successful_run == False:
             try:
@@ -371,7 +366,11 @@ class Teacher:
             logging.error("The model failed to run with batch_size = 1.")
 
     def _zero_shot_inference(
-        self, pytorch_dataset, batch_size=16, detection_threshold=0.2, object_classes=None
+        self,
+        pytorch_dataset,
+        batch_size=16,
+        detection_threshold=0.2,
+        object_classes=None,
     ):
         """
         Performs zero-shot inference on the dataset using a specified model.
@@ -429,7 +428,7 @@ class Teacher:
 
         else:  # Load zero shot model, run inference, and save results
             hf_model_config = AutoConfig.from_pretrained(self.model_name)
-            
+
             data_loader = DataLoader(
                 pytorch_dataset,
                 batch_size=batch_size,
@@ -561,7 +560,9 @@ class Teacher:
                             # Outputs do not comply with given labels
                             # Grounding DINO outputs multiple pairs of object boxes and noun phrases for a given (Image, Text) pair
                             # There can be either multiple labels per output ("bike van") or incomplete ones ("motorcyc")
-                            processed_label = label.split()[0]  # TODO Improve by not just concidering only the first label
+                            processed_label = label.split()[
+                                0
+                            ]  # TODO Improve by not just concidering only the first label
                             if processed_label not in object_classes:
                                 matches = get_close_matches(
                                     processed_label, object_classes, n=1, cutoff=0.6
@@ -609,7 +610,9 @@ class Teacher:
                             ],
                             confidence=score.item(),
                         )
-                        detection["bbox_area"] = detection["bounding_box"][2] * detection["bounding_box"][3]
+                        detection["bbox_area"] = (
+                            detection["bounding_box"][2] * detection["bounding_box"][3]
+                        )
                         detections.append(detection)
 
                     # Attach label to V51 dataset

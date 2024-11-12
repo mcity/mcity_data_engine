@@ -1,11 +1,11 @@
-from fiftyone import ViewField as F
-from tqdm import tqdm
 import logging
 import time
 
-from torch.utils.tensorboard import SummaryWriter
-
 import numpy as np
+from fiftyone import ViewField as F
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
 
 def calculate_iou(box1, box2):
     """
@@ -43,13 +43,14 @@ def calculate_iou(box1, box2):
 
     return inter_area / union_area if union_area > 0 else 0
 
+
 def calculcate_bbox_size(box):
     """
     Calculate the size of a bounding box.
 
     Args:
-        box (list or tuple): A list or tuple containing four elements 
-                             representing the bounding box in the format 
+        box (list or tuple): A list or tuple containing four elements
+                             representing the bounding box in the format
                              [x, y, width, height].
 
     Returns:
@@ -57,15 +58,24 @@ def calculcate_bbox_size(box):
     """
     return box[2] * box[3]
 
-class EnsembleExploration():
 
-    def __init__(self,dataset,config):
+class EnsembleExploration:
+
+    def __init__(self, dataset, config):
         self.dataset = dataset
         self.config = config
-        self.positive_classes = config["positive_classes"] # List of classes that count as a detection. Must be included in the classes used for detections
-        self.agreement_threshold = config["agreement_threshold"] # Threshold for agreement between models
-        self.iou_threshold = config["iou_threshold"] # Threshold for IoU between bboxes to consider them as overlapping
-        self.max_bbox_size = config["max_bbox_size"] # Value between [0,1] for the max size of considered bboxes
+        self.positive_classes = config[
+            "positive_classes"
+        ]  # List of classes that count as a detection. Must be included in the classes used for detections
+        self.agreement_threshold = config[
+            "agreement_threshold"
+        ]  # Threshold for agreement between models
+        self.iou_threshold = config[
+            "iou_threshold"
+        ]  # Threshold for IoU between bboxes to consider them as overlapping
+        self.max_bbox_size = config[
+            "max_bbox_size"
+        ]  # Value between [0,1] for the max size of considered bboxes
         self.v51_agreement_tag = "vru_overlap"
 
         # Get V51 fields that store detection results
@@ -82,26 +92,43 @@ class EnsembleExploration():
                 det_set = set(detection_classes)
                 common_classes = pos_set & det_set
                 if common_classes:
-                    logging.info(f"The classes {common_classes} are shared between the list of positive classes and detections in '{field}'.")
+                    logging.info(
+                        f"The classes {common_classes} are shared between the list of positive classes and detections in '{field}'."
+                    )
                 else:
-                    logging.warning(f"No classes in the list of positive classes {pos_set} are part of the classes used for detections in '{field}'.")
+                    logging.warning(
+                        f"No classes in the list of positive classes {pos_set} are part of the classes used for detections in '{field}'."
+                    )
 
         if len(self.v51_detection_fields) < self.agreement_threshold:
-            logging.error(f"Number of detection models used ({len(self.v51_detection_fields)}) is less than the agreement threshold ({self.agreement_threshold}). No agreements will be possible.")
-            logging.warning("Detections can be generated with the workflow `zero_shot_teacher`")
-        
+            logging.error(
+                f"Number of detection models used ({len(self.v51_detection_fields)}) is less than the agreement threshold ({self.agreement_threshold}). No agreements will be possible."
+            )
+            logging.warning(
+                "Detections can be generated with the workflow `zero_shot_teacher`"
+            )
+
         # Get filtered V51 view for faster processing
         conditions = [
-            (F(f"{field}") != None) &          # Field exists
-            (F(f"{field}.detections") != []) &  # Field has detections
-            F(f"{field}.detections.label").contains(self.positive_classes)  # Detections include "cat" or "dog"
+            (F(f"{field}") != None)  # Field exists
+            & (F(f"{field}.detections") != [])  # Field has detections
+            & F(f"{field}.detections.label").contains(
+                self.positive_classes
+            )  # Detections include "cat" or "dog"
             for field in self.v51_detection_fields
         ]
 
         self.view = self.dataset.match(F.any(conditions))
 
-        for field in tqdm(self.v51_detection_fields, desc="Generating filtered Voxel51 view for fast processing"):
-            self.view = self.view.filter_labels(f"{field}.detections",F("label").is_in(self.positive_classes), only_matches=False)
+        for field in tqdm(
+            self.v51_detection_fields,
+            desc="Generating filtered Voxel51 view for fast processing",
+        ):
+            self.view = self.view.filter_labels(
+                f"{field}.detections",
+                F("label").is_in(self.positive_classes),
+                only_matches=False,
+            )
         self.n_samples = len(self.view)
 
     def ensemble_exploration(self):
@@ -136,9 +163,13 @@ class EnsembleExploration():
         writer = SummaryWriter(log_dir="logs/tensorboard/teacher_zeroshot")
 
         # Get detections from V51 with efficient "values" method
-        samples_detections = [] # List of lists of list [model][sample][detections]
-        for field in tqdm(self.v51_detection_fields, desc = "Collecting model detections"):
-            field_detections = self.view.values(f"{field}.detections")  # list of lists of detections per sample
+        samples_detections = []  # List of lists of list [model][sample][detections]
+        for field in tqdm(
+            self.v51_detection_fields, desc="Collecting model detections"
+        ):
+            field_detections = self.view.values(
+                f"{field}.detections"
+            )  # list of lists of detections per sample
             samples_detections.append(field_detections)
 
         # Cleaning up tags from previous runs
@@ -146,27 +177,35 @@ class EnsembleExploration():
             for j in range(len(self.v51_detection_fields)):
                 detections = samples_detections[j][i]
                 for k in range(len(detections)):
-                    samples_detections[j][i][k].tags = [x for x in samples_detections[j][i][k].tags if x != self.v51_agreement_tag]
-        
+                    samples_detections[j][i][k].tags = [
+                        x
+                        for x in samples_detections[j][i][k].tags
+                        if x != self.v51_agreement_tag
+                    ]
+
         # Counting variables
         n_bboxes_agreed = 0
         n_samples_agreed = 0
         n_unique_vru = 0
 
         # Iterate over all samples and check overlapping detections
-        for step, sample_index in enumerate(tqdm(range(self.n_samples), desc = "Finding detection agreements in samples")):
+        for step, sample_index in enumerate(
+            tqdm(range(self.n_samples), desc="Finding detection agreements in samples")
+        ):
             start_time = time.time()
             unique_vru_detections_set = set()
-            all_bboxes = []                 # List of all bounding box detections per sample
-            bbox_model_indices = []         # Track which model each bounding box belongs to
-            bbox_detection_indices = []     # Track the index of each detection in the model's list
+            all_bboxes = []  # List of all bounding box detections per sample
+            bbox_model_indices = []  # Track which model each bounding box belongs to
+            bbox_detection_indices = (
+                []
+            )  # Track the index of each detection in the model's list
 
             for model_index, model_detections in enumerate(samples_detections):
                 for detection_index, det in enumerate(model_detections[sample_index]):
                     all_bboxes.append(det.bounding_box)
                     bbox_model_indices.append(model_index)
                     bbox_detection_indices.append(detection_index)
-            
+
             n_bboxes = len(all_bboxes)
             if n_bboxes == 0:
                 logging.warning(f"No detections found in sample {sample_index}.")
@@ -179,35 +218,57 @@ class EnsembleExploration():
                 for b in range(a + 1, n_bboxes):
                     iou = calculate_iou(all_bboxes[a], all_bboxes[b])
                     # Only compare detections of small bounding boxes
-                    if self.max_bbox_size and calculcate_bbox_size(all_bboxes[a]) <= self.max_bbox_size and calculcate_bbox_size(all_bboxes[b]) <= self.max_bbox_size:
+                    if (
+                        self.max_bbox_size
+                        and calculcate_bbox_size(all_bboxes[a]) <= self.max_bbox_size
+                        and calculcate_bbox_size(all_bboxes[b]) <= self.max_bbox_size
+                    ):
                         # Only compare detections of high IoU scores
                         if iou > self.iou_threshold:
-                            involved_models_matrix[a, b] = bbox_model_indices[b]    # Store model index that was compared to
+                            involved_models_matrix[a, b] = bbox_model_indices[
+                                b
+                            ]  # Store model index that was compared to
                             involved_models_matrix[b, a] = bbox_model_indices[a]
-                            involved_models_matrix[a, a] = bbox_model_indices[a]    # Trick to also store the model itself, as the diagonal is not used (b = a+1, symmetry)
+                            involved_models_matrix[a, a] = bbox_model_indices[
+                                a
+                            ]  # Trick to also store the model itself, as the diagonal is not used (b = a+1, symmetry)
                             involved_models_matrix[b, b] = bbox_model_indices[b]
 
-                            bbox_ids_matrix[a, b] = b                               # Store detection indices to get involved bounding_boxes
+                            bbox_ids_matrix[a, b] = (
+                                b  # Store detection indices to get involved bounding_boxes
+                            )
                             bbox_ids_matrix[b, a] = a
                             bbox_ids_matrix[a, a] = a
                             bbox_ids_matrix[b, b] = b
-                            
+
             # Get number of involved models by finding unique values in rows
             # "-1" ist not an involved model
             involved_models = [np.unique(row) for row in involved_models_matrix]
             for index in range(len(involved_models)):
-                involved_models[index] = involved_models[index][involved_models[index] != -1]
+                involved_models[index] = involved_models[index][
+                    involved_models[index] != -1
+                ]
 
             # Get list of involved bounding box indices
             involved_bboxes = [np.unique(row) for row in bbox_ids_matrix]
             for index in range(len(bbox_ids_matrix)):
-                involved_bboxes[index] = involved_bboxes[index][involved_bboxes[index] != -1]
+                involved_bboxes[index] = involved_bboxes[index][
+                    involved_bboxes[index] != -1
+                ]
 
-            #Checking that all arrays have the same lengths
-            if not (len(all_bboxes) == len(bbox_model_indices) == len(bbox_detection_indices) == len(involved_models)):
+            # Checking that all arrays have the same lengths
+            if not (
+                len(all_bboxes)
+                == len(bbox_model_indices)
+                == len(bbox_detection_indices)
+                == len(involved_models)
+            ):
                 logging.error(
                     "Array lengths mismatch: all_bboxes(%d), bbox_model_indices(%d), bbox_detection_indices(%d), involved_models(%d)",
-                    len(all_bboxes), len(bbox_model_indices), len(bbox_detection_indices), len(involved_models)
+                    len(all_bboxes),
+                    len(bbox_model_indices),
+                    len(bbox_detection_indices),
+                    len(involved_models),
                 )
 
             # Check bbox detections for agreements
@@ -220,7 +281,9 @@ class EnsembleExploration():
                     # Get all involved bounding boxe indices
                     for bbox_index in bbox_indices:
                         connected_bboxes = involved_bboxes[bbox_index]
-                        all_connected_boxes = np.unique(np.concatenate((all_connected_boxes, connected_bboxes))) 
+                        all_connected_boxes = np.unique(
+                            np.concatenate((all_connected_boxes, connected_bboxes))
+                        )
                     unique_detection_id = np.min(all_connected_boxes)
 
                     # If bounding box has not been processed yet
@@ -230,10 +293,14 @@ class EnsembleExploration():
                         for bbox_index in all_connected_boxes:
                             model_index = bbox_model_indices[bbox_index]
                             det_index = bbox_detection_indices[bbox_index]
-                            samples_detections[model_index][sample_index][det_index].tags.append(self.v51_agreement_tag)
-                            samples_detections[model_index][sample_index][det_index]["vru_id"] = unique_detection_id
+                            samples_detections[model_index][sample_index][
+                                det_index
+                            ].tags.append(self.v51_agreement_tag)
+                            samples_detections[model_index][sample_index][det_index][
+                                "vru_id"
+                            ] = unique_detection_id
                             n_bboxes_agreed += 1
-            
+
             if len(unique_vru_detections_set) > 0:
                 n_samples_agreed += 1
                 n_unique_vru += len(unique_vru_detections_set)
@@ -242,8 +309,8 @@ class EnsembleExploration():
             end_time = time.time()
             sample_duration = end_time - start_time
             frames_per_second = 1 / sample_duration
-            writer.add_scalar(
-                "inference/frames_per_second", frames_per_second, step
-            )
+            writer.add_scalar("inference/frames_per_second", frames_per_second, step)
 
-        logging.info(f"Found {n_unique_vru} unique detections in {n_samples_agreed} samples. Based on {n_bboxes_agreed} total detections with {self.agreement_threshold} or more overlapping detections.")
+        logging.info(
+            f"Found {n_unique_vru} unique detections in {n_samples_agreed} samples. Based on {n_bboxes_agreed} total detections with {self.agreement_threshold} or more overlapping detections."
+        )

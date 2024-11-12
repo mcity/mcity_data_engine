@@ -1,36 +1,30 @@
 import argparse
-import time
-import signal
 import json
+import logging
+import signal
+import sys
+import time
 
+import wandb
+from tqdm import tqdm
+
+from ano_dec import Anodec
+from brain import Brain
+from config.config import (
+    ANOMALIB_IMAGE_MODELS,
+    SELECTED_DATASET,
+    SELECTED_WORKFLOW,
+    V51_ADDRESS,
+    V51_PORT,
+    WORKFLOWS,
+)
+from ensemble_exploration import EnsembleExploration
+from teacher import Teacher
+from utils.data_loader import FiftyOneTorchDatasetCOCO
+from utils.dataset_loader import *
 from utils.logging import configure_logging
 from utils.wandb_helper import launch_to_queue_terminal
 
-import logging
-
-from config.config import (
-    SELECTED_WORKFLOW,
-    SELECTED_DATASET,
-    ANOMALIB_IMAGE_MODELS,
-    WORKFLOWS,
-    V51_ADDRESS,
-    V51_PORT,
-)
-
-from tqdm import tqdm
-
-from utils.dataset_loader import *
-
-from brain import Brain
-from ano_dec import Anodec
-from teacher import Teacher
-from ensemble_exploration import EnsembleExploration
-
-from utils.data_loader import FiftyOneTorchDatasetCOCO
-
-import wandb
-
-import sys
 
 def signal_handler(sig, frame):
     print("You pressed Ctrl+C!")
@@ -73,13 +67,12 @@ def main(args):
         config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
         wandb_project = "Data Engine Brain"
 
-
         for MODEL_NAME in (pbar := tqdm(embedding_models, desc="Brain")):
             run = None
             try:
                 pbar.set_description("Generating/Loading embeddings with " + MODEL_NAME)
                 config["overrides"]["run_config"]["model_name"] = MODEL_NAME
-                
+
                 if args.queue == None:
                     run = wandb.init(
                         name=MODEL_NAME,
@@ -88,10 +81,14 @@ def main(args):
                         group="Brain",
                         job_type="eval",
                         project=wandb_project,
-                        config=config
+                        config=config,
                     )
                     wandb_config = wandb.config["overrides"]["run_config"]
-                    run.tags += (wandb_config["v51_dataset_name"], wandb_config["v51_dataset_name"], "local")
+                    run.tags += (
+                        wandb_config["v51_dataset_name"],
+                        wandb_config["v51_dataset_name"],
+                        "local",
+                    )
                     # Compute model embeddings and index for similarity
                     v51_brain = Brain(dataset, dataset_info, MODEL_NAME)
                     v51_brain.compute_embeddings()
@@ -278,25 +275,29 @@ def main(args):
             config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
             if args.queue == None:
                 run = wandb.init(
-                            name="ensemble-exploration",
-                            allow_val_change=True,
-                            sync_tensorboard=True,
-                            group="Exploration",
-                            job_type="eval",
-                            config=config,
-                            project=wandb_project,
-                        )
+                    name="ensemble-exploration",
+                    allow_val_change=True,
+                    sync_tensorboard=True,
+                    group="Exploration",
+                    job_type="eval",
+                    config=config,
+                    project=wandb_project,
+                )
                 wandb_config = wandb.config["overrides"]["run_config"]
-                run.tags += (wandb_config["v51_dataset_name"], "local", "ensemble-exploration")
+                run.tags += (
+                    wandb_config["v51_dataset_name"],
+                    "local",
+                    "ensemble-exploration",
+                )
                 explorer = EnsembleExploration(dataset, wandb_config)
                 explorer.ensemble_exploration()
                 run.finish(exit_code=0)
         except Exception as e:
-                logging.error(f"An error occurred: {e}")
-                logging.error("Stack trace:", exc_info=True)
-                if run:
-                    run.finish(exit_code=1)
-    
+            logging.error(f"An error occurred: {e}")
+            logging.error("Stack trace:", exc_info=True)
+            if run:
+                run.finish(exit_code=1)
+
     else:
         logging.error(
             str(SELECTED_WORKFLOW)
