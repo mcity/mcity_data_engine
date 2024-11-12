@@ -22,7 +22,9 @@ Implementing Voxel51 brain methods.
 
 
 class Brain:
-    def __init__(self, dataset, dataset_info, model_name, embeddings_path="./output/embeddings/"):
+    def __init__(
+        self, dataset, dataset_info, model_name, embeddings_path="./output/embeddings/"
+    ):
         self.dataset = dataset
         self.brains = dataset.list_brain_runs()
         self.dataset_name = dataset_info["name"]
@@ -31,7 +33,9 @@ class Brain:
 
         # Model
         if model_name not in self.v51_model_zoo:
-            logging.warning("Model " + model_name + " is not part of the V51 model zoo.")
+            logging.warning(
+                "Model " + model_name + " is not part of the V51 model zoo."
+            )
         self.model = foz.load_zoo_model(model_name)
 
         # Keys
@@ -42,7 +46,8 @@ class Brain:
         self.uniqueness_key = "uniqueness_" + self.model_name_key
 
         # Storing variables
-        self.embeddings_vis = {}    # Multiple methods per model
+        self.embeddings_vis = {}  # Multiple methods per model
+        self.representativeness = {}  # Multiple methods per model
         self.embeddings_model = None
         self.similarities = None
 
@@ -64,6 +69,7 @@ class Brain:
         }
 
     def __del__(self):
+        self.steps -= 1  # +1 after every function, need to decrement for final step
         self.writer.close()
 
     def compute_embeddings(self):
@@ -86,7 +92,7 @@ class Brain:
 
         dim_reduction_methods = list(fob.brain_config.visualization_methods.keys())
         dim_reduction_methods.remove("manual")
-        
+
         embedding_file_name = self.embeddings_root + self.model_name_key + ".pkl"
 
         if self.model.has_embeddings:
@@ -165,7 +171,6 @@ class Brain:
         duration = end_time - start_time
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
         self.steps += 1
-        
 
     def compute_similarity(self):
         """
@@ -249,11 +254,13 @@ class Brain:
             method_key = re.sub(
                 r"[\W-]+",
                 "_",
-                self.model_name + "_" + method + "_representativeness",
+                "representativeness_" + self.model_name + "_" + method,
             )
 
             if method_key in self.brains:
-                self.similarities = self.dataset.load_brain_results(method_key)
+                self.representativeness[method_key] = self.dataset.load_brain_results(
+                    method_key
+                )
 
             logging.info("Computing representativeness.")
             fob.compute_representativeness(
@@ -261,6 +268,8 @@ class Brain:
                 representativeness_field=method_key,
                 method=method,
                 embeddings=self.embeddings_model,
+                num_workers=NUM_WORKERS,
+                progress=True,
             )
 
             # quant_threshold = self.dataset.quantiles(key, threshold)
@@ -313,7 +322,9 @@ class Brain:
 
         else:
             self.similarities.find_unique(num_of_unique)
-            for unique_id in tqdm(self.similarities.unique_ids, desc="Tagging unique images"):
+            for unique_id in tqdm(
+                self.similarities.unique_ids, desc="Tagging unique images"
+            ):
                 sample = self.dataset[unique_id]
                 sample[field] = value
                 sample.save()
@@ -346,7 +357,10 @@ class Brain:
         value = self.brain_taxonomy["value_compute_uniqueness"]
 
         fob.compute_uniqueness(
-            self.dataset, embeddings=self.embeddings_model, uniqueness_field=self.uniqueness_key
+            self.dataset,
+            embeddings=self.embeddings_model,
+            uniqueness_field=self.uniqueness_key,
+            num_workers=NUM_WORKERS,
         )
 
         # quant_threshold = self.dataset.quantiles(key, threshold)
