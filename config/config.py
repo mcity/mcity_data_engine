@@ -1,23 +1,9 @@
 import os
 
-SELECTED_WORKFLOW = "ensemble_exploration"  # Selection from WORKFLOWS
+SELECTED_WORKFLOW = "brain_selection"  # Selection from WORKFLOWS
 SELECTED_DATASET = "mcity_fisheye_3_months"  # Choose from datasets.yaml
 
-PERSISTENT = True  # If V51 database is stored
-
-# Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
-V51_EMBEDDING_MODELS = [
-    "clip-vit-base32-torch",
-    "open-clip-torch",
-    "dinov2-vitl14-torch",
-    "mobilenet-v2-imagenet-torch",
-    "resnet152-imagenet-torch",
-    "vgg19-imagenet-torch",
-    "classification-transformer-torch",
-    "detection-transformer-torch",
-    "zero-shot-detection-transformer-torch",
-    "zero-shot-classification-transformer-torch",
-]
+PERSISTENT = False  # If V51 database is stored
 
 # Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/models/image/index.html
 ANOMALIB_IMAGE_MODELS = [
@@ -59,8 +45,50 @@ ANOMALIB_EVAL_METRICS = [
 
 # Workflows and associated parameters
 WORKFLOWS = {
-    "brain_selection": {},
-    "learn_normality": {},
+    "brain_selection": {
+        "embedding_models":[    # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
+            "clip-vit-base32-torch",
+            "open-clip-torch",
+            "dinov2-vitl14-torch",
+            "mobilenet-v2-imagenet-torch",
+            "resnet152-imagenet-torch",
+            "vgg19-imagenet-torch",
+            "classification-transformer-torch",
+            "detection-transformer-torch",
+            "zero-shot-detection-transformer-torch",
+            "zero-shot-classification-transformer-torch",
+        ]
+    },
+    "learn_normality": {
+        "anomalib_image_models": [
+            "Padim",
+            "Draem",
+            "Cfa",
+            "Cflow",
+            "Csflow",
+            "Dfm",
+            "Dsr",
+            "EfficientAd",
+            "Fastflow",
+            "ReverseDistillation",
+            "Rkde",
+            "Stfpm",
+            "Uflow",
+        ],
+        "anomalib_eval_metrics": [
+            "AUPR",
+            # "AUPRO",
+            "AUROC",
+            # "AnomalyScoreDistribution",
+            # "BinaryPrecisionRecallCurve",
+            # "F1AdaptiveThreshold",
+            "F1Max",
+            # "F1Score",
+            # "ManualThreshold",
+            # "MinMax",
+            # "PRO",
+        ],
+    },
     "train_teacher": {
         "hf_models_objectdetection": [
             "microsoft/conditional-detr-resnet-50",
