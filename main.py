@@ -216,7 +216,7 @@ def main(args):
                 continue
 
     elif SELECTED_WORKFLOW == "zero_shot_teacher":
-        zero_shot_teacher_models = WORKFLOWS["train_teacher"][
+        zero_shot_teacher_models = WORKFLOWS["zero_shot_teacher"][
             "hf_models_zeroshot_objectdetection"
         ]
         wandb_project = "Data Engine Teacher"

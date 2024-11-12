@@ -1,6 +1,6 @@
 import os
 
-SELECTED_WORKFLOW = "brain_selection"  # Selection from WORKFLOWS
+SELECTED_WORKFLOW = "zero_shot_teacher"  # Selection from WORKFLOWS
 SELECTED_DATASET = "mcity_fisheye_3_months"  # Choose from datasets.yaml
 
 PERSISTENT = True  # If V51 database is stored
@@ -110,6 +110,8 @@ WORKFLOWS = {
             "jozhang97/deta-resnet-50-24-epochs",
             "hustvl/yolos-base",
         ],
+    },
+    "zero_shot_teacher": {
         "hf_models_zeroshot_objectdetection": [
             "IDEA-Research/grounding-dino-tiny",
             "IDEA-Research/grounding-dino-base",
@@ -123,7 +125,7 @@ WORKFLOWS = {
             "google/owlv2-large-patch14-ensemble",
             "google/owlv2-large-patch14-finetuned",
             "omlab/omdet-turbo-swin-tiny-hf",
-        ],
+        ]
     },
     "ensemble_exploration": {},
 }
