@@ -1,20 +1,18 @@
+import logging
+import os
+import pickle
+import re
+import time
+from pathlib import Path
+
 import fiftyone.brain as fob
 import fiftyone.zoo as foz
+import numpy as np
 from fiftyone import ViewField as F
 from torch.utils.tensorboard import SummaryWriter
-
-import numpy as np
-import time
 from tqdm import tqdm
 
-import re
-import os
-from pathlib import Path
-import pickle
-
-import logging
-
-from config.config import NUM_WORKERS, GLOBAL_SEED
+from config.config import GLOBAL_SEED, NUM_WORKERS
 
 """
 Implementing Voxel51 brain methods.
