@@ -11,7 +11,6 @@ from tqdm import tqdm
 from ano_dec import Anodec
 from brain import Brain
 from config.config import (
-    ANOMALIB_IMAGE_MODELS,
     SELECTED_DATASET,
     SELECTED_WORKFLOW,
     V51_ADDRESS,
@@ -112,13 +111,16 @@ def main(args):
                 continue
 
     if "learn_normality" in SELECTED_WORKFLOW:
+        anomalib_image_models = WORKFLOWS["learn_normality"]["anomalib_image_models"]
+        eval_metrics = WORKFLOWS["learn_normality"]["anomalib_eval_metrics"]
+
         config_file_path = "wandb_runs/anomalib_config.json"
         with open(config_file_path, "r") as file:
             config = json.load(file)
         config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
         wandb_project = "Data Engine Anomalib"
 
-        for MODEL_NAME in (pbar := tqdm(ANOMALIB_IMAGE_MODELS, desc="Anomalib")):
+        for MODEL_NAME in (pbar := tqdm(anomalib_image_models, desc="Anomalib")):
             pbar.set_description("Training/Loading Anomalib model " + MODEL_NAME)
             config["overrides"]["run_config"]["model_name"] = MODEL_NAME
 
@@ -135,6 +137,7 @@ def main(args):
                 run.tags += (config["v51_dataset_name"], config["model_name"], "local")
                 ano_dec = Anodec(
                     dataset=dataset,
+                    eval_metrics=eval_metrics,
                     dataset_info=dataset_info,
                     config=config,
                 )
