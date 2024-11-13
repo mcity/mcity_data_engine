@@ -59,7 +59,7 @@ def main(args):
         spaces = None
 
     logging.info("Running workflow " + SELECTED_WORKFLOW.upper())
-    if SELECTED_WORKFLOW == "brain_selection":
+    if "brain_selection" in SELECTED_WORKFLOW:
         embedding_models = WORKFLOWS["brain_selection"]["embedding_models"]
         config_file_path = "wandb_runs/brain_config.json"
         with open(config_file_path, "r") as file:
@@ -109,7 +109,7 @@ def main(args):
                     run.finish(exit_code=1)
                 continue
 
-    elif SELECTED_WORKFLOW == "learn_normality":
+    if "learn_normality" in SELECTED_WORKFLOW:
         config_file_path = "wandb_runs/anomalib_config.json"
         with open(config_file_path, "r") as file:
             config = json.load(file)
@@ -156,7 +156,7 @@ def main(args):
                     queue=args.queue,
                 )
 
-    elif SELECTED_WORKFLOW == "train_teacher":
+    if "train_teacher" in SELECTED_WORKFLOW:
         teacher_models = WORKFLOWS["train_teacher"]["hf_models_objectdetection"]
         wandb_project = "Data Engine Teacher"
         config_file_path = "wandb_runs/teacher_config.json"
@@ -215,7 +215,7 @@ def main(args):
                     run.finish(exit_code=1)
                 continue
 
-    elif SELECTED_WORKFLOW == "zero_shot_teacher":
+    if "zero_shot_teacher" in SELECTED_WORKFLOW:
         zero_shot_teacher_models = WORKFLOWS["zero_shot_teacher"][
             "hf_models_zeroshot_objectdetection"
         ]
@@ -265,7 +265,7 @@ def main(args):
                 if run:
                     run.finish(exit_code=1)
                 continue
-    elif SELECTED_WORKFLOW == "ensemble_exploration":
+    if "ensemble_exploration" in SELECTED_WORKFLOW:
         run = None
         try:
             wandb_project = "Data Engine Ensemble Exploration"

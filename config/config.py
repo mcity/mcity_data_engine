@@ -1,6 +1,9 @@
 import os
 
-SELECTED_WORKFLOW = "zero_shot_teacher"  # Selection from WORKFLOWS
+SELECTED_WORKFLOW = [
+    "zero_shot_teacher",
+    "ensemble_exploration",
+]  # Selection from WORKFLOWS
 SELECTED_DATASET = "mcity_fisheye_3_months"  # Choose from datasets.yaml
 
 PERSISTENT = True  # If V51 database is stored
