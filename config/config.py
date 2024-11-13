@@ -8,44 +8,6 @@ SELECTED_DATASET = "mcity_fisheye_3_months"  # Choose from datasets.yaml
 
 PERSISTENT = True  # If V51 database is stored
 
-# Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/models/image/index.html
-ANOMALIB_IMAGE_MODELS = [
-    "Padim",
-    "Draem",
-    "Cfa",
-    "Cflow",
-    "Csflow",
-    "Dfm",
-    "Dsr",
-    "EfficientAd",
-    "Fastflow",
-    "ReverseDistillation",
-    "Rkde",
-    "Stfpm",
-    "Uflow",
-]
-# "WinClip",    # Requires language input
-# "Dfkde",  # Has no pixel metrics
-# "Ganomaly",   # Has no pixel metrics
-# "Patchcore",  # Ineffiecient algorithm, cannot load whole dataset
-
-
-# Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/metrics/index.html
-ANOMALIB_EVAL_METRICS = [
-    "AUPR",
-    # "AUPRO",
-    "AUROC",
-    # "AnomalyScoreDistribution",
-    # "BinaryPrecisionRecallCurve",
-    # "F1AdaptiveThreshold",
-    "F1Max",
-    # "F1Score",
-    # "ManualThreshold",
-    # "MinMax",
-    # "PRO",
-]
-
-
 # Workflows and associated parameters
 WORKFLOWS = {
     "brain_selection": {
@@ -63,7 +25,7 @@ WORKFLOWS = {
         ]
     },
     "learn_normality": {
-        "anomalib_image_models": [
+        "anomalib_image_models": [  # Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/models/image/index.html
             "Padim",
             "Draem",
             "Cfa",
@@ -77,8 +39,12 @@ WORKFLOWS = {
             "Rkde",
             "Stfpm",
             "Uflow",
+            # "WinClip",    # Requires language input
+            # "Dfkde",  # Has no pixel metrics
+            # "Ganomaly",   # Has no pixel metrics
+            # "Patchcore",  # Ineffiecient algorithm, cannot load whole dataset
         ],
-        "anomalib_eval_metrics": [
+        "anomalib_eval_metrics": [  # Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/metrics/index.html
             "AUPR",
             # "AUPRO",
             "AUROC",

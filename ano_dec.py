@@ -14,7 +14,7 @@ from fiftyone import ViewField as F
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from torchvision.transforms.v2 import Compose, Resize
 
-from config.config import ANOMALIB_EVAL_METRICS, GLOBAL_SEED, NUM_WORKERS
+from config.config import GLOBAL_SEED, NUM_WORKERS
 
 # https://docs.voxel51.com/tutorials/anomaly_detection.html
 # https://medium.com/@enrico.randellini/anomalib-a-library-for-image-anomaly-detection-and-localization-fb363639104f
@@ -26,6 +26,7 @@ class Anodec:
     def __init__(
         self,
         dataset,
+        eval_metrics,
         dataset_info,
         config,
         anomalib_output_root="./output/models/anomalib/",
@@ -35,6 +36,7 @@ class Anodec:
             "medium"
         )  # Utilize Tensor core, came in warning
         self.dataset = dataset
+        self.eval_metrics = eval_metrics
         self.normal_data = dataset.match_tags("train")
         self.abnormal_data = dataset.match_tags("val")
         self.brains = dataset.list_brain_runs()
@@ -198,8 +200,8 @@ class Anodec:
                 logger=self.anomalib_logger,
                 max_epochs=MAX_EPOCHS,
                 callbacks=callbacks,
-                # image_metrics=ANOMALIB_EVAL_METRICS, #Classification for whole image
-                pixel_metrics=ANOMALIB_EVAL_METRICS,
+                # image_metrics=self.eval_metrics, #Classification for whole image
+                pixel_metrics=self.eval_metrics,
                 accelerator="auto",
             )
             self.engine.fit(model=self.model, datamodule=self.datamodule)
