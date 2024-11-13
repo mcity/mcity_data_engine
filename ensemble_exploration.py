@@ -173,7 +173,7 @@ class EnsembleExploration:
             samples_detections.append(field_detections)
 
         # Cleaning up tags from previous runs
-        for i in range(self.n_samples):
+        for i in tqdm(range(self.n_samples), desc="Cleaning up tags"):
             for j in range(len(self.v51_detection_fields)):
                 detections = samples_detections[j][i]
                 for k in range(len(detections)):
