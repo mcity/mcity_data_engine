@@ -58,7 +58,9 @@ def main(args):
             )
         spaces = None
 
-    logging.info("Running workflow " + SELECTED_WORKFLOW.upper())
+    logging.info(
+        f"Running workflows {SELECTED_WORKFLOW} for dataset {SELECTED_DATASET}"
+    )
     if "brain_selection" in SELECTED_WORKFLOW:
         embedding_models = WORKFLOWS["brain_selection"]["embedding_models"]
         config_file_path = "wandb_runs/brain_config.json"
