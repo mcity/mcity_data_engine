@@ -1,12 +1,11 @@
-import yaml
-import re
-import os
-from datetime import datetime
-
-from nuscenes.nuscenes import NuScenes
-import fiftyone as fo
-
+import datetime
 import logging
+import os
+import re
+
+import fiftyone as fo
+import yaml
+from nuscenes.nuscenes import NuScenes
 from tqdm import tqdm
 
 from config.config import NUM_WORKERS, PERSISTENT
@@ -81,8 +80,10 @@ def load_mcity_fisheye_2000(dataset_info):
 
         # Add dataset specific metedata based on filename
         view = dataset.view()
-        for sample in tqdm(view, desc="Deriving metadata from filenames"):  # https://docs.voxel51.com/api/fiftyone.core.sample.html
-            metadata = process_mcity_fisheye_filename(sample["filepath"])
+        for sample in tqdm(
+            view, desc="Deriving metadata from filenames"
+        ):  # https://docs.voxel51.com/api/fiftyone.core.sample.html
+            metadata = _process_mcity_fisheye_filename(sample["filepath"])
             sample["location"] = metadata["location"]
             sample["name"] = metadata["name"]
             sample["timestamp"] = metadata["timestamp"]
@@ -92,7 +93,7 @@ def load_mcity_fisheye_2000(dataset_info):
     return dataset
 
 
-def process_mcity_fisheye_filename(filename):
+def _process_mcity_fisheye_filename(filename):
     """
     Processes a given filename to extract metadata including location, name, and timestamp.
 
@@ -133,7 +134,7 @@ def process_mcity_fisheye_filename(filename):
         "gs_Plymouth_Beal",
         "gs_Plymouth_Georgetown",
         "gs_Plymouth_Bishop",
-        "gs_Plymouth_EPA"
+        "gs_Plymouth_EPA",
     ]
 
     for location in available_locations:
@@ -158,18 +159,24 @@ def process_mcity_fisheye_filename(filename):
     match = re.search(r"\d{8}T\d{6}|\d{4}-\d{2}-\d{2}[_ ]\d{2}-\d{2}-\d{2}", part2)
     if match:
         extracted_timestamp = match.group(0)
-    
+
         if re.match(r"\d{8}T\d{6}", extracted_timestamp):
-            results["timestamp"] = datetime.strptime(extracted_timestamp, "%Y%m%dT%H%M%S")
+            results["timestamp"] = datetime.datetime.strptime(
+                extracted_timestamp, "%Y%m%dT%H%M%S"
+            )
         elif re.match(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", extracted_timestamp):
-            results["timestamp"] = datetime.strptime(extracted_timestamp, "%Y-%m-%d_%H-%M-%S")
+            results["timestamp"] = datetime.datetime.strptime(
+                extracted_timestamp, "%Y-%m-%d_%H-%M-%S"
+            )
         elif re.match(r"\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}", extracted_timestamp):
-            results["timestamp"] = datetime.strptime(extracted_timestamp, "%Y-%m-%d %H-%M-%S")
+            results["timestamp"] = datetime.datetime.strptime(
+                extracted_timestamp, "%Y-%m-%d %H-%M-%S"
+            )
         else:
             logging.error(f"Unknown timestamp format: {match}")
     else:
         logging.error(f"No valid timestamp found in string: {part2}")
-        
+
     return results
 
 
@@ -218,8 +225,10 @@ def load_mcity_fisheye_3_months(dataset_info):
 
         # Add dataset specific metedata based on filename
         view = dataset.view()
-        for sample in tqdm(view, desc="Deriving metadata from filenames"):  # https://docs.voxel51.com/api/fiftyone.core.sample.html
-            metadata = process_mcity_fisheye_filename(sample["filepath"])
+        for sample in tqdm(
+            view, desc="Deriving metadata from filenames"
+        ):  # https://docs.voxel51.com/api/fiftyone.core.sample.html
+            metadata = _process_mcity_fisheye_filename(sample["filepath"])
             sample["location"] = metadata["location"]
             sample["name"] = metadata["name"]
             sample["timestamp"] = metadata["timestamp"]
@@ -227,6 +236,7 @@ def load_mcity_fisheye_3_months(dataset_info):
 
         dataset.persistent = PERSISTENT  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
     return dataset
+
 
 def load_fisheye_8k(dataset_info):
     """
@@ -275,7 +285,7 @@ def load_fisheye_8k(dataset_info):
 
         view = dataset.view()
         for sample in view:  # https://docs.voxel51.com/api/fiftyone.core.sample.html
-            metadata = process_fisheye_8k_filename(sample["filepath"])
+            metadata = _process_fisheye_8k_filename(sample["filepath"])
             sample["location"] = metadata["location"]
             sample["time_of_day"] = metadata["time_of_day"]
             sample.save()
@@ -284,7 +294,7 @@ def load_fisheye_8k(dataset_info):
     return dataset
 
 
-def process_fisheye_8k_filename(filename):
+def _process_fisheye_8k_filename(filename):
     """
     Process a fisheye 8K filename to extract metadata.
 
