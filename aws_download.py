@@ -72,7 +72,8 @@ class AwsDownloader:
 
     def load_data(self):
         if self.source == "mcity_gridsmart":
-            self._mcity_gridsmart_loader()
+            v51_dataset = self._mcity_gridsmart_loader()
+            return v51_dataset
         else:
             logging.error(f"{self.loader} is not supported.")
 
@@ -92,6 +93,7 @@ class AwsDownloader:
                 self._mcity_set_v51_metadata()
                 self._mcity_unpack_data(cameras_dict)
                 v51_dataset = self._mcity_create_v51_dataset(delete_old_dataset=True)
+                return v51_dataset
             else:
                 logging.error("Download failed. Check logs for details.")
         except Exception as e:

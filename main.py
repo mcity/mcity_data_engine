@@ -102,7 +102,7 @@ def main(args):
                 sample_rate_hz=sample_rate,
                 test_run=test_run,
             )
-            aws_downloader.load_data()
+            dataset = aws_downloader.load_data()
 
             # Select downloaded dataset for further workflows if configured
             selected_dataset_overwrite = WORKFLOWS["aws_download"][
