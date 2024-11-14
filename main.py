@@ -47,6 +47,7 @@ def signal_handler(sig, frame):
 
 def main(args):
     time_start = time.time()
+    selected_dataset = SELECTED_DATASET
     configure_logging()
 
     if args.tags:
@@ -55,20 +56,20 @@ def main(args):
         signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
 
         # Load the selected dataset
-        dataset_info = load_dataset_info(SELECTED_DATASET)
+        dataset_info = load_dataset_info(selected_dataset)
 
         if dataset_info:
             loader_function = dataset_info.get("loader_fct")
             dataset = globals()[loader_function](dataset_info)
         else:
             logging.error(
-                str(SELECTED_DATASET)
+                str(selected_dataset)
                 + " is not a valid dataset name. Check _datasets_ in datasets.yaml."
             )
         spaces = None
 
     logging.info(
-        f"Running workflows {SELECTED_WORKFLOW} for dataset {SELECTED_DATASET}"
+        f"Running workflows {SELECTED_WORKFLOW} for dataset {selected_dataset}"
     )
 
     workflows_started = 0
@@ -108,10 +109,8 @@ def main(args):
                 "selected_dataset_overwrite"
             ]
             if selected_dataset_overwrite:
-                config.config.SELECTED_DATASET = dataset_name
-                logging.info(
-                    f"Selected dataset overwritten to {config.config.SELECTED_DATASET}"
-                )
+                selected_dataset = dataset_name
+                logging.info(f"Selected dataset overwritten to {selected_dataset}")
 
             run.finish(exit_code=0)
         except Exception as e:
@@ -126,7 +125,7 @@ def main(args):
         config_file_path = "wandb_runs/brain_config.json"
         with open(config_file_path, "r") as file:
             config = json.load(file)
-        config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
+        config["overrides"]["run_config"]["v51_dataset_name"] = selected_dataset
         wandb_project = "Data Engine Brain"
 
         for MODEL_NAME in (pbar := tqdm(embedding_models, desc="Brain")):
@@ -179,7 +178,7 @@ def main(args):
         config_file_path = "wandb_runs/anomalib_config.json"
         with open(config_file_path, "r") as file:
             config = json.load(file)
-        config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
+        config["overrides"]["run_config"]["v51_dataset_name"] = selected_dataset
         wandb_project = "Data Engine Anomalib"
 
         for MODEL_NAME in (pbar := tqdm(anomalib_image_models, desc="Anomalib")):
@@ -237,7 +236,7 @@ def main(args):
             try:
                 pbar.set_description("Training/Loading Teacher model " + MODEL_NAME)
                 config["overrides"]["run_config"]["model_name"] = MODEL_NAME
-                config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
+                config["overrides"]["run_config"]["v51_dataset_name"] = selected_dataset
                 if args.queue == None:
 
                     run = wandb.init(
@@ -299,7 +298,7 @@ def main(args):
             try:
                 pbar.set_description("Evaluating Zero Shot Teacher model " + MODEL_NAME)
                 config["overrides"]["run_config"]["model_name"] = MODEL_NAME
-                config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
+                config["overrides"]["run_config"]["v51_dataset_name"] = selected_dataset
                 if args.queue == None:
 
                     run = wandb.init(
@@ -342,7 +341,7 @@ def main(args):
             config_file_path = "wandb_runs/ensemble_exploration_config.json"
             with open(config_file_path, "r") as file:
                 config = json.load(file)
-            config["overrides"]["run_config"]["v51_dataset_name"] = SELECTED_DATASET
+            config["overrides"]["run_config"]["v51_dataset_name"] = selected_dataset
             if args.queue == None:
                 run = wandb.init(
                     name="ensemble-exploration",
