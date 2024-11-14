@@ -1,15 +1,25 @@
 import os
 
+# Selection from WORKFLOWS
 SELECTED_WORKFLOW = [
-    "zero_shot_teacher",
-    "ensemble_exploration",
-]  # Selection from WORKFLOWS
-SELECTED_DATASET = "mcity_fisheye_3_months"  # Choose from datasets.yaml
+    "aws_download",
+]
+
+# Choose from config/datasets.yaml
+SELECTED_DATASET = "mcity_fisheye_3_months"
 
 PERSISTENT = True  # If V51 database is stored
 
 # Workflows and associated parameters
 WORKFLOWS = {
+    "aws_download": {
+        "source": "mcity_gridsmart",
+        "start_date": "2023-11-19",
+        "end_date": "2023-11-25",
+        "sample_rate_hz": 1,
+        "test_run": True,
+        "selected_dataset_overwrite": False,
+    },
     "brain_selection": {
         "embedding_models": [  # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
             "clip-vit-base32-torch",
@@ -99,11 +109,11 @@ WORKFLOWS = {
     "ensemble_exploration": {},
 }
 
-# Define the global variable
+# Configuration for Weights and Biases
 WANDB_CONFIG = {
     "docker_image": "dbogdollresearch/mcity_data_engine:latest",
     "docker_file": "Dockerfile.wandb",
-    "queue": "data-engine",  # TODO Make this a command line argument
+    "queue": "data-engine",  # TODO Make this a command line argument to support cluster
     "entity": "mcity",
     "github": "git@github.com:daniel-bogdoll/mcity_data_engine.git",  # TODO https might be necessary for jobs on lighthouse
 }
