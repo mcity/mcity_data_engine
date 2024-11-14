@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import json
 import logging
 import signal
@@ -9,6 +10,7 @@ import wandb
 from tqdm import tqdm
 
 from ano_dec import Anodec
+from aws_download import AwsDownloader
 from brain import Brain
 from config.config import (
     SELECTED_DATASET,
@@ -20,7 +22,14 @@ from config.config import (
 from ensemble_exploration import EnsembleExploration
 from teacher import Teacher
 from utils.data_loader import FiftyOneTorchDatasetCOCO
-from utils.dataset_loader import *
+from utils.dataset_loader import (
+    load_dataset_info,  # Called with globals()
+    load_fisheye_8k,
+    load_mars_multiagent,
+    load_mars_multitraversal,
+    load_mcity_fisheye_3_months,
+    load_mcity_fisheye_2000,
+)
 from utils.logging import configure_logging
 from utils.wandb_helper import launch_to_queue_terminal
 
@@ -60,7 +69,58 @@ def main(args):
     logging.info(
         f"Running workflows {SELECTED_WORKFLOW} for dataset {SELECTED_DATASET}"
     )
+
+    workflows_started = 0
+    if "aws_download" in SELECTED_WORKFLOW:
+        workflows_started += 1
+        run = None
+        try:
+            test_run = WORKFLOWS["aws_download"]["test_run"]
+            source = WORKFLOWS["aws_download"]["source"]
+            sample_rate = WORKFLOWS["aws_download"]["sample_rate_hz"]
+            start_date_str = WORKFLOWS["aws_download"]["start_date"]
+            end_date_str = WORKFLOWS["aws_download"]["end_date"]
+            start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d")
+            end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d")
+            dataset_name = f"data_engine_rolling_{start_date_str}_to_{end_date_str}"
+
+            run = wandb.init(
+                name=dataset_name,
+                sync_tensorboard=True,
+                group="S3",
+                job_type="download",
+                project="Data Engine Download",
+            )
+
+            aws_downloader = AwsDownloader(
+                name=dataset_name,
+                start_date=start_date,
+                end_date=end_date,
+                source=source,
+                sample_rate_hz=sample_rate,
+                test_run=test_run,
+            )
+            aws_downloader.load_data()
+
+            # Select downloaded dataset for further workflows if configured
+            selected_dataset_overwrite = WORKFLOWS["aws_download"][
+                "selected_dataset_overwrite"
+            ]
+            if selected_dataset_overwrite:
+                config.config.SELECTED_DATASET = dataset_name
+                logging.info(
+                    f"Selected dataset overwritten to {config.config.SELECTED_DATASET}"
+                )
+
+            run.finish(exit_code=0)
+        except Exception as e:
+            logging.error(f"An error occurred: {e}")
+            logging.error("Stack trace:", exc_info=True)
+            if run:
+                run.finish(exit_code=1)
+
     if "brain_selection" in SELECTED_WORKFLOW:
+        workflows_started += 1
         embedding_models = WORKFLOWS["brain_selection"]["embedding_models"]
         config_file_path = "wandb_runs/brain_config.json"
         with open(config_file_path, "r") as file:
@@ -111,6 +171,7 @@ def main(args):
                 continue
 
     if "learn_normality" in SELECTED_WORKFLOW:
+        workflows_started += 1
         anomalib_image_models = WORKFLOWS["learn_normality"]["anomalib_image_models"]
         eval_metrics = WORKFLOWS["learn_normality"]["anomalib_eval_metrics"]
 
@@ -162,6 +223,7 @@ def main(args):
                 )
 
     if "train_teacher" in SELECTED_WORKFLOW:
+        workflows_started += 1
         teacher_models = WORKFLOWS["train_teacher"]["hf_models_objectdetection"]
         wandb_project = "Data Engine Teacher"
         config_file_path = "wandb_runs/teacher_config.json"
@@ -221,6 +283,7 @@ def main(args):
                 continue
 
     if "zero_shot_teacher" in SELECTED_WORKFLOW:
+        workflows_started += 1
         zero_shot_teacher_models = WORKFLOWS["zero_shot_teacher"][
             "hf_models_zeroshot_objectdetection"
         ]
@@ -271,6 +334,7 @@ def main(args):
                     run.finish(exit_code=1)
                 continue
     if "ensemble_exploration" in SELECTED_WORKFLOW:
+        workflows_started += 1
         run = None
         try:
             wandb_project = "Data Engine Ensemble Exploration"
@@ -303,10 +367,10 @@ def main(args):
             if run:
                 run.finish(exit_code=1)
 
-    else:
+    if workflows_started == 0:
         logging.error(
             str(SELECTED_WORKFLOW)
-            + " is not a valid workflow. Check _WORKFLOWS_ in config.py."
+            + " is not a valid workflow. Check WORKFLOWS in config.py."
         )
 
     # Launch V51 session
