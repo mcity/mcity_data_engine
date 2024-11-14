@@ -18,7 +18,7 @@ WORKFLOWS = {
         "end_date": "2023-11-25",
         "sample_rate_hz": 1,
         "test_run": True,
-        "selected_dataset_overwrite": False,
+        "selected_dataset_overwrite": True,
     },
     "brain_selection": {
         "embedding_models": [  # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
