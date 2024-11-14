@@ -6,6 +6,7 @@ import signal
 import sys
 import time
 
+import fiftyone as fo
 import wandb
 from tqdm import tqdm
 
@@ -22,8 +23,8 @@ from config.config import (
 from ensemble_exploration import EnsembleExploration
 from teacher import Teacher
 from utils.data_loader import FiftyOneTorchDatasetCOCO
+from utils.dataset_loader import load_dataset_info  # Called with globals()
 from utils.dataset_loader import (
-    load_dataset_info,  # Called with globals()
     load_fisheye_8k,
     load_mars_multiagent,
     load_mars_multitraversal,
