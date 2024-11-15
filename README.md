@@ -47,9 +47,9 @@ clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadata
 ## Repository Structure
 
 .   
-├── main.py                   # Starting point of the framework 
-├── session_v51.py            # Launch [Voxel51](https://voxel51.com/) session
-├── workflows/                # Data Engine [workflows](https://github.com/daniel-bogdoll/mcity_data_engine/wiki/Workflows)
+├── main.py                   # Starting point of the framework    
+├── session_v51.py            # Launch [Voxel51](https://voxel51.com/) session    
+├── workflows/                # Data Engine [workflows](https://github.com/daniel-bogdoll/mcity_data_engine/wiki/Workflows)    
 ├── config/                   # Local configuration files  
 ├── wandb_runs/               # Entrypoints and configs for WandB experiments  
 ├── utils/                    # Utility functions  
