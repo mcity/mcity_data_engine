@@ -176,12 +176,13 @@ class EnsembleExploration:
         for i in tqdm(range(self.n_samples), desc="Cleaning up tags"):
             for j in range(len(self.v51_detection_fields)):
                 detections = samples_detections[j][i]
-                for k in range(len(detections)):
-                    samples_detections[j][i][k].tags = [
-                        x
-                        for x in samples_detections[j][i][k].tags
-                        if x != self.v51_agreement_tag
-                    ]
+                if detections:
+                    for k in range(len(detections)):
+                        samples_detections[j][i][k].tags = [
+                            x
+                            for x in samples_detections[j][i][k].tags
+                            if x != self.v51_agreement_tag
+                        ]
 
         # Counting variables
         n_bboxes_agreed = 0
