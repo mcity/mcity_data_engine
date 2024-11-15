@@ -1,10 +1,17 @@
-from teacher import Teacher
-from utils.dataset_loader import *
-
-import wandb
 import logging
 
+import wandb
+
+from utils.dataset_loader import (
+    load_dataset_info,
+    load_fisheye_8k,
+    load_mars_multiagent,
+    load_mars_multitraversal,
+    load_mcity_fisheye_3_months,
+    load_mcity_fisheye_2000,
+)
 from utils.logging import configure_logging
+from workflows.teacher import Teacher
 
 
 def main():
