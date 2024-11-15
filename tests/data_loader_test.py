@@ -1,12 +1,12 @@
-import pytest
-import fiftyone as fo
-from fiftyone.utils.huggingface import load_from_hub
-from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
-from PIL import Image
-from torch.utils.data import DataLoader
-import torch
-from torchvision import transforms
 import random
+
+import fiftyone as fo
+import pytest
+import torch
+from fiftyone.utils.huggingface import load_from_hub
+from torch.utils.data import DataLoader
+
+from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 
 
 @pytest.fixture

@@ -1,8 +1,9 @@
-from ano_dec import Anodec
-from utils.dataset_loader import *
+import logging
 
 import wandb
-import logging
+
+from utils.dataset_loader import *
+from workflows.ano_dec import Anodec
 
 
 def main():
