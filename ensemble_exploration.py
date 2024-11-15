@@ -297,7 +297,7 @@ class EnsembleExploration:
                                 det_index
                             ].tags.append(self.v51_agreement_tag)
                             samples_detections[model_index][sample_index][det_index][
-                                "vru_id"
+                                "unique_id"
                             ] = unique_detection_id
                             n_bboxes_agreed += 1
 
@@ -310,6 +310,28 @@ class EnsembleExploration:
             sample_duration = end_time - start_time
             frames_per_second = 1 / sample_duration
             writer.add_scalar("inference/frames_per_second", frames_per_second, step)
+
+        # Save results to dataset
+        for field, field_detections in tqdm(
+            zip(self.v51_detection_fields, samples_detections),
+            desc="Saving results to dataset",
+            total=len(self.v51_detection_fields),
+        ):
+            self.view.set_values(field + ".detections", field_detections)
+
+        # Calculate number of unique detections per sample
+        # TODO Avoid additional iteration over dataset, integrate in prior loop
+        try:
+            self.dataset.delete_sample_field("n_unique")
+        except:
+            pass
+        view_tagged = self.view.select_labels(tags=self.v51_agreement_tag)
+        for sample in view_tagged.iter_samples(progress=True, autosave=True):
+            n_unique_set = set()
+            for field in self.v51_detection_fields:
+                detections = sample[field].detections
+                n_unique_set.update(d["unique_id"] for d in detections)
+            sample["n_unique"] = len(n_unique_set)
 
         logging.info(
             f"Found {n_unique_vru} unique detections in {n_samples_agreed} samples. Based on {n_bboxes_agreed} total detections with {self.agreement_threshold} or more overlapping detections."
