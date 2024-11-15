@@ -59,7 +59,7 @@ clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadata
 ├── logs/                     # Default storage for logs  
 ├── docs/                     # pdoc Documentation    
 ├── tests/                    # Pytest cases  
-├── custom_models/            # External models with contanierized environments 
+├── custom_models/            # External models with contanierized environments   
 ├── Dockerfile.wandb          # Dockerfile for WandB experiments  
 ├── .github/workflows         # Github Action Workflows  
 ├── .gitignore                # Ignored files for Git tracking  
