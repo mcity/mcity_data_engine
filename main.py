@@ -10,9 +10,6 @@ import fiftyone as fo
 import wandb
 from tqdm import tqdm
 
-from ano_dec import Anodec
-from aws_download import AwsDownloader
-from brain import Brain
 from config.config import (
     SELECTED_DATASET,
     SELECTED_WORKFLOW,
@@ -20,11 +17,11 @@ from config.config import (
     V51_PORT,
     WORKFLOWS,
 )
-from ensemble_exploration import EnsembleExploration
-from teacher import Teacher
 from utils.data_loader import FiftyOneTorchDatasetCOCO
-from utils.dataset_loader import load_dataset_info  # Called with globals()
+
+# Called with globals()
 from utils.dataset_loader import (
+    load_dataset_info,
     load_fisheye_8k,
     load_mars_multiagent,
     load_mars_multitraversal,
@@ -33,6 +30,11 @@ from utils.dataset_loader import (
 )
 from utils.logging import configure_logging
 from utils.wandb_helper import launch_to_queue_terminal
+from workflows.ano_dec import Anodec
+from workflows.aws_download import AwsDownloader
+from workflows.brain import Brain
+from workflows.ensemble_exploration import EnsembleExploration
+from workflows.teacher import Teacher
 
 
 def signal_handler(sig, frame):
