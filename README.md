@@ -47,20 +47,20 @@ clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadata
 ## Repository Structure
 
 .   
-├── main.py                   # Core of the framework     
-├── ano_dec.py                # WORKFLOW: Pixel-wise anomaly detection with anomalib  
-├── brain.py                  # WORKFLOW: Frame-wise analysis of data with Voxel51  
-├── teacher.py                # WORKFLOW: Training teacher model with labeled data   
+├── main.py                   # Starting point of the framework 
+├── session_v51.py            # Launch [Voxel51](https://voxel51.com/) session
+├── workflows/                # Data Engine [workflows](https://github.com/daniel-bogdoll/mcity_data_engine/wiki/Workflows)
 ├── config/                   # Local configuration files  
+├── wandb_runs/               # Entrypoints and configs for WandB experiments  
 ├── utils/                    # Utility functions  
 ├── scripts/                  # Experiments and one-time operations  
-├── logs/                     # Default storage for logs  
 ├── datasets/                 # Default storage for datasets  
 ├── output/                   # Default storage for models, embeddings etc.  
+├── logs/                     # Default storage for logs  
 ├── docs/                     # pdoc Documentation    
 ├── tests/                    # Pytest cases  
-├── wandb_runs/               # Entrypoints and configs for WandB experiments  
-├── Dockerfile.wand           # Dockerfile for WandB experiments  
+├── custom_models/            # External models with contanierized environments 
+├── Dockerfile.wandb          # Dockerfile for WandB experiments  
 ├── .github/workflows         # Github Action Workflows  
 ├── .gitignore                # Ignored files for Git tracking  
 ├── .gitattributes            # Used to clean Notebooks prior to commits  
