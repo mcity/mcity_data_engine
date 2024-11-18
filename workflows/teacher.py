@@ -483,6 +483,10 @@ class Teacher:
                     )
 
                 target_sizes = [tuple(img.shape[1:]) for img in images]
+                img_width = target_sizes[0][
+                    1
+                ]  # FIXME Assumption that all images have the same size
+                img_height = target_sizes[0][0]
                 if type(hf_model_config).__name__ == "OmDetTurboConfig":
                     images = [to_pil_image(image) for image in images]
                 else:
@@ -551,18 +555,13 @@ class Teacher:
                         labels = result["classes"]
 
                     detections = []
-                    for box, score, label, img_size in zip(
-                        boxes, scores, labels, target_sizes
-                    ):
-                        img_width = img_size[1]
-                        img_height = img_size[0]
+                    for box, score, label in zip(boxes, scores, labels):
                         if type(hf_model_config).__name__ == "GroundingDinoConfig":
                             # Outputs do not comply with given labels
                             # Grounding DINO outputs multiple pairs of object boxes and noun phrases for a given (Image, Text) pair
                             # There can be either multiple labels per output ("bike van") or incomplete ones ("motorcyc")
-                            processed_label = label.split()[
-                                0
-                            ]  # TODO Improve by not just concidering only the first label
+                            # TODO Improve by not just concidering only the first label
+                            processed_label = label.split()[0]
                             if processed_label not in object_classes:
                                 matches = get_close_matches(
                                     processed_label, object_classes, n=1, cutoff=0.6
