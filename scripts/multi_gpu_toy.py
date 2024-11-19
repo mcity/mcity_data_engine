@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn as nn
 import torchvision
@@ -5,6 +7,8 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torchvision.models import resnet18, vgg16
 from multiprocessing import Process
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+
 
 # Function to perform inference with a specific model on a specific GPU
 def run_inference(device_id, model_name, dataloader):
@@ -56,15 +60,28 @@ if __name__ == "__main__":
     torch.cuda.empty_cache()
     # Dataset and configurations
     dataloader = load_cifar10()
+
+    n_cpus = os.cpu_count() # https://docs.python.org/3/library/concurrent.futures.html#processpoolexecutor
+    n_gpus = torch.cuda.device_count()
+
+    print(f"CPU count: {n_cpus}. GPU count: {n_gpus}")
+
+    models_splits_dict = {
+        "resnet": None,
+        "vgg": 2
+    }
+
     gpus = [0, 1]  # Two GPUs
     models = ["ResNet", "VGG"]
 
     # Create processes for each GPU/model
     processes = []
-    for gpu, model_name in zip(gpus, models):
-        p = Process(target=run_inference, args=(gpu, model_name, dataloader))
-        p.start()
-        processes.append(p)
+    with ProcessPoolExecutor() as executor:
+        for gpu, model_name in zip(gpus, models):
+            future = executor.submit(run_inference, gpu, model_name, dataloader)
+            #p = Process(target=run_inference, args=(gpu, model_name, dataloader))
+            #p.start()
+            #processes.append(p)
 
     # Join processes
     for p in processes:
