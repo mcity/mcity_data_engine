@@ -88,6 +88,7 @@ if __name__ == "__main__":
     runs_dict = {}
 
     n_samples = len(dataset)
+    print(f"Dataset has {n_samples} samples.")
     run_counter = 0
     for model_name, n_splits in models_splits_dict.items():
         # Calculate the base split size and leftover samples
@@ -114,9 +115,7 @@ if __name__ == "__main__":
             }
             run_counter += 1
     
-    print(runs_dict)
-
-    # Create processes for each GPU/model
+    # Create processes for each GPU (model + dataset split)
     with ProcessPoolExecutor() as executor:
         time_start = time.time()
         futures = []
