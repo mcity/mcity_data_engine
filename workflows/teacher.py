@@ -1,3 +1,4 @@
+import datetime
 import logging
 import os
 import re
@@ -465,7 +466,11 @@ class Teacher:
             model = AutoModelForZeroShotObjectDetection.from_pretrained(
                 self.model_name
             ).to(device)
-            writer = SummaryWriter(log_dir="logs/tensorboard/teacher_zeroshot")
+            log_dir_root = "logs/tensorboard/teacher_zeroshot"
+            experiment_name = f"{self.model_name}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+            log_directory = os.path.join(log_dir_root, experiment_name)
+
+            writer = SummaryWriter(log_dir=log_directory)
 
             for step, (images, targets) in enumerate(
                 tqdm(data_loader, desc="Zero Shot Teacher Model " + self.model_name)
