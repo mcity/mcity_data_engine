@@ -47,8 +47,9 @@ def _get_v51(max_samples=None):
 def _collate_fn(batch):
     return list(zip(*batch))
 
-def _process_outputs(outputs):
+def _process_output(output):
     print("Process outputs")
+    return True
 
 # Function to perform inference with a specific model on a specific GPU
 def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus: int, runs_in_parallel: bool):
@@ -136,7 +137,10 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
                         ).to(device)
 
                 outputs = model(**inputs)
-                
+
+                with ProcessPoolExecutor(max_workers=max_n_cpus) as executor:
+                    tasks = [executor.submit(_process_output, output) for output in outputs]
+
                 time_end = time.time()
                 duration = time_end - time_start
                 batches_per_second = 1 / duration
@@ -163,17 +167,18 @@ if __name__ == "__main__":
     os.environ["TOKENIZERS_PARALLELISM"] = "true"   # https://stackoverflow.com/questions/62691279/how-to-disable-tokenizers-parallelism-true-false-warning/72926996#72926996
     
     #Hardware configuration
-    n_cpus = os.cpu_count() # https://docs.python.org/3/library/concurrent.futures.html#processpoolexecutor
+    n_cpus_os = os.cpu_count() # https://docs.python.org/3/library/concurrent.futures.html#processpoolexecutor
+    n_cpus_mp = mp.cpu_count()
     n_gpus = torch.cuda.device_count()
-    print(f"CPU count: {n_cpus}. GPU count: {n_gpus}")
+    print(f"OS CPU count: {n_cpus_os}. MP CPU count: {n_cpus_mp}. GPU count: {n_gpus}")
 
     dataset_name = "cifar_10"
 
     # Load dataset and dataloader
     if dataset_name == "cifar_10":
-        dataset = _get_cifar10(max_samples=500)  
+        dataset = _get_cifar10(max_samples=2000)  
     elif dataset_name == "v51":
-        dataset = _get_v51(max_samples=500) 
+        dataset = _get_v51(max_samples=2000) 
 
     n_samples = len(dataset)
     print(f"Dataset has {n_samples} samples.")
@@ -227,7 +232,7 @@ if __name__ == "__main__":
     
     # Create processes for each GPU (model + dataset split)
     test_inference = False
-    max_n_cpus = n_cpus // len(runs_dict)
+    max_n_cpus = n_cpus_mp // len(runs_dict)
     print(f"Max CPU per process: {max_n_cpus}")
     with ProcessPoolExecutor() as executor:
         time_start = time.time()
