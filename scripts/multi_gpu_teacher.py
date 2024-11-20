@@ -4,6 +4,8 @@ import sys
 sys.path.append("..")
 import fiftyone as fo
 
+import wandb
+
 import torch
 import torch.nn as nn
 import torchvision
@@ -20,7 +22,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torch.multiprocessing as mp
 from utils.data_loader import FiftyOneTorchDatasetCOCO
 
-from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
+from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor, AutoConfig
 
 # Load CIFAR-10 dataset
 def _get_cifar10_dataloader(batch_size=128, num_workers=24):
@@ -57,7 +59,15 @@ def _get_v51_dataloader(batch_size=8, max_samples=101, num_workers=24, start_ind
 def run_inference(device, model_name, dataset_name, dataloader, batch_size, index_run, runs_in_parallel):
     print(f"Process ID: {os.getpid()}, Run: {index_run}, Device: {device}, Model: {model_name}, Parallel: {runs_in_parallel}")
     run_successfull = True
+    wandb_run = None
     try:
+        wandb_run = wandb.init(
+            name=f"{model_name}_{device}",
+            sync_tensorboard=True,
+            job_type="inference",
+            project="Teacher Dev",
+        )
+
         torch.cuda.set_device(device)
         object_classes = ["pedestrian", "vehicle", "cyclist"]
 
@@ -69,42 +79,57 @@ def run_inference(device, model_name, dataset_name, dataloader, batch_size, inde
 
         # Load the model
         print("Loading model")
-        if model_name == "omlab/omdet-turbo-swin-tiny-hf":
-            processor = AutoProcessor.from_pretrained(model_name)
-            model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name)
+        processor = AutoProcessor.from_pretrained(model_name)
+        model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name)
+        model = model.to(device)
+
+        hf_model_config = AutoConfig.from_pretrained(model_name)
+        if type(hf_model_config).__name__ == "OmDetTurboConfig":
             batch_classes = [object_classes] * batch_size
+        elif type(hf_model_config).__name__ == "Owlv2Config":
+            batch_classes = object_classes * batch_size
         else:
             raise ValueError("Invalid model name")
         
-        model = model.to(device)
-
+        
         print("Starting inference")
         with torch.no_grad():
             for step, (images, labels) in enumerate(dataloader):
                 time_start = time.time()
+                n_images = len(images)
 
-                if len(images) < batch_size:
-                    batch_classes = [object_classes] * len(images)
+                # Adjustments for final batch
+                if n_images < batch_size:
+                    if type(hf_model_config).__name__ == "OmDetTurboConfig":
+                        batch_classes = [object_classes] * n_images
+                    elif type(hf_model_config).__name__ == "Owlv2Config":
+                        batch_classes = object_classes * n_images
 
                 #OmDet
-                images = [to_pil_image(image) for image in images]
+                if type(hf_model_config).__name__ == "OmDetTurboConfig":
+                    images = [to_pil_image(image) for image in images]
+                else:
+                    images = [(image).to(device, non_blocking=True) for image in images]
+
                 inputs = processor(
-                            text=batch_classes,
-                            images=images,
-                            return_tensors="pt",
+                    text=batch_classes,
+                    images=images,
+                    return_tensors="pt",
                         ).to(device)
 
                 outputs = model(**inputs)
                 
                 time_end = time.time()
                 duration = time_end - time_start
-                batches_per_second = 1/duration
-                frames = len(images)
-                frames_per_second = batches_per_second * frames
+                batches_per_second = 1 / duration
+                frames_per_second = batches_per_second * n_images
                 writer.add_scalar(f'inference/frames_per_second', frames_per_second, step)
+
+        wandb_run.finish(exit_code=0)
 
     except Exception as e:
         print(f"Error in Process {os.getpid()}: {e}")
+        wandb_run.finish(exit_code=1)
         run_successfull = False
 
     finally:
@@ -124,7 +149,7 @@ if __name__ == "__main__":
 
     batch_size = 128
     dataset_name = "cifar_10"
-    test_inference = False
+    test_inference = True
 
     # Load dataset and dataloader
     if dataset_name == "cifar_10":
@@ -147,27 +172,29 @@ if __name__ == "__main__":
 
     # Define models and dataset splits per model (1 = whole dataset)
     models_splits_dict = {
-        "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 256, "splits": 1},
-        "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 256, "splits": 2}
+        "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 512, "n_chunks": 1},
+        "google/owlv2-base-patch16": {"batch_size": 265, "n_chunks": 2}
     }
 
     runs_dict = {}
-
     
     run_counter = 0
-    for model_name, n_splits in models_splits_dict.items():
+    for model_name in models_splits_dict:
+        batch_size = models_splits_dict[model_name]["batch_size"]
+        n_chunks = models_splits_dict[model_name]["n_chunks"]
+        
         # Calculate the base split size and leftover samples
-        split_size, leftover_samples = divmod(n_samples, n_splits)
+        split_size, leftover_samples = divmod(n_samples, n_chunks)
         
         split_index_start = 0
-        for split_id in range(n_splits):
+        for split_id in range(n_chunks):
             if run_counter >= n_gpus:
                 print(f"Run {run_counter} will fail. Only {n_gpus} GPUs available.")
 
             # Generate torch subsets
-            split_size = split_size + (leftover_samples if split_id == n_splits - 1 else 0)
-            #subset = Subset(dataset, range(split_index_start, split_index_start + split_size))
-            #dataloader = DataLoader(subset, batch_size=batch_size, shuffle=False, num_workers=24, pin_memory=True, collate_fn=lambda batch: list(zip(*batch)))
+            split_size = split_size + (leftover_samples if split_id == n_chunks - 1 else 0)
+            subset = Subset(dataset, range(split_index_start, split_index_start + split_size))
+            dataloader = DataLoader(subset, batch_size=batch_size, shuffle=False, num_workers=24, pin_memory=True, collate_fn=lambda batch: list(zip(*batch)))
             split_index_start = split_size
             
             # Add entry to runs_dict
