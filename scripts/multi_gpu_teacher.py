@@ -25,21 +25,30 @@ from utils.data_loader import FiftyOneTorchDatasetCOCO
 from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor, AutoConfig
 
 # Load CIFAR-10 dataset
-def _get_cifar10():
+def _get_cifar10(max_samples=None):
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
     dataset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+    if max_samples:
+        dataset = Subset(dataset, range(max_samples))
     return dataset
 
-def _get_v51():
+def _get_v51(max_samples=None):
     dataset_v51_orig = fo.load_dataset("dbogdollumich/mcity_fisheye_v51")
+    if max_samples:
+        dataset_v51 = dataset_v51_orig.take(max_samples)
+    else:
+        dataset_v51 = dataset_v51_orig
     dataset = FiftyOneTorchDatasetCOCO(dataset_v51)
     return dataset
 
 def _collate_fn(batch):
     return list(zip(*batch))
+
+def _process_outputs(outputs):
+    print("Process outputs")
 
 # Function to perform inference with a specific model on a specific GPU
 def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus: int, runs_in_parallel: bool):
@@ -162,9 +171,9 @@ if __name__ == "__main__":
 
     # Load dataset and dataloader
     if dataset_name == "cifar_10":
-        dataset = _get_cifar10()  
+        dataset = _get_cifar10(max_samples=500)  
     elif dataset_name == "v51":
-        dataset = _get_v51() 
+        dataset = _get_v51(max_samples=500) 
 
     n_samples = len(dataset)
     print(f"Dataset has {n_samples} samples.")
