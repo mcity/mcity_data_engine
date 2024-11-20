@@ -25,57 +25,65 @@ from utils.data_loader import FiftyOneTorchDatasetCOCO
 from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor, AutoConfig
 
 # Load CIFAR-10 dataset
-def _get_cifar10_dataloader(batch_size=128, num_workers=24):
+def _get_cifar10():
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
     dataset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    return dataset, dataloader
+    return dataset
 
-# Load CIFAR-100 dataset
-def _get_cifar100_dataloader(batch_size=128, num_workers=24):
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-    ])
-    dataset = torchvision.datasets.CIFAR100(root='./data', train=False, download=True, transform=transform)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    return dataset, dataloader
-
-def _get_v51_dataloader(batch_size=8, max_samples=101, num_workers=24, start_index_chunk=None, stop_index_chunk=None):
+def _get_v51(max_samples=101):
     dataset_v51_orig = fo.load_dataset("dbogdollumich/mcity_fisheye_v51")
     dataset_v51 = dataset_v51_orig.take(max_samples)
-
     dataset = FiftyOneTorchDatasetCOCO(dataset_v51)
-    if start_index_chunk and stop_index_chunk:  # Get subset of dataset
-        dataset = Subset(dataset, range(start_index_chunk, stop_index_chunk))
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, collate_fn=lambda batch: list(zip(*batch)))
-    return dataset, dataloader
+    return dataset
 
+def _collate_fn(batch):
+    return list(zip(*batch))
 
 # Function to perform inference with a specific model on a specific GPU
-def run_inference(device, model_name, dataset_name, dataloader, batch_size, index_run, runs_in_parallel):
-    print(f"Process ID: {os.getpid()}, Run: {index_run}, Device: {device}, Model: {model_name}, Parallel: {runs_in_parallel}")
-    run_successfull = True
+def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus: int, runs_in_parallel: bool):
+    print("Job started")
     wandb_run = None
-    try:
+    writer = None
+    run_successfull = True
+    try:        
+        # Metadata
+        model_name = metadata["model_name"]
+        dataset_name = metadata["dataset_name"]
+        gpu_id = metadata["gpu_id"]
+        is_subset = metadata["is_subset"]
+        batch_size = metadata["batch_size"]
+        device  = f"cuda:{gpu_id}"
+        print(f"Process ID: {os.getpid()}, Device: {device}, Model: {model_name}, Parallel: {runs_in_parallel}")        
+        
+        # Dataloader
+        if is_subset:
+            chunk_index_start = metadata["chunk_index_start"]
+            chunk_index_end = metadata["chunk_index_end"]
+            print(f"Length of dataset: {len(dataset)}")
+            print(f"Subset start index: {chunk_index_start}")
+            print(f"Subset stop index: {chunk_index_end}")
+            dataset = Subset(dataset, range(chunk_index_start, chunk_index_end))
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=max_n_cpus, pin_memory=True, collate_fn=_collate_fn)
+
+        torch.cuda.set_device(device)
+        object_classes = ["pedestrian", "vehicle", "cyclist"]
+
+        #Tensorboard logging
+        log_dir_root = f"logs/tensorboard/teacher_zeroshot/{dataset_name}/"
+        experiment_name = f"{model_name}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{device}"
+        log_directory = os.path.join(log_dir_root, experiment_name)
+        writer = SummaryWriter(log_dir=log_directory)
+
+        # Weights and Biases
         wandb_run = wandb.init(
             name=f"{model_name}_{device}",
             sync_tensorboard=True,
             job_type="inference",
             project="Teacher Dev",
         )
-
-        torch.cuda.set_device(device)
-        object_classes = ["pedestrian", "vehicle", "cyclist"]
-
-        #Tensorboard logging
-        log_dir_root = f"../logs/tensorboard/teacher_zeroshot/{dataset_name}/"
-        experiment_name = f"{model_name}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{device}"
-        log_directory = os.path.join(log_dir_root, experiment_name)
-        writer = SummaryWriter(log_dir=log_directory)
 
         # Load the model
         print("Loading model")
@@ -93,8 +101,9 @@ def run_inference(device, model_name, dataset_name, dataloader, batch_size, inde
         
         
         print("Starting inference")
+        n_processed_images = 0
         with torch.no_grad():
-            for step, (images, labels) in enumerate(dataloader):
+            for images, labels in dataloader:
                 time_start = time.time()
                 n_images = len(images)
 
@@ -123,7 +132,8 @@ def run_inference(device, model_name, dataset_name, dataloader, batch_size, inde
                 duration = time_end - time_start
                 batches_per_second = 1 / duration
                 frames_per_second = batches_per_second * n_images
-                writer.add_scalar(f'inference/frames_per_second', frames_per_second, step)
+                n_processed_images += n_images
+                writer.add_scalar(f'inference/frames_per_second', frames_per_second, n_processed_images)
 
         wandb_run.finish(exit_code=0)
 
@@ -134,46 +144,35 @@ def run_inference(device, model_name, dataset_name, dataloader, batch_size, inde
 
     finally:
         print(f"Finished run. Closing SummaryWriter.")
-        writer.close()
+        if writer:
+            writer.close()
+        torch.cuda.empty_cache()
         return run_successfull
 
 if __name__ == "__main__":
-    mp.set_start_method("forkserver")  # https://pytorch.org/docs/stable/notes/multiprocessing.html
+    mp.set_start_method("forkserver")               # https://pytorch.org/docs/stable/notes/multiprocessing.html
     os.environ["TOKENIZERS_PARALLELISM"] = "true"   # https://stackoverflow.com/questions/62691279/how-to-disable-tokenizers-parallelism-true-false-warning/72926996#72926996
-    torch.cuda.empty_cache()
     
     #Hardware configuration
     n_cpus = os.cpu_count() # https://docs.python.org/3/library/concurrent.futures.html#processpoolexecutor
     n_gpus = torch.cuda.device_count()
     print(f"CPU count: {n_cpus}. GPU count: {n_gpus}")
 
-    batch_size = 128
     dataset_name = "cifar_10"
-    test_inference = True
 
     # Load dataset and dataloader
     if dataset_name == "cifar_10":
-        dataset, dataloader = _get_cifar10_dataloader(batch_size=batch_size)  
-    elif dataset_name == "cifar_100":
-        dataset, dataloader = _get_cifar100_dataloader(batch_size=batch_size)
+        dataset = _get_cifar10()  
     elif dataset_name == "v51":
-        dataset, dataloader = _get_v51_dataloader(batch_size=batch_size) 
+        dataset = _get_v51() 
 
     n_samples = len(dataset)
     print(f"Dataset has {n_samples} samples.")
 
-    # Test 'run_inference'
-    if test_inference:
-        sampler = SubsetRandomSampler(torch.randperm(len(dataset))[:batch_size*2])
-        dataloader_test = DataLoader(dataset, batch_size=1, sampler=sampler)
-        run_successfull = run_inference("cuda:0", "omlab/omdet-turbo-swin-tiny-hf", dataset_name, dataloader_test, batch_size, 0, False)
-        if run_successfull == False:
-            print("Test run not successful")
-
     # Define models and dataset splits per model (1 = whole dataset)
     models_splits_dict = {
-        "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 512, "n_chunks": 1},
-        "google/owlv2-base-patch16": {"batch_size": 265, "n_chunks": 2}
+        "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 256, "dataset_chunks": 1},
+        "google/owlv2-base-patch16": {"batch_size": 32, "dataset_chunks": 2}
     }
 
     runs_dict = {}
@@ -181,47 +180,57 @@ if __name__ == "__main__":
     run_counter = 0
     for model_name in models_splits_dict:
         batch_size = models_splits_dict[model_name]["batch_size"]
-        n_chunks = models_splits_dict[model_name]["n_chunks"]
+        n_chunks = models_splits_dict[model_name]["dataset_chunks"]
         
         # Calculate the base split size and leftover samples
-        split_size, leftover_samples = divmod(n_samples, n_chunks)
+        chunk_size, leftover_samples = divmod(n_samples, n_chunks)
         
-        split_index_start = 0
+        chunk_index_start = 0
+        chunk_index_end = None
         for split_id in range(n_chunks):
             if run_counter >= n_gpus:
                 print(f"Run {run_counter} will fail. Only {n_gpus} GPUs available.")
 
             # Generate torch subsets
-            split_size = split_size + (leftover_samples if split_id == n_chunks - 1 else 0)
-            subset = Subset(dataset, range(split_index_start, split_index_start + split_size))
-            dataloader = DataLoader(subset, batch_size=batch_size, shuffle=False, num_workers=24, pin_memory=True, collate_fn=lambda batch: list(zip(*batch)))
-            split_index_start = split_size
+            if n_chunks == 1:
+                is_subset = False
+            else:
+                is_subset = True
+                chunk_size += (leftover_samples if split_id == n_chunks - 1 else 0)
+                chunk_index_end = chunk_index_start + chunk_size
             
             # Add entry to runs_dict
             runs_dict[run_counter] = {
-                "model_name": model_name,
-                "gpu_id": run_counter,
-                "dataloader": dataloader,
-                "split_id": split_id,
-                "split_length": split_size,
-            }
+                    "model_name": model_name,
+                    "gpu_id": run_counter,
+                    "is_subset": is_subset,
+                    "chunk_index_start": chunk_index_start,
+                    "chunk_index_end": chunk_index_end,
+                    "batch_size": batch_size,
+                    "dataset_name": dataset_name
+                }
+
+            # Update start index for next chunk
+            if n_chunks > 1:
+                chunk_index_start = chunk_size
+
             run_counter += 1
     
-    print(runs_dict)
-
     # Create processes for each GPU (model + dataset split)
+    test_inference = False
+    max_n_cpus = n_cpus // len(runs_dict)
+    print(f"Max CPU per process: {max_n_cpus}")
     with ProcessPoolExecutor() as executor:
         time_start = time.time()
         futures = []
         for run_id, run_metadata in runs_dict.items():
-            index = run_id
-            device  = f"cuda:{run_id}"
-            model_name = run_metadata["model_name"]
-            dataloader = run_metadata["dataloader"]
-            print(f"Launch job {index} - {device} - {model_name}")
-            # run_successfull = run_inference(device, model_name, dataloader, batch_size, index, False)
-            future = executor.submit(run_inference, device, model_name, dataset_name, dataloader, batch_size, index, True)
-            futures.append(future)
+            print(f"Launch job {run_id}: {run_metadata}")
+            if test_inference:
+                run_successfull = run_inference(dataset, run_metadata, max_n_cpus, False)
+                print(f"Test run successfull: {run_successfull}")
+            else:
+                future = executor.submit(run_inference, dataset, run_metadata, max_n_cpus, True)
+                futures.append(future)
 
         # Wait for all tasks to complete
         wait(futures)
@@ -229,4 +238,3 @@ if __name__ == "__main__":
     time_end = time.time()
     duration = time_end - time_start
     print(f"All processes complete after {duration} seconds")
-
