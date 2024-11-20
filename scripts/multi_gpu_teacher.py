@@ -12,7 +12,7 @@ import torchvision
 import torchvision.transforms as transforms
 from torchvision.transforms.functional import to_pil_image
 
-from torch.utils.data import DataLoader, Subset, Dataset, SubsetRandomSampler
+from torch.utils.data import DataLoader, Subset, Dataset, RandomSampler
 from torchvision.models import resnet18, vgg16
 from concurrent.futures import ProcessPoolExecutor, wait
 import time
@@ -33,9 +33,8 @@ def _get_cifar10():
     dataset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
     return dataset
 
-def _get_v51(max_samples=101):
+def _get_v51():
     dataset_v51_orig = fo.load_dataset("dbogdollumich/mcity_fisheye_v51")
-    dataset_v51 = dataset_v51_orig.take(max_samples)
     dataset = FiftyOneTorchDatasetCOCO(dataset_v51)
     return dataset
 
@@ -66,16 +65,11 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
             print(f"Subset start index: {chunk_index_start}")
             print(f"Subset stop index: {chunk_index_end}")
             dataset = Subset(dataset, range(chunk_index_start, chunk_index_end))
+        
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=max_n_cpus, pin_memory=True, collate_fn=_collate_fn)
 
         torch.cuda.set_device(device)
         object_classes = ["pedestrian", "vehicle", "cyclist"]
-
-        #Tensorboard logging
-        log_dir_root = f"logs/tensorboard/teacher_zeroshot/{dataset_name}/"
-        experiment_name = f"{model_name}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{device}"
-        log_directory = os.path.join(log_dir_root, experiment_name)
-        writer = SummaryWriter(log_dir=log_directory)
 
         # Weights and Biases
         wandb_run = wandb.init(
@@ -84,6 +78,12 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
             job_type="inference",
             project="Teacher Dev",
         )
+
+        #Tensorboard logging
+        log_dir_root = f"logs/tensorboard/teacher_zeroshot/{dataset_name}/"
+        experiment_name = f"{model_name}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{device}"
+        log_directory = os.path.join(log_dir_root, experiment_name)
+        writer = SummaryWriter(log_dir=log_directory)
 
         # Load the model
         print("Loading model")
