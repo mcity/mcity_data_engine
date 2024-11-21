@@ -110,9 +110,10 @@ def _distribute_cpu_cores(cpu_cores, n_processes):
 
 
 # Function to perform inference with a specific model on a specific GPU
-def run_inference(cpu_cores: list, dataset: torch.utils.data.Dataset, metadata: dict, runs_in_parallel: bool, num_workers:int = 4, prefetch_factor:int = 4):
+def run_inference(cpu_cores: list, dataset: torch.utils.data.Dataset, metadata: dict, runs_in_parallel: bool, num_workers:int = 4, prefetch_factor:int = 4, set_cpu_affinity=False):
     # Optional: Set CPU affinity to pin this process to specific cores
-    # psutil.Process().cpu_affinity(cpu_cores)
+    if set_cpu_affinity:
+        psutil.Process().cpu_affinity(cpu_cores)
     max_n_cpus = len(cpu_cores)
     
     # Set GPU
@@ -223,7 +224,7 @@ if __name__ == "__main__":
     n_cpus_cluster = len(psutil.Process().cpu_affinity())   # As requested in Lighthouse job
     n_cpus = min(n_cpus_os, n_cpus_mp, n_cpus_cluster)               
     n_gpus = torch.cuda.device_count()
-    print(f"OS CPU count: {n_cpus_os}. MP CPU count: {n_cpus_mp}. Cluster CPU count: {n_cpus_cluster}. Utilized CPU cores: {n_cpus}. GPU count: {n_gpus}")
+    print(f"CPU cores: {n_cpus}. GPU count: {n_gpus}")
 
     dataset_name = "cifar_10"
 
