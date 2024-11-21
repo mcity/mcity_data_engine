@@ -55,6 +55,14 @@ class ZeroShotInferenceCollateFn:
 
         return inputs, labels
 
+def _terminate_processes(processes):
+    """Helper to terminate all processes gracefully."""
+    for p in processes:
+        if p.is_alive():
+            p.terminate()
+        p.join()
+    print("All processes terminated")
+
 # Load CIFAR-10 dataset
 def _get_cifar10(max_samples=None):
     transform = transforms.Compose([
@@ -74,9 +82,6 @@ def _get_v51(max_samples=None):
         dataset_v51 = dataset_v51_orig
     dataset = FiftyOneTorchDatasetCOCO(dataset_v51)
     return dataset
-
-def _collate_fn(batch):
-    return list(zip(*batch))
 
 def _process_output(output):
     print("Process outputs")
@@ -130,8 +135,7 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
             dataset = Subset(dataset, range(chunk_index_start, chunk_index_end))
         
         zero_shot_inference_preprocessing = ZeroShotInferenceCollateFn(hf_model_config_name=hf_model_config_name, hf_processor=processor, object_classes=object_classes, batch_size=batch_size, batch_classes=batch_classes)
-        #collate_fn = _collate_fn()
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=max_n_cpus, pin_memory=True, prefetch_factor=4, collate_fn=zero_shot_inference_preprocessing)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=max_n_cpus, pin_memory=True, prefetch_factor=2, collate_fn=zero_shot_inference_preprocessing)
 
         # Weights and Biases
         wandb_run = wandb.init(
@@ -153,10 +157,11 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
         for inputs, labels in dataloader:
             time_start = time.time()
             n_images = len(labels)  # inputs is already processed
-            inputs = inputs.to(device, non_blocking=True)
+            inputs.to(device)
 
-            with torch.amp.autocast("cuda"), torch.no_grad():
-                outputs = model(**inputs)
+            with torch.amp.autocast("cuda"):
+                with torch.no_grad():
+                    outputs = model(**inputs)
 
             #with ProcessPoolExecutor(max_workers=max_n_cpus) as executor:
             #    futures = [executor.submit(_process_output, output) for output in outputs]
@@ -197,21 +202,21 @@ if __name__ == "__main__":
 
     # Load dataset and dataloader
     if dataset_name == "cifar_10":
-        dataset = _get_cifar10(max_samples=None)  
+        dataset = _get_cifar10(max_samples=1000)  
     elif dataset_name == "v51":
-        dataset = _get_v51(max_samples=None) 
+        dataset = _get_v51(max_samples=1000) 
 
     n_samples = len(dataset)
     print(f"Dataset has {n_samples} samples.")
 
-    # Define models and dataset splits per model (1 = whole dataset)
+    # Define models and dataset chunks per model (1 = whole dataset)
     models_splits_dict = {
         "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 256, "dataset_chunks": 1},
         "google/owlv2-base-patch16": {"batch_size": 32, "dataset_chunks": 2}
     }
 
+    # Prepare dictionary for process execution
     runs_dict = {}
-    
     run_counter = 0
     for model_name in models_splits_dict:
         batch_size = models_splits_dict[model_name]["batch_size"]
@@ -255,11 +260,10 @@ if __name__ == "__main__":
     test_inference = False
     max_n_cpus = n_cpus_mp // len(runs_dict)
     print(f"Max CPU per process: {max_n_cpus}")
-    parallelize = "multiprocess"
 
+    processes = []
     time_start = time.time()
-    if parallelize == "multiprocess":
-        processes = []
+    try:
         for run_id, run_metadata in runs_dict.items():
             p = mp.Process(target=run_inference, args=(dataset, run_metadata, max_n_cpus, True))
             processes.append(p)
@@ -268,23 +272,12 @@ if __name__ == "__main__":
         # Wait for all tasks to complete
         for p in processes:
             p.join()
+    except Exception as e:
+        print(f"Error during multiprocessing: {e}")
+        traceback.print_exc()
+    finally:
+        _terminate_processes(processes)
 
-    elif parallelize == "processpool":    
-        with ProcessPoolExecutor() as executor:
-            
-            futures = []
-            for run_id, run_metadata in runs_dict.items():
-                print(f"Launch job {run_id}: {run_metadata}")
-                if test_inference:
-                    run_successfull = run_inference(dataset, run_metadata, max_n_cpus, False)
-                    print(f"Test run successfull: {run_successfull}")
-                else:
-                    future = executor.submit(run_inference, dataset, run_metadata, max_n_cpus, True)
-                    futures.append(future)
-
-            # Wait for all tasks to complete
-            wait(futures)
-
-    time_end = time.time()
-    duration = time_end - time_start
-    print(f"All processes complete after {duration} seconds")
+        time_end = time.time()
+        duration = time_end - time_start
+        print(f"All processes complete after {duration} seconds")
