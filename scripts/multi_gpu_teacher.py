@@ -3,8 +3,11 @@ import sys
 
 sys.path.append("..")
 import fiftyone as fo
+import psutil
 
 import wandb
+
+from tqdm import tqdm
 
 import torch
 import torch.nn as nn
@@ -154,7 +157,7 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
         # Inference Loop
         print("Starting inference")
         n_processed_images = 0
-        for inputs, labels in dataloader:
+        for inputs, labels in tqdm(dataloader, desc = "Batch Processing"):
             time_start = time.time()
             n_images = len(labels)  # inputs is already processed
             inputs.to(device)
@@ -193,18 +196,20 @@ if __name__ == "__main__":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"  # https://stackoverflow.com/questions/62691279/how-to-disable-tokenizers-parallelism-true-false-warning/72926996#72926996
     
     #Hardware configuration
-    n_cpus_os = os.cpu_count() # https://docs.python.org/3/library/concurrent.futures.html#processpoolexecutor
+    n_cpus_os = os.cpu_count()  # https://docs.python.org/3/library/concurrent.futures.html#processpoolexecutor
     n_cpus_mp = mp.cpu_count()
+    n_cpus_cluster = len(psutil.Process().cpu_affinity())   # As requested in Lighthouse job
+    n_cpus = min(n_cpus_os, n_cpus_mp, n_cpus_cluster)               
     n_gpus = torch.cuda.device_count()
-    print(f"OS CPU count: {n_cpus_os}. MP CPU count: {n_cpus_mp}. GPU count: {n_gpus}")
+    print(f"OS CPU count: {n_cpus_os}. MP CPU count: {n_cpus_mp}. Cluster CPU count: {n_cpus_cluster}. Utilized CPU cores: {n_cpus}. GPU count: {n_gpus}")
 
     dataset_name = "cifar_10"
 
     # Load dataset and dataloader
     if dataset_name == "cifar_10":
-        dataset = _get_cifar10(max_samples=1000)  
+        dataset = _get_cifar10(max_samples=None)  
     elif dataset_name == "v51":
-        dataset = _get_v51(max_samples=1000) 
+        dataset = _get_v51(max_samples=None) 
 
     n_samples = len(dataset)
     print(f"Dataset has {n_samples} samples.")
@@ -257,17 +262,21 @@ if __name__ == "__main__":
             run_counter += 1
     
     # Create processes for each GPU (model + dataset split)
-    test_inference = False
-    max_n_cpus = n_cpus_mp // len(runs_dict)
+    test_inference = True
+    max_n_cpus = n_cpus // len(runs_dict)
     print(f"Max CPU per process: {max_n_cpus}")
 
     processes = []
     time_start = time.time()
     try:
         for run_id, run_metadata in runs_dict.items():
-            p = mp.Process(target=run_inference, args=(dataset, run_metadata, max_n_cpus, True))
-            processes.append(p)
-            p.start()
+            if test_inference:
+                test_result = run_inference(dataset, run_metadata, max_n_cpus, False)
+                print(f"Test ran successful: {test_result}")
+            else:
+                p = mp.Process(target=run_inference, args=(dataset, run_metadata, max_n_cpus, True))
+                processes.append(p)
+                p.start()
 
         # Wait for all tasks to complete
         for p in processes:
