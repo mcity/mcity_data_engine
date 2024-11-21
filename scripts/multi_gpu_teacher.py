@@ -24,6 +24,37 @@ from utils.data_loader import FiftyOneTorchDatasetCOCO
 
 from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor, AutoConfig
 
+class ZeroShotInferenceCollateFn:
+    def __init__(self, hf_model_config_name, hf_processor, batch_size, object_classes, batch_classes):
+        self.hf_model_config_name = hf_model_config_name
+        self.processor = hf_processor
+        self.batch_size = batch_size
+        self.object_classes = object_classes
+        self.batch_classes = batch_classes
+
+    def __call__(self, batch):
+        images, labels = zip(*batch)
+
+        # Adjustments for final batch
+        n_images = len(images)
+        if n_images < self.batch_size:
+            if self.hf_model_config_name == "OmDetTurboConfig":
+                self.batch_classes = [self.object_classes] * n_images
+            elif self.hf_model_config_name == "Owlv2Config":
+                self.batch_classes = self.object_classes * n_images
+
+        # Apply PIL transformation for specific models
+        if self.hf_model_config_name == "OmDetTurboConfig":
+            images = [to_pil_image(image) for image in images]
+
+        inputs = self.processor(
+            text=self.batch_classes,
+            images=images,
+            return_tensors="pt",
+        )
+
+        return inputs, labels
+
 # Load CIFAR-10 dataset
 def _get_cifar10(max_samples=None):
     transform = transforms.Compose([
@@ -57,7 +88,7 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
     wandb_run = None
     writer = None
     run_successfull = True
-    try:        
+    try: 
         # Metadata
         model_name = metadata["model_name"]
         dataset_name = metadata["dataset_name"]
@@ -67,7 +98,29 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
         device  = f"cuda:{gpu_id}"
         print(f"Process ID: {os.getpid()}, Device: {device}, Model: {model_name}, Parallel: {runs_in_parallel}")        
         
+        # Set GPU
+        print(f"GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)}")
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+        torch.cuda.set_device(device)
+
+        # Load the model
+        print("Loading model")
+        object_classes = ["pedestrian", "vehicle", "cyclist"]
+        processor = AutoProcessor.from_pretrained(model_name)
+        model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name)
+        model = model.to(device)
+        hf_model_config = AutoConfig.from_pretrained(model_name)
+        hf_model_config_name = type(hf_model_config).__name__
+        
+        if hf_model_config_name == "OmDetTurboConfig":
+            batch_classes = [object_classes] * batch_size
+        elif hf_model_config_name == "Owlv2Config":
+            batch_classes = object_classes * batch_size
+        else:
+            raise ValueError("Invalid model name")
+
         # Dataloader
+        print("Generating dataloader")
         if is_subset:
             chunk_index_start = metadata["chunk_index_start"]
             chunk_index_end = metadata["chunk_index_end"]
@@ -76,10 +129,9 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
             print(f"Subset stop index: {chunk_index_end}")
             dataset = Subset(dataset, range(chunk_index_start, chunk_index_end))
         
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=max_n_cpus, pin_memory=True, collate_fn=_collate_fn)
-
-        torch.cuda.set_device(device)
-        object_classes = ["pedestrian", "vehicle", "cyclist"]
+        zero_shot_inference_preprocessing = ZeroShotInferenceCollateFn(hf_model_config_name=hf_model_config_name, hf_processor=processor, object_classes=object_classes, batch_size=batch_size, batch_classes=batch_classes)
+        #collate_fn = _collate_fn()
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=max_n_cpus, pin_memory=True, prefetch_factor=4, collate_fn=zero_shot_inference_preprocessing)
 
         # Weights and Biases
         wandb_run = wandb.init(
@@ -95,58 +147,26 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
         log_directory = os.path.join(log_dir_root, experiment_name)
         writer = SummaryWriter(log_dir=log_directory)
 
-        # Load the model
-        print("Loading model")
-        processor = AutoProcessor.from_pretrained(model_name)
-        model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name)
-        model = model.to(device)
-
-        hf_model_config = AutoConfig.from_pretrained(model_name)
-        if type(hf_model_config).__name__ == "OmDetTurboConfig":
-            batch_classes = [object_classes] * batch_size
-        elif type(hf_model_config).__name__ == "Owlv2Config":
-            batch_classes = object_classes * batch_size
-        else:
-            raise ValueError("Invalid model name")
-        
-        
+        # Inference Loop
         print("Starting inference")
         n_processed_images = 0
-        with torch.no_grad():
-            for images, labels in dataloader:
-                time_start = time.time()
-                n_images = len(images)
+        for inputs, labels in dataloader:
+            time_start = time.time()
+            n_images = len(labels)  # inputs is already processed
+            inputs = inputs.to(device, non_blocking=True)
 
-                # Adjustments for final batch
-                if n_images < batch_size:
-                    if type(hf_model_config).__name__ == "OmDetTurboConfig":
-                        batch_classes = [object_classes] * n_images
-                    elif type(hf_model_config).__name__ == "Owlv2Config":
-                        batch_classes = object_classes * n_images
-
-                #OmDet
-                if type(hf_model_config).__name__ == "OmDetTurboConfig":
-                    images = [to_pil_image(image) for image in images]
-                else:
-                    images = [(image).to(device, non_blocking=True) for image in images]
-
-                inputs = processor(
-                    text=batch_classes,
-                    images=images,
-                    return_tensors="pt",
-                        ).to(device)
-
+            with torch.amp.autocast("cuda"), torch.no_grad():
                 outputs = model(**inputs)
 
-                with ProcessPoolExecutor(max_workers=max_n_cpus) as executor:
-                    tasks = [executor.submit(_process_output, output) for output in outputs]
+            #with ProcessPoolExecutor(max_workers=max_n_cpus) as executor:
+            #    futures = [executor.submit(_process_output, output) for output in outputs]
 
-                time_end = time.time()
-                duration = time_end - time_start
-                batches_per_second = 1 / duration
-                frames_per_second = batches_per_second * n_images
-                n_processed_images += n_images
-                writer.add_scalar(f'inference/frames_per_second', frames_per_second, n_processed_images)
+            time_end = time.time()
+            duration = time_end - time_start
+            batches_per_second = 1 / duration
+            frames_per_second = batches_per_second * n_images
+            n_processed_images += n_images
+            writer.add_scalar(f'inference/frames_per_second', frames_per_second, n_processed_images)
 
         wandb_run.finish(exit_code=0)
 
@@ -163,8 +183,9 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
         return run_successfull
 
 if __name__ == "__main__":
-    mp.set_start_method("forkserver")               # https://pytorch.org/docs/stable/notes/multiprocessing.html
-    os.environ["TOKENIZERS_PARALLELISM"] = "true"   # https://stackoverflow.com/questions/62691279/how-to-disable-tokenizers-parallelism-true-false-warning/72926996#72926996
+    mp.set_start_method("spawn")                    # https://pytorch.org/docs/stable/notes/multiprocessing.html
+    torch.backends.cudnn.benchmark = True           # https://pytorch.org/docs/stable/backends.html
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"  # https://stackoverflow.com/questions/62691279/how-to-disable-tokenizers-parallelism-true-false-warning/72926996#72926996
     
     #Hardware configuration
     n_cpus_os = os.cpu_count() # https://docs.python.org/3/library/concurrent.futures.html#processpoolexecutor
@@ -176,9 +197,9 @@ if __name__ == "__main__":
 
     # Load dataset and dataloader
     if dataset_name == "cifar_10":
-        dataset = _get_cifar10(max_samples=2000)  
+        dataset = _get_cifar10(max_samples=None)  
     elif dataset_name == "v51":
-        dataset = _get_v51(max_samples=2000) 
+        dataset = _get_v51(max_samples=None) 
 
     n_samples = len(dataset)
     print(f"Dataset has {n_samples} samples.")
@@ -234,20 +255,35 @@ if __name__ == "__main__":
     test_inference = False
     max_n_cpus = n_cpus_mp // len(runs_dict)
     print(f"Max CPU per process: {max_n_cpus}")
-    with ProcessPoolExecutor() as executor:
-        time_start = time.time()
-        futures = []
+    parallelize = "multiprocess"
+
+    time_start = time.time()
+    if parallelize == "multiprocess":
+        processes = []
         for run_id, run_metadata in runs_dict.items():
-            print(f"Launch job {run_id}: {run_metadata}")
-            if test_inference:
-                run_successfull = run_inference(dataset, run_metadata, max_n_cpus, False)
-                print(f"Test run successfull: {run_successfull}")
-            else:
-                future = executor.submit(run_inference, dataset, run_metadata, max_n_cpus, True)
-                futures.append(future)
+            p = mp.Process(target=run_inference, args=(dataset, run_metadata, max_n_cpus, True))
+            processes.append(p)
+            p.start()
 
         # Wait for all tasks to complete
-        wait(futures)
+        for p in processes:
+            p.join()
+
+    elif parallelize == "processpool":    
+        with ProcessPoolExecutor() as executor:
+            
+            futures = []
+            for run_id, run_metadata in runs_dict.items():
+                print(f"Launch job {run_id}: {run_metadata}")
+                if test_inference:
+                    run_successfull = run_inference(dataset, run_metadata, max_n_cpus, False)
+                    print(f"Test run successfull: {run_successfull}")
+                else:
+                    future = executor.submit(run_inference, dataset, run_metadata, max_n_cpus, True)
+                    futures.append(future)
+
+            # Wait for all tasks to complete
+            wait(futures)
 
     time_end = time.time()
     duration = time_end - time_start
