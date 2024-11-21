@@ -7,8 +7,6 @@ import psutil
 
 import wandb
 
-from tqdm import tqdm
-
 import torch
 import torch.nn as nn
 import torchvision
@@ -36,27 +34,31 @@ class ZeroShotInferenceCollateFn:
         self.batch_classes = batch_classes
 
     def __call__(self, batch):
-        images, labels = zip(*batch)
+        try:
+            images, labels = zip(*batch)
 
-        # Adjustments for final batch
-        n_images = len(images)
-        if n_images < self.batch_size:
+            # Adjustments for final batch
+            n_images = len(images)
+            if n_images < self.batch_size:
+                if self.hf_model_config_name == "OmDetTurboConfig":
+                    self.batch_classes = [self.object_classes] * n_images
+                elif self.hf_model_config_name == "Owlv2Config":
+                    self.batch_classes = self.object_classes * n_images
+
+            # Apply PIL transformation for specific models
             if self.hf_model_config_name == "OmDetTurboConfig":
-                self.batch_classes = [self.object_classes] * n_images
-            elif self.hf_model_config_name == "Owlv2Config":
-                self.batch_classes = self.object_classes * n_images
+                images = [to_pil_image(image) for image in images]
 
-        # Apply PIL transformation for specific models
-        if self.hf_model_config_name == "OmDetTurboConfig":
-            images = [to_pil_image(image) for image in images]
+            inputs = self.processor(
+                text=self.batch_classes,
+                images=images,
+                return_tensors="pt",
+            )
 
-        inputs = self.processor(
-            text=self.batch_classes,
-            images=images,
-            return_tensors="pt",
-        )
-
-        return inputs, labels
+            return inputs, labels
+        except Exception as e:
+            print(f"Error in collate function of DataLoader: {e}")
+            traceback.print_exc()
 
 def _terminate_processes(processes):
     """Helper to terminate all processes gracefully."""
@@ -90,9 +92,36 @@ def _process_output(output):
     print("Process outputs")
     return True
 
+def _distribute_cpu_cores(cpu_cores, n_processes):
+    n_cores = len(cpu_cores)
+
+    chunk_size = n_cores // n_processes
+    remainder = n_cores % n_processes
+
+    cpu_cores_per_process = []
+    start = 0
+    for i in range(n_processes):
+            # Determine the end index for this chunk
+            end = start + chunk_size + (1 if i < remainder else 0)
+            cpu_cores_per_process.append(cpu_cores[start:end])
+            start = end
+
+    return cpu_cores_per_process
+
+
 # Function to perform inference with a specific model on a specific GPU
-def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus: int, runs_in_parallel: bool):
-    print("Job started")
+def run_inference(cpu_cores: list, dataset: torch.utils.data.Dataset, metadata: dict, runs_in_parallel: bool, num_workers:int = 4, prefetch_factor:int = 4):
+    # Optional: Set CPU affinity to pin this process to specific cores
+    # psutil.Process().cpu_affinity(cpu_cores)
+    max_n_cpus = len(cpu_cores)
+    
+    # Set GPU
+    gpu_id = metadata["gpu_id"]
+    device = f"cuda:{gpu_id}"
+    print(f"GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)}")
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+    torch.cuda.set_device(device)
+
     wandb_run = None
     writer = None
     run_successfull = True
@@ -100,16 +129,10 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
         # Metadata
         model_name = metadata["model_name"]
         dataset_name = metadata["dataset_name"]
-        gpu_id = metadata["gpu_id"]
         is_subset = metadata["is_subset"]
         batch_size = metadata["batch_size"]
-        device  = f"cuda:{gpu_id}"
-        print(f"Process ID: {os.getpid()}, Device: {device}, Model: {model_name}, Parallel: {runs_in_parallel}")        
         
-        # Set GPU
-        print(f"GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)}")
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-        torch.cuda.set_device(device)
+        print(f"Process ID: {os.getpid()}, Device: {device}, Model: {model_name}, Parallel: {runs_in_parallel}")        
 
         # Load the model
         print("Loading model")
@@ -138,7 +161,7 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
             dataset = Subset(dataset, range(chunk_index_start, chunk_index_end))
         
         zero_shot_inference_preprocessing = ZeroShotInferenceCollateFn(hf_model_config_name=hf_model_config_name, hf_processor=processor, object_classes=object_classes, batch_size=batch_size, batch_classes=batch_classes)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=max_n_cpus, pin_memory=True, prefetch_factor=2, collate_fn=zero_shot_inference_preprocessing)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, prefetch_factor=prefetch_factor, collate_fn=zero_shot_inference_preprocessing)
 
         # Weights and Biases
         wandb_run = wandb.init(
@@ -157,14 +180,13 @@ def run_inference(dataset: torch.utils.data.Dataset, metadata: dict, max_n_cpus:
         # Inference Loop
         print("Starting inference")
         n_processed_images = 0
-        for inputs, labels in tqdm(dataloader, desc = "Batch Processing"):
+        for inputs, labels in dataloader:
             time_start = time.time()
             n_images = len(labels)  # inputs is already processed
             inputs.to(device)
 
-            with torch.amp.autocast("cuda"):
-                with torch.no_grad():
-                    outputs = model(**inputs)
+            with torch.amp.autocast("cuda"), torch.no_grad():
+                outputs = model(**inputs)
 
             #with ProcessPoolExecutor(max_workers=max_n_cpus) as executor:
             #    futures = [executor.submit(_process_output, output) for output in outputs]
@@ -262,19 +284,24 @@ if __name__ == "__main__":
             run_counter += 1
     
     # Create processes for each GPU (model + dataset split)
-    test_inference = True
-    max_n_cpus = n_cpus // len(runs_dict)
-    print(f"Max CPU per process: {max_n_cpus}")
+    n_processes = len(runs_dict)
+
+    # Distribute CPU cores
+    cpu_cores = psutil.Process().cpu_affinity()
+    cpu_cores_per_process = _distribute_cpu_cores(cpu_cores, n_processes)
 
     processes = []
+    test_inference = False
+
     time_start = time.time()
     try:
         for run_id, run_metadata in runs_dict.items():
-            if test_inference:
-                test_result = run_inference(dataset, run_metadata, max_n_cpus, False)
+            if test_inference:  # All CPU cores
+                test_result = run_inference(cpu_cores, dataset, run_metadata, False)
                 print(f"Test ran successful: {test_result}")
             else:
-                p = mp.Process(target=run_inference, args=(dataset, run_metadata, max_n_cpus, True))
+                cpu_cores_for_run = cpu_cores_per_process[run_id]
+                p = mp.Process(target=run_inference, args=(cpu_cores_for_run, dataset, run_metadata, True))
                 processes.append(p)
                 p.start()
 
