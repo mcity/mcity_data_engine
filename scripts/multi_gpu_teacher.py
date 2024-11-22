@@ -164,7 +164,7 @@ def run_inference(cpu_cores: list, dataset: torch.utils.data.Dataset, metadata: 
             dataset = Subset(dataset, range(chunk_index_start, chunk_index_end))
         
         zero_shot_inference_preprocessing = ZeroShotInferenceCollateFn(hf_model_config_name=hf_model_config_name, hf_processor=processor, object_classes=object_classes, batch_size=batch_size, batch_classes=batch_classes)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, prefetch_factor=prefetch_factor, collate_fn=zero_shot_inference_preprocessing)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, persistent_workers=True, pin_memory=True, prefetch_factor=prefetch_factor, collate_fn=zero_shot_inference_preprocessing)
 
         # Weights and Biases
         wandb_run = wandb.init(
