@@ -58,7 +58,7 @@ class ZeroShotInferenceCollateFn:
             return inputs, labels
         except Exception as e:
             print(f"Error in collate function of DataLoader: {e}")
-            traceback.print_exc()
+            print("Stack trace:", exc_info=True)
 
 def _terminate_processes(processes):
     """Helper to terminate all processes gracefully."""
