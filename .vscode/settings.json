@@ -2,15 +2,11 @@
     "[python]": {
       "editor.defaultFormatter": "ms-python.black-formatter",
       "editor.codeActionsOnSave": {
-      "source.fixAll": true
+      "source.fixAll": true,
+      "source.organizeImports": "explicit"
     }
     },
     "git.autofetch": true,
-    "editor.codeActionsOnSave": {
-      "source.organizeImports": "explicit"
-    },
-    "editor.minimap.enabled": false,
-    "settingsSync.ignoredSettings": [
-      
-    ]
+    
+    "editor.minimap.enabled": false
   }
