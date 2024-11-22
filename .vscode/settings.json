@@ -1,6 +1,9 @@
 {
     "[python]": {
       "editor.defaultFormatter": "ms-python.black-formatter",
+      "editor.codeActionsOnSave": {
+      "source.fixAll": true
+    }
     },
     "git.autofetch": true,
     "editor.codeActionsOnSave": {
