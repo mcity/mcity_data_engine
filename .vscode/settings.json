@@ -1,0 +1,13 @@
+{
+    "[python]": {
+      "editor.defaultFormatter": "ms-python.black-formatter",
+    },
+    "git.autofetch": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    },
+    "editor.minimap.enabled": false,
+    "settingsSync.ignoredSettings": [
+      
+    ]
+  }
