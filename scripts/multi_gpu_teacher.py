@@ -142,6 +142,7 @@ def run_inference(cpu_cores: list, dataset: torch.utils.data.Dataset, metadata: 
         processor = AutoProcessor.from_pretrained(model_name)
         model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name)
         model = model.to(device)
+        model.eval()
         hf_model_config = AutoConfig.from_pretrained(model_name)
         hf_model_config_name = type(hf_model_config).__name__
         
