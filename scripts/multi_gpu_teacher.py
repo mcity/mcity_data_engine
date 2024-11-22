@@ -101,10 +101,10 @@ def _distribute_cpu_cores(cpu_cores, n_processes):
     cpu_cores_per_process = []
     start = 0
     for i in range(n_processes):
-            # Determine the end index for this chunk
-            end = start + chunk_size + (1 if i < remainder else 0)
-            cpu_cores_per_process.append(cpu_cores[start:end])
-            start = end
+        # Determine the end index for this chunk
+        end = start + chunk_size + (1 if i < remainder else 0)
+        cpu_cores_per_process.append(cpu_cores[start:end])
+        start = end
 
     return cpu_cores_per_process
 
@@ -115,6 +115,7 @@ def run_inference(cpu_cores: list, dataset: torch.utils.data.Dataset, metadata: 
     if set_cpu_affinity:
         psutil.Process().cpu_affinity(cpu_cores)
     max_n_cpus = len(cpu_cores)
+    torch.set_num_threads(max_n_cpus)
     
     # Set GPU
     gpu_id = metadata["gpu_id"]
@@ -183,10 +184,10 @@ def run_inference(cpu_cores: list, dataset: torch.utils.data.Dataset, metadata: 
         n_processed_images = 0
         for inputs, labels in dataloader:
             time_start = time.time()
-            n_images = len(labels)  # inputs is already processed
+            n_images = len(labels)  # 'inputs' is processed, might not relfect n_images
             inputs.to(device)
 
-            with torch.amp.autocast("cuda"), torch.no_grad():
+            with torch.amp.autocast("cuda"), torch.inference_mode():
                 outputs = model(**inputs)
 
             #with ProcessPoolExecutor(max_workers=max_n_cpus) as executor:
@@ -239,8 +240,8 @@ if __name__ == "__main__":
 
     # Define models and dataset chunks per model (1 = whole dataset)
     models_splits_dict = {
-        "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 256, "dataset_chunks": 1},
-        "google/owlv2-base-patch16": {"batch_size": 32, "dataset_chunks": 2}
+        "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 256, "dataset_chunks": 1}, # FPS improvements up to 256
+        "google/owlv2-base-patch16": {"batch_size": 8, "dataset_chunks": 2}    # FPS improvements up to 4
     }
 
     # Prepare dictionary for process execution
