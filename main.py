@@ -10,24 +10,15 @@ import fiftyone as fo
 import wandb
 from tqdm import tqdm
 
-from config.config import (
-    SELECTED_DATASET,
-    SELECTED_WORKFLOW,
-    V51_ADDRESS,
-    V51_PORT,
-    WORKFLOWS,
-)
+from config.config import (SELECTED_DATASET, SELECTED_WORKFLOW, V51_ADDRESS,
+                           V51_PORT, WORKFLOWS)
 from utils.data_loader import FiftyOneTorchDatasetCOCO
-
 # Called with globals()
-from utils.dataset_loader import (
-    load_dataset_info,
-    load_fisheye_8k,
-    load_mars_multiagent,
-    load_mars_multitraversal,
-    load_mcity_fisheye_3_months,
-    load_mcity_fisheye_2000,
-)
+from utils.dataset_loader import (load_dataset_info, load_fisheye_8k,
+                                  load_mars_multiagent,
+                                  load_mars_multitraversal,
+                                  load_mcity_fisheye_3_months,
+                                  load_mcity_fisheye_2000)
 from utils.logging import configure_logging
 from utils.wandb_helper import launch_to_queue_terminal
 from workflows.ano_dec import Anodec
@@ -46,6 +37,25 @@ def signal_handler(sig, frame):
         pass
     sys.exit(0)
 
+def workflow_brain(dataset, dataset_info, MODEL_NAME):
+    v51_brain = Brain(dataset, dataset_info, MODEL_NAME)
+    v51_brain.compute_embeddings()
+    v51_brain.compute_similarity()
+
+    # Find representative and unique samples as center points for further selections
+    v51_brain.compute_representativeness()
+    v51_brain.compute_unique_images_greedy()
+    v51_brain.compute_unique_images_deterministic()
+
+    # Select samples similar to the center points to enlarge the dataset
+    v51_brain.compute_similar_images()
+
+    v51_keys = {}
+    v51_keys["embedding"] = v51_brain.embedding_key
+    v51_keys["similarity"] = v51_brain.similiarity_key
+    v51_keys["uniqueness"] = v51_brain.uniqueness_key
+
+    return v51_keys
 
 def main(args):
     time_start = time.time()
@@ -152,18 +162,7 @@ def main(args):
                         wandb_config["v51_dataset_name"],
                         "local",
                     )
-                    # Compute model embeddings and index for similarity
-                    v51_brain = Brain(dataset, dataset_info, MODEL_NAME)
-                    v51_brain.compute_embeddings()
-                    v51_brain.compute_similarity()
-
-                    # Find representative and unique samples as center points for further selections
-                    v51_brain.compute_representativeness()
-                    v51_brain.compute_unique_images_greedy()
-                    v51_brain.compute_unique_images_deterministic()
-
-                    # Select samples similar to the center points to enlarge the dataset
-                    v51_brain.compute_similar_images()
+                    workflow_brain(dataset, dataset_info, MODEL_NAME)
                     run.finish(exit_code=0)
             except Exception as e:
                 logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
