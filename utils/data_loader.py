@@ -1,16 +1,13 @@
-import torch
-import fiftyone.utils.coco as fouc
-import numpy as np
-
-from tqdm import tqdm
-
-from datasets import Dataset, Split
-
-from torchvision.io import decode_image
-
 # https://docs.python.org/2/library/multiprocessing.html#sharing-state-between-processes
 # https://pytorch.org/docs/stable/multiprocessing.html
 from multiprocessing import Manager
+
+import fiftyone.utils.coco as fouc
+import numpy as np
+import torch
+from datasets import Dataset, Split
+from torchvision.io import decode_image
+from tqdm import tqdm
 
 
 class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
@@ -67,15 +64,25 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         self.labels = manager.dict()
         self.splits = manager.dict()
 
-        for sample in tqdm(fiftyone_dataset, desc="Processing Voxel51 dataset"):
-            self.img_paths.append(sample.filepath)
-            self.ids.append(sample.id)
-            self.metadata.append(sample.metadata)
+        # Use values() to directly get the required fields from the dataset
+        img_paths = fiftyone_dataset.values("filepath")
+        ids = fiftyone_dataset.values("id")
+        metadata = fiftyone_dataset.values("metadata")
 
-            if gt_field in sample:
-                self.labels[sample.id] = sample[gt_field].detections
-            if sample.tags:
-                self.splits[sample.id] = sample.tags[0]
+        ground_truths = fiftyone_dataset.values(gt_field)
+        tags = fiftyone_dataset.values("tags")
+
+        # Process all samples with values() in place of the loop
+        for i, sample_id in tqdm(enumerate(ids), total=len(ids), desc="Generating torch dataset from Voxel51 dataset"):
+            self.img_paths.append(img_paths[i])
+            self.ids.append(sample_id)  # Store the sample ID
+            self.metadata.append(metadata[i])
+
+            # Extract labels and splits for each sample
+            if ground_truths[i]:  # Check if the ground truth exists for the sample
+                self.labels[sample_id] = ground_truths[i].detections
+            if tags[i]:  # Check if the tags exist for the sample
+                self.splits[sample_id] = tags[i][0]  # Assume first tag is split
 
     def __getitem__(self, idx):
         img_path = self.img_paths[idx]
