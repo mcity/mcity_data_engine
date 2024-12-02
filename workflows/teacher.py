@@ -218,42 +218,43 @@ def transform_batch(examples, image_processor, return_pixel_mask=False):
     return result
 
 
-class Teacher:
-    def __init__(self, dataset, config=None, detections_path="./output/detections/"):
-        self.dataset = dataset
-        self.config = config
-        self.model_name = config["model_name"]
-        self.model_name_key = re.sub(r"[\W-]+", "_", self.model_name)
-        self.dataset_name = config["v51_dataset_name"]
+class ZeroShotInferenceCollateFn:
+    def __init__(self, hf_model_config_name, hf_processor, batch_size, object_classes, batch_classes):
+        self.hf_model_config_name = hf_model_config_name
+        self.processor = hf_processor
+        self.batch_size = batch_size
+        self.object_classes = object_classes
+        self.batch_classes = batch_classes
 
-        self.detections_root = os.path.join(
-            detections_path, self.dataset_name, self.model_name_key
-        )
-        self.categories = dataset.default_classes
-        self.id2label = {index: x for index, x in enumerate(self.categories, start=0)}
-        self.label2id = {v: k for k, v in self.id2label.items()}
+    def __call__(self, batch):
+        try:
+            images, labels = zip(*batch)
+            target_sizes = [tuple(img.shape[1:]) for img in images]
 
-    def collate_fn(self, batch):
-        """
-        Collates a batch of data into a single dictionary suitable for model input.
+            # Adjustments for final batch
+            n_images = len(images)
+            if n_images < self.batch_size:
+                zeroShotPredictor = ZeroShotPrediction()
+                self.batch_classes = zeroShotPredictor._get_batch_classes(self.hf_model_config_name, self.object_classes, n_images)                
 
-        Args:
-            batch (list of dict): A list of dictionaries where each dictionary contains
-                                  the keys "pixel_values", "labels", and optionally "pixel_mask".
+            # Apply PIL transformation for specific models
+            if self.hf_model_config_name == "OmDetTurboConfig":
+                images = [to_pil_image(image) for image in images]
 
-        Returns:
-            dict: A dictionary with the following keys:
-                - "pixel_values" (torch.Tensor): A tensor containing stacked pixel values from the batch.
-                - "labels" (list): A list of labels from the batch.
-                - "pixel_mask" (torch.Tensor, optional): A tensor containing stacked pixel masks from the batch,
-                                                         if "pixel_mask" is present in the input batch.
-        """
-        data = {}
-        data["pixel_values"] = torch.stack([x["pixel_values"] for x in batch])
-        data["labels"] = [x["labels"] for x in batch]
-        if "pixel_mask" in batch[0]:
-            data["pixel_mask"] = torch.stack([x["pixel_mask"] for x in batch])
-        return data
+            inputs = self.processor(
+                text=self.batch_classes,
+                images=images,
+                return_tensors="pt",
+                padding=True
+            )
+
+            return inputs, labels, target_sizes, self.batch_classes
+        except Exception as e:
+            print(f"Error in collate function of DataLoader: {e}")
+
+class ZeroShotTeacher:
+    def __init__(self):
+        pass
 
     def _initialize_zero_shot_processor(
         self, hf_model_config, model_name, batch_size, object_classes, device
@@ -313,7 +314,7 @@ class Teacher:
 
         return processor, batch_classes, tokenized_text, batch_tasks
 
-    def zero_shot_inference(
+    def zero_shot_inference_auto_batchsize(
         self,
         pytorch_dataset,
         batch_size=16,
@@ -340,7 +341,7 @@ class Teacher:
         # Run inference with maximum batch size
         while batch_size >= 1 and successful_run == False:
             try:
-                self._zero_shot_inference(
+                self.zero_shot_inference(
                     pytorch_dataset=pytorch_dataset,
                     batch_size=batch_size,
                     detection_threshold=detection_threshold,
@@ -361,7 +362,7 @@ class Teacher:
         if batch_size < 1:
             logging.error("The model failed to run with batch_size = 1.")
 
-    def _zero_shot_inference(
+    def zero_shot_inference(
         self,
         pytorch_dataset,
         batch_size=16,
@@ -650,6 +651,44 @@ class Teacher:
             )
 
             writer.close()
+
+
+class Teacher:
+    def __init__(self, dataset, config=None, detections_path="./output/detections/"):
+        self.dataset = dataset
+        self.config = config
+        self.model_name = config["model_name"]
+        self.model_name_key = re.sub(r"[\W-]+", "_", self.model_name)
+        self.dataset_name = config["v51_dataset_name"]
+
+        self.detections_root = os.path.join(
+            detections_path, self.dataset_name, self.model_name_key
+        )
+        self.categories = dataset.default_classes
+        self.id2label = {index: x for index, x in enumerate(self.categories, start=0)}
+        self.label2id = {v: k for k, v in self.id2label.items()}
+
+    def collate_fn(self, batch):
+        """
+        Collates a batch of data into a single dictionary suitable for model input.
+
+        Args:
+            batch (list of dict): A list of dictionaries where each dictionary contains
+                                  the keys "pixel_values", "labels", and optionally "pixel_mask".
+
+        Returns:
+            dict: A dictionary with the following keys:
+                - "pixel_values" (torch.Tensor): A tensor containing stacked pixel values from the batch.
+                - "labels" (list): A list of labels from the batch.
+                - "pixel_mask" (torch.Tensor, optional): A tensor containing stacked pixel masks from the batch,
+                                                         if "pixel_mask" is present in the input batch.
+        """
+        data = {}
+        data["pixel_values"] = torch.stack([x["pixel_values"] for x in batch])
+        data["labels"] = [x["labels"] for x in batch]
+        if "pixel_mask" in batch[0]:
+            data["pixel_mask"] = torch.stack([x["pixel_mask"] for x in batch])
+        return data
 
     def train(self):
         pytorch_dataset = FiftyOneTorchDatasetCOCO(self.dataset)
