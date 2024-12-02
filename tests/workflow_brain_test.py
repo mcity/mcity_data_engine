@@ -12,7 +12,7 @@ from utils.dataset_loader import load_dataset_info
 def dataset_v51():
     """Fixture to load a FiftyOne dataset from the hub."""
     dataset_name_hub = "dbogdollumich/mcity_fisheye_v51"
-    dataset_name = "mcity_fisheye_v51_pytest"
+    dataset_name = "mcity_fisheye_v51_brain_test"
     try:
         dataset = load_from_hub(
             repo_id=dataset_name_hub, max_samples=2, name=dataset_name
