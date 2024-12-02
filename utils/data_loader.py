@@ -95,27 +95,27 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         area = []
         iscrowd = []
 
-        if detections:
-            for det in detections:
-                category_id = self.labels_map_rev[det.label]
-                coco_obj = fouc.COCOObject.from_label(
-                    det,
-                    metadata,
-                    category_id=category_id,
-                )
-                x, y, w, h = coco_obj.bbox
-                boxes.append([x, y, w, h])
-                labels.append(coco_obj.category_id)
-                area.append(coco_obj.area)
-                iscrowd.append(coco_obj.iscrowd)
+        for det in detections:
+            category_id = self.labels_map_rev[det.label]
+            coco_obj = fouc.COCOObject.from_label(
+                det,
+                metadata,
+                category_id=category_id,
+            )
+            x, y, w, h = coco_obj.bbox
+            boxes.append([x, y, w, h])
+            labels.append(coco_obj.category_id)
+            area.append(coco_obj.area)
+            iscrowd.append(coco_obj.iscrowd)
 
-        target = {}
-        target["bbox"] = torch.as_tensor(boxes, dtype=torch.float32)
-        target["category_id"] = torch.as_tensor(labels, dtype=torch.int64)
-        target["image_id"] = img_id
-        target["area"] = torch.as_tensor(area, dtype=torch.float32)
-        target["iscrowd"] = torch.as_tensor(iscrowd, dtype=torch.int64)
-        if self.transforms is not None:
+        target = {
+            "bbox": torch.as_tensor(boxes, dtype=torch.float32),
+            "category_id": torch.as_tensor(labels, dtype=torch.int64),
+            "image_id": img_id,
+            "area": torch.as_tensor(area, dtype=torch.float32),
+            "iscrowd": torch.as_tensor(iscrowd, dtype=torch.int64)
+        }
+        if self.transforms:
             img = self.transforms(img)
         return img, target
 
