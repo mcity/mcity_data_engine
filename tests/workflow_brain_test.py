@@ -8,6 +8,7 @@ from main import workflow_brain
 from utils.dataset_loader import load_dataset_info
 
 
+# Test might be too slow for GitHub Actions CI
 @pytest.fixture
 def dataset_v51():
     """Fixture to load a FiftyOne dataset from the hub."""
@@ -15,7 +16,7 @@ def dataset_v51():
     dataset_name = "mcity_fisheye_v51_brain_test"
     try:
         dataset = load_from_hub(
-            repo_id=dataset_name_hub, max_samples=4, name=dataset_name
+            repo_id=dataset_name_hub, max_samples=50, name=dataset_name
         )
     except:
         dataset = fo.load_dataset(dataset_name)
