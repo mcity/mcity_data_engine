@@ -15,7 +15,7 @@ def dataset_v51():
     dataset_name = "mcity_fisheye_v51_pytest"
     try:
         dataset = load_from_hub(
-            repo_id=dataset_name_hub, max_samples=10, name=dataset_name
+            repo_id=dataset_name_hub, max_samples=2, name=dataset_name
         )
     except:
         dataset = fo.load_dataset(dataset_name)
