@@ -17,19 +17,14 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 from torchvision.transforms.functional import to_pil_image
 from tqdm import tqdm
-from transformers import (
-    AutoConfig,
-    AutoModelForObjectDetection,
-    AutoModelForZeroShotObjectDetection,
-    AutoProcessor,
-    BatchEncoding,
-    EarlyStoppingCallback,
-    Trainer,
-    TrainingArguments,
-)
+from transformers import (AutoConfig, AutoModelForObjectDetection,
+                          AutoModelForZeroShotObjectDetection, AutoProcessor,
+                          BatchEncoding, EarlyStoppingCallback, Trainer,
+                          TrainingArguments)
 from transformers.models.owlv2.processing_owlv2 import Owlv2Processor
 from transformers.utils.generic import is_torch_device
-from transformers.utils.import_utils import is_torch_available, requires_backends
+from transformers.utils.import_utils import (is_torch_available,
+                                             requires_backends)
 
 from config.config import NUM_WORKERS
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
@@ -604,7 +599,7 @@ class Teacher:
                             box_width = (box[2].item() - box[0].item()) / img_width
                             box_height = (box[3].item() - box[1].item()) / img_height
 
-                        detection = fo.Detection(
+                        detection = fo.Detection(   # BUG Creates empty detections if GroundingDinoConfig was not successful
                             label=label,
                             bounding_box=[
                                 top_left_x,
