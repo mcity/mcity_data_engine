@@ -1,0 +1,315 @@
+import base64
+import datetime
+import json
+import os
+import re
+import shutil
+import time
+
+import boto3
+from tqdm import tqdm
+from dotenv import load_dotenv
+
+
+
+load_dotenv()
+class AwsDownloader:
+
+    def __init__(
+        self,
+        name: str,
+        start_date: datetime.datetime,
+        end_date: datetime.datetime,
+        sample_rate_hz: float,
+        source: str = "mcity_gridsmart",
+        storage_target_root: str = ".",
+        test_run: bool = False,
+        delete_old_data: bool = False,
+    ):
+        self.start_date = start_date
+        self.end_date = end_date
+        self.sample_rate_hz = sample_rate_hz
+        self.source = source
+        self.storage_target_root = storage_target_root
+        self.test_run = test_run
+        self.delete_old_data = delete_old_data
+        self.name = name
+        self.file_names= []
+
+        self.log = {}
+
+        # Fill log
+        self.log["source"] = source
+        self.log["sample_rate_hz"] = sample_rate_hz
+        self.log["storage_target_root"] = storage_target_root
+        self.log["selection_start_date"] = start_date.strftime("%Y-%m-%d")
+        self.log["selection_end_date"] = end_date.strftime("%Y-%m-%d")
+        self.log["delete_old_data"] = delete_old_data
+        self.log["test_run"] = test_run
+
+        # Setup storage folders
+        self.data_target = os.path.join(storage_target_root, "data")
+        os.makedirs(self.data_target, exist_ok=True)
+
+        self.log_target = os.path.join(storage_target_root, "logs")
+        os.makedirs(self.log_target, exist_ok=True)
+
+        self.s3 = boto3.client(
+            "s3",
+            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID", None),
+            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", None),
+            region_name='us-east-1'
+
+        )
+
+
+    def get_list(self):
+        try:
+            cameras_dict = self._mcity_init_cameras()
+            self._mcity_process_aws_buckets(cameras_dict)
+            self.file_names = self._mcity_select_data(cameras_dict)
+
+            targets =[]
+            with tqdm(desc="Downloading data", total=1) as pbar:
+                for camera in cameras_dict:
+                    for aws_source in cameras_dict[camera]["aws-sources"]:
+                        bucket = aws_source.split("/", 1)[0]
+                        for date in cameras_dict[camera]["aws-sources"][aws_source]:
+                            for file in cameras_dict[camera]["aws-sources"][aws_source][date]:
+                                time_start = time.time()
+
+                                # AWS S3 Download
+                                file_name = os.path.basename(file)
+                                key = cameras_dict[camera]["aws-sources"][aws_source][date][file_name]["key"]
+                                target = os.path.join(self.data_target, file_name)
+                                targets.append(target)
+                                # self.s3.download_file(bucket, key, target)
+                                break
+            
+            return targets
+
+        except Exception as e:
+            print(f"Error in mcity_gridsmart_loader: {e}")
+            print("Stack trace:", exc_info=True)
+            return
+        finally:
+            self.log["data"] = cameras_dict
+            log_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            log_name = (log_time + "_" + self.name).replace(" ", "_").replace(
+                ":", "_"
+            ) + ".json"
+            log_file_path = os.path.join(self.log_target, log_name)
+            with open(log_file_path, "w") as json_file:
+                json.dump(self.log, json_file, indent=4)
+
+    def _mcity_init_cameras(
+        self,
+        cameras={
+            "Geddes_Huron_1",
+            "Geddes_Huron_2",
+            "Huron_Plymouth_1",
+            "Huron_Plymouth_2",
+            "Main_stadium_1",
+            "Main_stadium_2",
+            "Plymouth_Beal",
+            "Plymouth_Bishop",
+            "Plymouth_EPA",
+            "Plymouth_Georgetown",
+            "State_Ellsworth_NE",
+            "State_Ellsworth_NW",
+            "State_Ellsworth_SE",
+            "State_Ellsworth_SW",
+            "Fuller_Fuller_CT",
+            "Fuller_Glazier_1",
+            "Fuller_Glazier_2",
+            "Fuller_Glen",
+            "Dexter_Maple_1",
+            "Dexter_Maple_2",
+            "Hubbard_Huron_1",
+            "Hubbard_Huron_2",
+            "Maple_Miller_1",
+            "Maple_Miller_2",
+        },
+    ):
+
+        cameras_dict = {camera.lower(): {} for camera in cameras}
+        for id, camera in enumerate(cameras_dict):
+            cameras_dict[camera]["id"] = id
+            cameras_dict[camera]["aws-sources"] = {}
+
+        print(f"Processed {len(cameras_dict)} cameras")
+        return cameras_dict
+
+    def _mcity_process_aws_buckets(
+        self,
+        cameras_dict,
+        aws_sources={
+            "sip-sensor-data": [""],
+            "sip-sensor-data2": ["wheeler1/", "wheeler2/"],
+        },
+    ):
+        for bucket in tqdm(aws_sources, desc="Processing AWS sources"):
+            for folder in aws_sources[bucket]:
+                # Get and pre-process AWS data
+                result = self.s3.list_objects_v2(
+                    Bucket=bucket, Prefix=folder, Delimiter="/"
+                )
+                folders = self._process_aws_result(result)
+
+                # Align folder names with camera names
+                folders_aligned = [
+                    re.sub(r"(?<!_)(\d)", r"_\1", folder.lower().rstrip("/"))
+                    for folder in folders
+                ]  # Align varying AWS folder names with camera names
+                folders_aligned = [
+                    folder.replace("fullerct", "fuller_ct")
+                    for folder in folders_aligned
+                ]  # Replace "fullerct" with "fuller_ct" to align with camera names
+                folders_aligned = [
+                    folder.replace("fullser", "fuller") for folder in folders_aligned
+                ]  # Fix "fullser" typo in AWS
+
+                # Check cameras for AWS sources
+                if folders:
+                    for camera_name in cameras_dict:
+                        for folder_name, folder_name_aligned in zip(
+                            folders, folders_aligned
+                        ):
+                            if (
+                                camera_name in folder_name_aligned
+                                and "gs_" in folder_name_aligned
+                            ):  # gs_ is the prefix used in AWS
+                                aws_source = f"{bucket}/{folder_name}"
+                                if (
+                                    aws_source
+                                    not in cameras_dict[camera_name]["aws-sources"]
+                                ):
+                                    cameras_dict[camera_name]["aws-sources"][aws_source] = {}
+                else:
+                    print(
+                        f"AWS did not return a list of folders for {bucket}/{folder}"
+                    )
+
+    def _mcity_select_data(self, cameras_dict):
+        n_cameras = 0
+        n_aws_sources = 0
+        n_files_to_download = 0
+        download_size_bytes = 0
+        for camera in tqdm(cameras_dict, desc="Looking for data entries in range"):
+            n_cameras += 1
+            for aws_source in cameras_dict[camera]["aws-sources"]:
+                file_downloaded_test = False
+                n_aws_sources += 1
+                bucket = aws_source.split("/")[0]
+                prefix_camera = "/".join(aws_source.split("/")[1:])
+                result = self.s3.list_objects_v2(
+                    Bucket=bucket, Prefix=prefix_camera, Delimiter="/"
+                )
+                # Each folder represents a day
+                folders_day = self._process_aws_result(result)
+                for folder_day in folders_day:
+                    date = folder_day.split("/")[-2]
+                    if self.test_run:
+                        # Choose a sample irrespective of the data range to get data from all AWS sources
+                        in_range = True
+                    else:
+                        # Only collect data within the date range
+                        timestamp = datetime.datetime.strptime(date, "%Y-%m-%d")
+                        in_range = self.start_date <= timestamp <= self.end_date
+
+                    if in_range:
+                        cameras_dict[camera]["aws-sources"][aws_source][date] = {}
+                        result = self.s3.list_objects_v2(
+                            Bucket=bucket, Prefix=folder_day, Delimiter="/"
+                        )
+                        # Each folder represents an hour
+                        folders_hour = self._process_aws_result(result)
+                        for folder_hour in folders_hour:
+                            result = self.s3.list_objects_v2(
+                                Bucket=bucket, Prefix=folder_hour, Delimiter="/"
+                            )
+                            files = result["Contents"]
+                            for file in files:
+                                n_files_to_download += 1
+                                download_size_bytes += file["Size"]
+                                file_name = os.path.basename(file["Key"])
+                                cameras_dict[camera]["aws-sources"][aws_source][date][
+                                    file_name
+                                ] = {}
+                                cameras_dict[camera]["aws-sources"][aws_source][date][
+                                    file_name
+                                ]["key"] = file["Key"]
+                                self.file_names.append(file["Key"])
+                                cameras_dict[camera]["aws-sources"][aws_source][date][
+                                    file_name
+                                ]["size"] = file["Size"]
+                                cameras_dict[camera]["aws-sources"][aws_source][date][
+                                    file_name
+                                ]["date"] = file["LastModified"].strftime(
+                                    "%Y-%m-%d %H:%M:%S"
+                                )
+                                if self.test_run:
+                                    file_downloaded_test = True
+                                    print(f"{aws_source} : {file_name}")
+                                    break  # escape for file in files
+                            if self.test_run and file_downloaded_test:
+                                break  # escape for folder_hour in folders_hour
+                        if self.test_run and file_downloaded_test:
+                            break  # escape for folder_day in folders_day
+
+        print(f"Found {n_cameras} cameras")
+        print(f"Found {n_aws_sources} AWS sources")
+        print(f"Found {n_files_to_download} files to download")
+        self.log["n_files_to_download"] = n_files_to_download
+        self.log["download_size_tb"] = download_size_bytes / (1024**4)
+        return self.file_names
+
+    def _mcity_download_data(self, cameras_dict, n_files_to_download, passed_checks):
+        mb_per_s_list = []
+
+        if passed_checks:
+            download_successful = True
+
+            # if self.delete_old_data:
+            #     try:
+            #         shutil.rmtree(self.data_target)
+            #     except:
+            #         pass
+            #     os.makedirs(self.data_target)
+
+            step = 0
+            download_started = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.log["download_started"] = download_started
+            with tqdm(desc="Downloading data", total=n_files_to_download) as pbar:
+                for camera in cameras_dict:
+                    for aws_source in cameras_dict[camera]["aws-sources"]:
+                        bucket = aws_source.split("/", 1)[0]
+                        for date in cameras_dict[camera]["aws-sources"][aws_source]:
+                            for file in cameras_dict[camera]["aws-sources"][aws_source][date]:
+                                time_start = time.time()
+
+                                # AWS S3 Download
+                                file_name = os.path.basename(file)
+                                key = cameras_dict[camera]["aws-sources"][aws_source][date][file_name]["key"]
+                                target = os.path.join(self.data_target, file_name)
+                                self.s3.download_file(bucket, key, target)
+
+                          
+            download_ended = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.log["download_ended"] = download_ended
+
+        else:
+            download_successful = False
+            print("Safety checks failed. Not downloading data")
+
+        return download_successful
+
+
+
+    def _process_aws_result(self, result):
+        # Get list of folders from AWS response
+        if "CommonPrefixes" in result:
+            folders = [prefix["Prefix"] for prefix in result["CommonPrefixes"]]
+            return folders
+        else:
+            return None
