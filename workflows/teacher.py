@@ -378,7 +378,7 @@ class ZeroShotPrediction:
             logging.info(f"Process ID: {os.getpid()}, Run ID: {run_id}, Device: {device}, Model: {model_name}")        
 
             # Load the model
-            print(f"Loading model {model_name}")
+            logging.info(f"Loading model {model_name}")
             processor = AutoProcessor.from_pretrained(model_name)
             model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name)
             model = model.to(device)
@@ -408,7 +408,7 @@ class ZeroShotPrediction:
             writer = SummaryWriter(log_dir=log_directory)
 
             # Inference Loop
-            print("Starting inference")
+            logging.info("Starting inference")
             n_processed_images = 0
             for inputs, labels, target_sizes, batch_classes in dataloader:
                 time_start = time.time()
