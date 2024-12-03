@@ -50,18 +50,18 @@ WORKFLOWS = {
             "Stfpm",
             "Uflow",
             # "WinClip",    # Requires language input
-            # "Dfkde",  # Has no pixel metrics
+            # "Dfkde",      # Has no pixel metrics
             # "Ganomaly",   # Has no pixel metrics
             # "Patchcore",  # Ineffiecient algorithm, cannot load whole dataset
         ],
         "anomalib_eval_metrics": [  # Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/metrics/index.html
             "AUPR",
-            # "AUPRO",
             "AUROC",
+            "F1Max",
+            # "AUPRO",      # Focus on standard metrics, computation of others can be expensive
             # "AnomalyScoreDistribution",
             # "BinaryPrecisionRecallCurve",
             # "F1AdaptiveThreshold",
-            "F1Max",
             # "F1Score",
             # "ManualThreshold",
             # "MinMax",
@@ -91,20 +91,66 @@ WORKFLOWS = {
         ],
     },
     "zero_shot_teacher": {
-        "hf_models_zeroshot_objectdetection": [
-            "IDEA-Research/grounding-dino-tiny",
-            "IDEA-Research/grounding-dino-base",
-            # "google/owlvit-base-patch16",
-            # "google/owlvit-base-patch32",
-            "google/owlvit-large-patch14",
-            "google/owlv2-base-patch16",
-            "google/owlv2-base-patch16-ensemble",
-            "google/owlv2-base-patch16-finetuned",
-            "google/owlv2-large-patch14",
-            "google/owlv2-large-patch14-ensemble",
-            "google/owlv2-large-patch14-finetuned",
-            "omlab/omdet-turbo-swin-tiny-hf",
-        ]
+         "hf_models_zeroshot_objectdetection": {
+             # batch_size_max: Will be reduced (//2) automatically if CUDA OOM errors occur
+             # dataset_chunks: Number of chunks to split the dataset into for parallel processing (for slow models)
+            "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 64, "n_dataset_chunks": 1},
+            "IDEA-Research/grounding-dino-tiny": {"batch_size": 4, "n_dataset_chunks": 1},
+            "IDEA-Research/grounding-dino-base": {"batch_size": 4, "n_dataset_chunks": 1},
+            "google/owlvit-base-patch16": {"batch_size": 16, "n_dataset_chunks": 1},
+            "google/owlvit-base-patch32": {"batch_size": 16, "n_dataset_chunks": 1},
+            "google/owlvit-large-patch14": {"batch_size": 8, "n_dataset_chunks": 1},
+            "google/owlv2-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},
+            "google/owlv2-base-patch16-ensemble": {"batch_size": 8, "n_dataset_chunks": 1},
+            "google/owlv2-base-patch16-finetuned": {"batch_size": 8, "n_dataset_chunks": 1},
+            "google/owlv2-large-patch14": {"batch_size": 2, "n_dataset_chunks": 1},
+            "google/owlv2-large-patch14-ensemble": {"batch_size": 2, "n_dataset_chunks": 1},
+            "google/owlv2-large-patch14-finetuned": {"batch_size": 2, "n_dataset_chunks": 1},
+            # TODO Add YOLO-World support https://docs.ultralytics.com/models/yolo-world/#overview
+    },
+    "detection_threshold": 0.2,
+    "object_classes": [
+                "skater",
+                "child",
+                "bicycle",
+                "bicyclist",
+                "cyclist",
+                "bike",
+                "rider",
+                "motorcycle",
+                "motorcyclist",
+                "pedestrian",
+                "person",
+                "walker",
+                "jogger",
+                "runner",
+                "skateboarder",
+                "scooter",
+                "vehicle",
+                "car",
+                "bus",
+                "truck",
+                "taxi",
+                "van",
+                "pickup truck",
+                "trailer",
+                "emergency vehicle",
+                "delivery driver"
+            ],
+            #"hf_models_zeroshot_objectdetection": [
+            #    "IDEA-Research/grounding-dino-tiny",
+            #    "IDEA-Research/grounding-dino-base",
+            #    # "google/owlvit-base-patch16",
+            #    # "google/owlvit-base-patch32",
+            #    "google/owlvit-large-patch14",
+            #    "google/owlv2-base-patch16",
+            #    "google/owlv2-base-patch16-ensemble",
+            #    "google/owlv2-base-patch16-finetuned",
+            #    "google/owlv2-large-patch14",
+            #    "google/owlv2-large-patch14-ensemble",
+            #    "google/owlv2-large-patch14-finetuned",
+            #    "omlab/omdet-turbo-swin-tiny-hf",
+            #    ]
     },
     "ensemble_exploration": {},
 }

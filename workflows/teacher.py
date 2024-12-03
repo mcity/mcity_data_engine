@@ -228,6 +228,20 @@ class ZeroShotInferenceCollateFn:
         self.object_classes = object_classes
         self.batch_classes = batch_classes
 
+    def _get_batch_classes(self, batch_size):
+        # FIXME Duplicate from ZeroShotTeacher
+        if self.hf_model_config_name == "GroundingDinoConfig":
+                classes = " . ".join(self.object_classes) + " . "
+                batch_classes = [classes] * batch_size
+        elif self.hf_model_config_name == "OmDetTurboConfig":
+            batch_classes = [self.object_classes] * batch_size
+        elif self.hf_model_config_name == "Owlv2Config" or self.hf_model_config_name == "OwlViTConfig":
+            batch_classes = self.object_classes * batch_size
+        else:
+            logging.error("Invalid model name")
+        
+        return batch_classes
+
     def __call__(self, batch):
         try:
             images, labels = zip(*batch)
@@ -236,8 +250,7 @@ class ZeroShotInferenceCollateFn:
             # Adjustments for final batch
             n_images = len(images)
             if n_images < self.batch_size:
-                zeroShotPredictor = ZeroShotPrediction()
-                self.batch_classes = zeroShotPredictor._get_batch_classes(self.hf_model_config_name, self.object_classes, n_images)                
+                self.batch_classes = self._get_batch_classes(n_images)                
 
             # Apply PIL transformation for specific models
             if self.hf_model_config_name == "OmDetTurboConfig":
@@ -254,7 +267,69 @@ class ZeroShotInferenceCollateFn:
         except Exception as e:
             logging.error(f"Error in collate function of DataLoader: {e}")
 
-class ZeroShotPrediction:
+class ZeroShotTeacher:
+    def __init__(self, dataset_v51: fo.Dataset, dataset_torch: torch.utils.data.Dataset, dataset_info, detections_path="./output/detections/"):
+        self.dataset_v51 = dataset_v51
+        self.dataset_torch = dataset_torch
+        self.dataset_info = dataset_info
+        
+
+        self.detections_root = os.path.join(
+            detections_path, self.dataset_name, self.model_name_key
+        )
+
+    def zero_shot_inference_launch(self, auto_batch_size = True):
+        if auto_batch_size == False:
+            self.zero_shot_inference(self.batch_size)
+        else:
+            batch_size = self.batch_size
+            successful_run = False
+            # Run inference with maximum batch size
+            while batch_size >= 1 and successful_run == False:
+                try:
+                    self.zero_shot_inference(batch_size=batch_size)
+                    successful_run = True
+
+                except RuntimeError as e:
+                    if "CUDA out of memory" in str(e):
+                        batch_size //= 2
+                        logging.info("Batch size reduced to " + str(batch_size))
+                    else:
+                        logging.error(f"Runtime error: {e}")
+                        raise e
+                finally:
+                    torch.cuda.empty_cache()
+
+            if batch_size < 1:
+                logging.error("The model failed to run with batch_size = 1.")
+
+    def zero_shot_inference(self, batch_size):
+
+        # Voxel51 keys for predictions and evaluation results
+        pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
+        eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
+
+        # Read labels from file if already saved
+        if os.path.isdir(self.detections_root):
+            try:
+                temp_dataset = fo.Dataset.from_dir(
+                    dataset_dir=self.detections_root,
+                    dataset_type=fo.types.COCODetectionDataset,
+                    name="temp_dataset",
+                    data_path="data.json",
+                )
+
+                # Copy all detections from stored dataset into our dataset
+                restored_detections = temp_dataset.values("detections.detections")
+                self.dataset.set_values(f"{pred_key}.detections", restored_detections)
+            except Exception as e:
+                logging.error(
+                    f"Data in {self.detections_root} could not be loaded. Error: {e}"
+                )
+            finally:
+                fo.delete_dataset("temp_dataset")
+
+
     # Helper functions
     def _get_gpu_compute_modes(self):
         """Gets the compute modes of all GPUs."""
@@ -562,7 +637,7 @@ class ZeroShotPrediction:
         finally:
             return processing_successful
 
-class ZeroShotTeacher:
+class ZeroShotTeacher_Legacy:
     def __init__(self):
         pass
 

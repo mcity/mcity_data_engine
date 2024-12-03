@@ -20,12 +20,13 @@ from utils.dataset_loader import (load_dataset_info, load_fisheye_8k,
                                   load_mcity_fisheye_3_months,
                                   load_mcity_fisheye_2000)
 from utils.logging import configure_logging
+from utils.mp_distribution import ZeroShotDistributer
 from utils.wandb_helper import launch_to_queue_terminal
 from workflows.ano_dec import Anodec
 from workflows.aws_download import AwsDownloader
 from workflows.brain import Brain
 from workflows.ensemble_exploration import EnsembleExploration
-from workflows.teacher import Teacher
+from workflows.teacher import Teacher, ZeroShotTeacher
 
 
 def signal_handler(sig, frame):
@@ -56,6 +57,20 @@ def workflow_brain(dataset, dataset_info, MODEL_NAME):
     v51_keys["uniqueness"] = v51_brain.uniqueness_key
 
     return v51_keys
+
+def workflow_zero_shot_teacher(dataset, dataset_info):
+    # Parallel multi-GPU inference with zero-shot object detector teacher models
+    # Also runs on single GPU
+
+    # Get config for selected zero-shot models
+    config = WORKFLOWS["zero_shot_teacher"]
+
+    # Convert V51 dataset to torch dataset
+    pytorch_dataset = FiftyOneTorchDatasetCOCO(dataset)
+    teacher = ZeroShotTeacher(dataset_v51 = dataset, dataset_torch=pytorch_dataset, dataset_info=dataset_info)
+    distributor = ZeroShotDistributer(config=config, n_samples=len(pytorch_dataset), dataset_info=dataset_info, teacher=teacher)
+    distributor.distribute_and_run()
+    
 
 def main(args):
     time_start = time.time()
@@ -285,55 +300,8 @@ def main(args):
 
     if "zero_shot_teacher" in SELECTED_WORKFLOW:
         workflows_started += 1
-        zero_shot_teacher_models = WORKFLOWS["zero_shot_teacher"][
-            "hf_models_zeroshot_objectdetection"
-        ]
-        wandb_project = "Data Engine Teacher"
-        config_file_path = "wandb_runs/teacher_zero_shot_config.json"
-        with open(config_file_path, "r") as file:
-            config = json.load(file)
+        workflow_zero_shot_teacher(dataset, dataset_info)
 
-        pytorch_dataset = FiftyOneTorchDatasetCOCO(dataset)
-        for MODEL_NAME in (pbar := tqdm(zero_shot_teacher_models, desc="Zero Shot")):
-            run = None
-            try:
-                pbar.set_description("Evaluating Zero Shot Teacher model " + MODEL_NAME)
-                config["overrides"]["run_config"]["model_name"] = MODEL_NAME
-                config["overrides"]["run_config"]["v51_dataset_name"] = selected_dataset
-                if args.queue == None:
-
-                    run = wandb.init(
-                        name=MODEL_NAME,
-                        allow_val_change=True,
-                        sync_tensorboard=True,
-                        group="Teacher",
-                        job_type="eval",
-                        config=config,
-                        project=wandb_project,
-                    )
-                    wandb_config = wandb.config["overrides"]["run_config"]
-
-                    run.tags += (wandb_config["v51_dataset_name"], "local", "zero-shot")
-
-                    teacher = Teacher(dataset=dataset, config=wandb_config)
-                    batch_size = wandb_config["batch_size"]
-                    detection_threshold = wandb_config["detection_threshold"]
-                    object_classes = wandb_config["object_classes"]
-                    if len(object_classes) == 0:
-                        object_classes = None
-                    teacher.zero_shot_inference(
-                        pytorch_dataset=pytorch_dataset,
-                        batch_size=batch_size,
-                        detection_threshold=detection_threshold,
-                        object_classes=object_classes,
-                    )
-                    run.finish(exit_code=0)
-            except Exception as e:
-                logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
-                logging.error("Stack trace:", exc_info=True)
-                if run:
-                    run.finish(exit_code=1)
-                continue
     if "ensemble_exploration" in SELECTED_WORKFLOW:
         workflows_started += 1
         run = None
