@@ -75,19 +75,18 @@ class ZeroShotDistributer(Distributer):
         self.teacher = teacher
 
     def distribute_and_run(self, post_processing_factor = 2):
+        dataset_name = self.dataset_info["name"]
         models_dict = self.config["hf_models_zeroshot_objectdetection"]
 
         runs = []
         run_id = 0
 
-        dataset_name = self.dataset_info["name"]
-
         for model_name in models_dict:
             batch_size = models_dict[model_name]["batch_size"]
-            n_chunks = models_dict[model_name]["dataset_chunks"]
+            n_chunks = models_dict[model_name]["n_dataset_chunks"]
             
             # Calculate the base split size and leftover samples
-            chunk_size, leftover_samples = divmod(n_samples, n_chunks)
+            chunk_size, leftover_samples = divmod(self.n_samples, n_chunks)
             
             chunk_index_start = 0
             chunk_index_end = None
