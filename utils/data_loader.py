@@ -1,11 +1,10 @@
 # https://docs.python.org/2/library/multiprocessing.html#sharing-state-between-processes
 # https://pytorch.org/docs/stable/multiprocessing.html
-from multiprocessing import Manager
-
 import fiftyone.utils.coco as fouc
 import numpy as np
 import torch
 from datasets import Dataset, Split
+from torch.multiprocessing import Manager
 from torchvision.io import decode_image
 from tqdm import tqdm
 

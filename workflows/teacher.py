@@ -1,8 +1,8 @@
 import datetime
 import logging
 import os
+import queue
 import re
-import subprocess
 import time
 from difflib import get_close_matches
 from functools import partial
@@ -21,154 +21,13 @@ from torchvision.transforms.functional import to_pil_image
 from tqdm import tqdm
 from transformers import (AutoConfig, AutoModelForObjectDetection,
                           AutoModelForZeroShotObjectDetection, AutoProcessor,
-                          BatchEncoding, EarlyStoppingCallback, Trainer,
-                          TrainingArguments)
-from transformers.models.owlv2.processing_owlv2 import Owlv2Processor
+                          EarlyStoppingCallback, Trainer, TrainingArguments)
 from transformers.utils.generic import is_torch_device
 from transformers.utils.import_utils import (is_torch_available,
                                              requires_backends)
 
 from config.config import NUM_WORKERS
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
-
-
-class CustomBatchEncoding(BatchEncoding):
-    """
-    Improved HF batch encoding with non_blocking=True option.
-    https://github.com/huggingface/transformers/blob/main/src/transformers/tokenization_utils_base.py#L192
-    """
-
-    def to(
-        self, device: Union[str, "torch.device"], non_blocking: bool = False
-    ) -> "CustomBatchEncoding":
-        """
-        Send all values to device by calling `v.to(device, non_blocking=non_blocking)` (PyTorch only).
-
-        Args:
-            device (`str` or `torch.device`): The device to put the tensors on.
-            non_blocking (`bool`): Whether to perform the copy asynchronously with respect to the host.
-
-        Returns:
-            [`CustomBatchEncoding`]: The same instance after modification.
-        """
-        requires_backends(self, ["torch"])
-        import torch
-
-        if (
-            isinstance(device, str)
-            or is_torch_device(device)
-            or isinstance(device, int)
-        ):
-            self.data = {
-                k: v.to(device=device, non_blocking=non_blocking)
-                for k, v in self.data.items()
-                if isinstance(v, torch.Tensor)
-            }
-        else:
-            logging.warning(
-                f"Attempting to cast a CustomBatchEncoding to type {str(device)}. This is not supported."
-            )
-        return self
-
-
-class CustomOwlv2Processor(Owlv2Processor):
-    """
-    Improved HF processor using CustomBatchEncoding encoding.
-    """
-
-    def __call__(
-        self,
-        text=None,
-        images=None,
-        query_images=None,
-        padding="max_length",
-        return_tensors="np",
-        **kwargs,
-    ):
-        if text is None and query_images is None and images is None:
-            raise ValueError(
-                "You have to specify at least one text or query image or image. All three cannot be none."
-            )
-
-        if text is not None:
-            if isinstance(text, str) or (
-                isinstance(text, List) and not isinstance(text[0], List)
-            ):
-                encodings = [
-                    self.tokenizer(
-                        text, padding=padding, return_tensors=return_tensors, **kwargs
-                    )
-                ]
-
-            elif isinstance(text, List) and isinstance(text[0], List):
-                encodings = []
-
-                # Maximum number of queries across batch
-                max_num_queries = max([len(t) for t in text])
-
-                # Pad all batch samples to max number of text queries
-                for t in text:
-                    if len(t) != max_num_queries:
-                        t = t + [" "] * (max_num_queries - len(t))
-
-                    encoding = self.tokenizer(
-                        t, padding=padding, return_tensors=return_tensors, **kwargs
-                    )
-                    encodings.append(encoding)
-            else:
-                raise TypeError(
-                    "Input text should be a string, a list of strings or a nested list of strings"
-                )
-
-            if return_tensors == "np":
-                input_ids = np.concatenate(
-                    [encoding["input_ids"] for encoding in encodings], axis=0
-                )
-                attention_mask = np.concatenate(
-                    [encoding["attention_mask"] for encoding in encodings], axis=0
-                )
-
-            elif return_tensors == "pt" and is_torch_available():
-                import torch
-
-                input_ids = torch.cat(
-                    [encoding["input_ids"] for encoding in encodings], dim=0
-                )
-                attention_mask = torch.cat(
-                    [encoding["attention_mask"] for encoding in encodings], dim=0
-                )
-
-            else:
-                raise ValueError("Target return tensor type could not be returned")
-
-            encoding = CustomBatchEncoding()
-            encoding["input_ids"] = input_ids
-            encoding["attention_mask"] = attention_mask
-
-        if query_images is not None:
-            encoding = CustomBatchEncoding()
-            query_pixel_values = self.image_processor(
-                query_images, return_tensors=return_tensors, **kwargs
-            ).pixel_values
-            encoding["query_pixel_values"] = query_pixel_values
-
-        if images is not None:
-            image_features = self.image_processor(
-                images, return_tensors=return_tensors, **kwargs
-            )
-
-        if text is not None and images is not None:
-            encoding["pixel_values"] = image_features.pixel_values
-            return encoding
-        elif query_images is not None and images is not None:
-            encoding["pixel_values"] = image_features.pixel_values
-            return encoding
-        elif text is not None or query_images is not None:
-            return encoding
-        else:
-            return CustomBatchEncoding(
-                data=dict(**image_features), tensor_type=return_tensors
-            )
 
 
 def transform_batch(examples, image_processor, return_pixel_mask=False):
@@ -228,20 +87,6 @@ class ZeroShotInferenceCollateFn:
         self.object_classes = object_classes
         self.batch_classes = batch_classes
 
-    def _get_batch_classes(self, batch_size):
-        # FIXME Duplicate from ZeroShotTeacher
-        if self.hf_model_config_name == "GroundingDinoConfig":
-                classes = " . ".join(self.object_classes) + " . "
-                batch_classes = [classes] * batch_size
-        elif self.hf_model_config_name == "OmDetTurboConfig":
-            batch_classes = [self.object_classes] * batch_size
-        elif self.hf_model_config_name == "Owlv2Config" or self.hf_model_config_name == "OwlViTConfig":
-            batch_classes = self.object_classes * batch_size
-        else:
-            logging.error("Invalid model name")
-        
-        return batch_classes
-
     def __call__(self, batch):
         try:
             images, labels = zip(*batch)
@@ -250,7 +95,7 @@ class ZeroShotInferenceCollateFn:
             # Adjustments for final batch
             n_images = len(images)
             if n_images < self.batch_size:
-                self.batch_classes = self._get_batch_classes(n_images)                
+                self.batch_classes = ZeroShotTeacher._get_batch_classes(self.hf_model_config_name, self.object_classes, n_images)                
 
             # Apply PIL transformation for specific models
             if self.hf_model_config_name == "OmDetTurboConfig":
@@ -268,97 +113,19 @@ class ZeroShotInferenceCollateFn:
             logging.error(f"Error in collate function of DataLoader: {e}")
 
 class ZeroShotTeacher:
-    def __init__(self, dataset_v51: fo.Dataset, dataset_torch: torch.utils.data.Dataset, dataset_info, detections_path="./output/detections/"):
-        self.dataset_v51 = dataset_v51
+    def __init__(self, dataset_torch: torch.utils.data.Dataset, dataset_info, config, detections_path="./output/detections/"):
+        # Can only store objects that are pickable for multiprocessing
         self.dataset_torch = dataset_torch
         self.dataset_info = dataset_info
-        
+        self.dataset_name = dataset_info["name"]
+        self.object_classes = config["object_classes"]
+        self.detection_threshold = config["detection_threshold"]
+        self.detections_root = os.path.join(detections_path, self.dataset_name)
 
-        self.detections_root = os.path.join(
-            detections_path, self.dataset_name, self.model_name_key
-        )
+        logging.info(f"Zero-shot models will look for {self.object_classes}")
 
-    def zero_shot_inference_launch(self, auto_batch_size = True):
-        if auto_batch_size == False:
-            self.zero_shot_inference(self.batch_size)
-        else:
-            batch_size = self.batch_size
-            successful_run = False
-            # Run inference with maximum batch size
-            while batch_size >= 1 and successful_run == False:
-                try:
-                    self.zero_shot_inference(batch_size=batch_size)
-                    successful_run = True
-
-                except RuntimeError as e:
-                    if "CUDA out of memory" in str(e):
-                        batch_size //= 2
-                        logging.info("Batch size reduced to " + str(batch_size))
-                    else:
-                        logging.error(f"Runtime error: {e}")
-                        raise e
-                finally:
-                    torch.cuda.empty_cache()
-
-            if batch_size < 1:
-                logging.error("The model failed to run with batch_size = 1.")
-
-    def zero_shot_inference(self, batch_size):
-
-        # Voxel51 keys for predictions and evaluation results
-        pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
-        eval_key = re.sub(r"[\W-]+", "_", "eval_" + self.model_name)
-
-        # Read labels from file if already saved
-        if os.path.isdir(self.detections_root):
-            try:
-                temp_dataset = fo.Dataset.from_dir(
-                    dataset_dir=self.detections_root,
-                    dataset_type=fo.types.COCODetectionDataset,
-                    name="temp_dataset",
-                    data_path="data.json",
-                )
-
-                # Copy all detections from stored dataset into our dataset
-                restored_detections = temp_dataset.values("detections.detections")
-                self.dataset.set_values(f"{pred_key}.detections", restored_detections)
-            except Exception as e:
-                logging.error(
-                    f"Data in {self.detections_root} could not be loaded. Error: {e}"
-                )
-            finally:
-                fo.delete_dataset("temp_dataset")
-
-
-    # Helper functions
-    def _get_gpu_compute_modes(self):
-        """Gets the compute modes of all GPUs."""
-        try:
-            result = subprocess.run(["nvidia-smi", "--query-gpu=compute_mode", "--format=csv,noheader"], 
-                                    capture_output=True, text=True, check=True)
-            modes = result.stdout.strip().split("\n")
-            return modes
-        except subprocess.CalledProcessError as e:
-            logging.error("Error running nvidia-smi:", e)
-            return []
-
-    def _distribute_cpu_cores(self, cpu_cores, n_processes):
-        n_cores = len(cpu_cores)
-
-        chunk_size = n_cores // n_processes
-        remainder = n_cores % n_processes
-
-        cpu_cores_per_process = []
-        start = 0
-        for i in range(n_processes):
-            # Determine the end index for this chunk
-            end = start + chunk_size + (1 if i < remainder else 0)
-            cpu_cores_per_process.append(cpu_cores[start:end])
-            start = end
-
-        return cpu_cores_per_process
-
-    def _get_batch_classes(self, hf_model_config_name, object_classes, batch_size):
+    @staticmethod   # Also utilized in ZeroShotInferenceCollateFn
+    def _get_batch_classes(hf_model_config_name, object_classes, batch_size):
         if hf_model_config_name == "GroundingDinoConfig":
                 classes = " . ".join(object_classes) + " . "
                 batch_classes = [classes] * batch_size
@@ -367,14 +134,50 @@ class ZeroShotTeacher:
         elif hf_model_config_name == "Owlv2Config" or hf_model_config_name == "OwlViTConfig":
             batch_classes = object_classes * batch_size
         else:
-            logging.error("Invalid model name")
+            logging.error(f"Invalid model name: {hf_model_config_name}")
         
         return batch_classes
 
+    def exclude_stored_predictions(self, dataset_v51: fo.Dataset, config):
+        dataset_schema = dataset_v51.get_field_schema()
+        models_splits_dict = {}
+        for model_name, value in config["hf_models_zeroshot_objectdetection"].items():
+            model_name_key = re.sub(r"[\W-]+", "_", model_name)
+            pred_key = re.sub(r"[\W-]+", "_", "pred_" + model_name)
+            # Check if data already stored in V51 dataset
+            if pred_key in dataset_schema:
+                logging.info(f"Model {model_name} predictions already stored in Voxel51 dataset.")
+            # Check if data already stored on disk
+            elif os.path.isdir(os.path.join(self.detections_root, model_name_key)):
+                try:
+                    temp_dataset = fo.Dataset.from_dir(
+                        dataset_dir=self.detections_root,
+                        dataset_type=fo.types.COCODetectionDataset,
+                        name="temp_dataset",
+                        data_path="data.json",
+                    )
+
+                    # Copy all detections from stored dataset into our dataset
+                    detections = temp_dataset.values("detections.detections")
+                    dataset_v51.set_values(f"{pred_key}.detections", detections)
+                    logging.info(f"Model {model_name} predictions loaded from disk.")
+                except Exception as e:
+                    logging.error(
+                        f"Data in {self.detections_root} could not be loaded. Error: {e}"
+                    )
+                finally:
+                    fo.delete_dataset("temp_dataset")
+            # Assign model to be run             
+            else:
+                models_splits_dict[model_name] = value
+
+        print(f"Models to be run: {models_splits_dict}")
+        return models_splits_dict
+
     # Worker functions
-    def process_outputs_worker(self, dataset_name, object_classes, results_queue, inference_finished, queue_warning_threshold=5):
+    def process_outputs_worker(self, results_queue, inference_finished, queue_warning_threshold=5):
         logging.info(f"Process ID: {os.getpid()}. Results processing process started")    
-        dataset_v51 = fo.load_dataset(dataset_name)
+        dataset_v51 = fo.load_dataset(self.dataset_name)
         processing_successful = None
         while True:
             if results_queue.qsize() > queue_warning_threshold:
@@ -387,14 +190,14 @@ class ZeroShotTeacher:
             if not results_queue.empty():
                 try:
                     result = results_queue.get_nowait()
-                    processing_successful = self.process_outputs(dataset_v51, result, object_classes)
+                    processing_successful = self.process_outputs(dataset_v51, result, self.object_classes)
                 except Exception as e:
                     continue
             else:
                 continue
         return processing_successful    # Return last processing status
     
-    def gpu_worker(self, gpu_id, cpu_cores, task_queue, results_queue, dataset, object_classes, event, post_processing_finished, set_cpu_affinity=False):
+    def gpu_worker(self, gpu_id, cpu_cores, task_queue, results_queue, done_event, post_processing_finished, auto_batch_size=True, set_cpu_affinity=False):
         # Set CPU
         if set_cpu_affinity:
             # Allow only certain CPU cores
@@ -408,33 +211,52 @@ class ZeroShotTeacher:
         device = torch.device(f"cuda:{gpu_id}")
 
         # Set WandB directory
-        root_log_dir = "logs/tensorboard/teacher_zeroshot"  # FIXME
+        root_log_dir = "logs/tensorboard/teacher_zeroshot"  # FIXME Use paths from init
         
         run_successful = None
         with torch.cuda.device(gpu_id):
             while True:
                 if post_processing_finished.value and task_queue.empty():
-                    # Keep running until post-processing is done
+                    # Keep alive until post-processing is done
                     break
 
                 if task_queue.empty():
-                    # Signalize that worker is finished
-                    event.set()
+                    done_event.set()
 
                 if not task_queue.empty():
-                    # Perform task
                     try:
-                        task_metadata = task_queue.get(timeout=5)  # Timeout to prevent indefinite blocking
-                    except Exception:
+                        task_metadata = task_queue.get_nowait() # TODO Check if new approach works. Was .get(timeout=5)  # Timeout to prevent indefinite blocking
+                    except Exception as e:
                         break  # Exit if no more tasks
-                    run_successful = self.model_inference(task_metadata, device, dataset, object_classes, results_queue, root_log_dir)
+
+                    # Either perform inference with given batch size or automatically adjust batch size
+                    if auto_batch_size == False:
+                        run_successful = self.model_inference(task_metadata, device, self.dataset_torch, self.object_classes, results_queue, root_log_dir)
+                    else:
+                        successful_run = False
+                        # Run inference with maximum batch size
+                        while task_metadata["batch_size"] >= 1 and successful_run == False:
+                            try:
+                                run_successful = self.model_inference(task_metadata, device, self.dataset_torch, self.object_classes, results_queue, root_log_dir)
+                                successful_run = True
+
+                            except RuntimeError as e:
+                                if "CUDA out of memory" in str(e):
+                                    task_metadata["batch_size"] //= 2
+                                    logging.info("Batch size reduced to " + str(task_metadata["batch_size"]))
+                                else:
+                                    logging.error(f"Runtime error: {e}")
+                                    raise e
+                            finally:
+                                torch.cuda.empty_cache()
+
+                        if task_metadata["batch_size"] < 1:
+                            logging.error("The model failed to run with batch_size = 1.")
+
                     logging.info(f"Worker for GPU {gpu_id} finished run successful: {run_successful}")
-                
                 else:
                     continue
-
-        logging.info(f"Worker for GPU {gpu_id} shuts down.")
-        return run_successful
+        return run_successful   # Return last processing status
 
     # Functionality functions
     def model_inference(self, metadata: dict, device: str, dataset: torch.utils.data.Dataset, object_classes: list, results_queue: Union[queue.Queue, mp.Queue], root_log_dir: str, num_workers: int = 4, persistent_workers: bool = False, prefetch_factor: int = 4, detection_threshold: int = 0.2):
@@ -462,7 +284,7 @@ class ZeroShotTeacher:
             hf_model_config_name = type(hf_model_config).__name__
             logging.info(f"Loaded model type {hf_model_config_name}")
             
-            batch_classes = self._get_batch_classes(hf_model_config_name=hf_model_config_name, object_classes=object_classes, batch_size=batch_size)
+            batch_classes = ZeroShotTeacher._get_batch_classes(hf_model_config_name=hf_model_config_name, object_classes=object_classes, batch_size=batch_size)
 
             # Dataloader
             logging.info("Generating dataloader")
@@ -488,7 +310,7 @@ class ZeroShotTeacher:
             for inputs, labels, target_sizes, batch_classes in dataloader:
                 time_start = time.time()
                 n_images = len(labels)
-                inputs = inputs.to(device)           # TODO Add non_blocking=True after HF PR is merged: https://github.com/huggingface/transformers/pull/34883
+                inputs = inputs.to(device)  # TODO Add non_blocking=True after HF PR is merged: https://github.com/huggingface/transformers/pull/34883
 
                 with torch.amp.autocast("cuda"), torch.inference_mode():
                     outputs = model(**inputs)
@@ -511,20 +333,20 @@ class ZeroShotTeacher:
                 batches_per_second = 1 / duration
                 frames_per_second = batches_per_second * n_images
                 n_processed_images += n_images
-                writer.add_scalar(f'inference/frames_per_second', frames_per_second, n_processed_images)
+                writer.add_scalar(f'inference/frames_per_second', frames_per_second, n_processed_images)    
             
-
+            writer.close()
         except Exception as e:
-            logging.error(f"Error in Process {os.getpid()}: {e}")
-            run_successful = False
-
-        finally:
-            logging.info(f"Finished run")
-            del model
             torch.cuda.empty_cache()
-            if writer:
-                writer.close()
-            return run_successful
+            if "CUDA out of memory" in str(e):
+                logging.warning(f"Error in Process {os.getpid()}: {e}")
+                raise  # Re-raise the exception so the outer loop can handle it
+            else:
+                logging.error(f"Error in Process {os.getpid()}: {e}")
+                if writer:
+                    writer.close()
+                run_successful = False
+                return run_successful
         
     def process_outputs(self, dataset_v51, result, object_classes, detection_threshold=0.2):
         processing_successful = True
@@ -676,7 +498,7 @@ class ZeroShotTeacher_Legacy:
             ).to(device)
 
         elif type(hf_model_config).__name__ == "Owlv2Config":
-            processor = CustomOwlv2Processor.from_pretrained(model_name)
+            processor = AutoProcessor.from_pretrained(model_name)
             batch_classes = object_classes * batch_size
             tokenized_text = processor.tokenizer(
                 batch_classes, padding="max_length", return_tensors="pt"
