@@ -1,7 +1,8 @@
-from colorlog import ColoredFormatter
-import os
 import logging
+import os
 from datetime import datetime
+
+from colorlog import ColoredFormatter
 
 
 def configure_logging():
@@ -57,4 +58,5 @@ def configure_logging():
             handler,  # Log to console with colors
             logging.FileHandler(log_filename),
         ],
+        force=True
     )
