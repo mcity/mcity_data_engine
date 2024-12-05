@@ -316,6 +316,7 @@ class Brain:
         center_view = self.dataset.match(F(field) == value)
 
         if field in dataset_labels and len(center_view) > 0:
+            logging.info("No unique images.")
             pass
 
         else:
