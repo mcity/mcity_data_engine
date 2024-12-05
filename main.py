@@ -5,8 +5,13 @@ import logging
 import signal
 import sys
 import time
+import warnings
 
+IGNORE_FUTURE_WARNINGS=True
+if IGNORE_FUTURE_WARNINGS:
+    warnings.simplefilter("ignore", category=FutureWarning)
 import fiftyone as fo
+import torch.multiprocessing as mp
 import wandb
 from tqdm import tqdm
 
@@ -59,23 +64,27 @@ def workflow_brain(dataset, dataset_info, MODEL_NAME):
     return v51_keys
 
 def workflow_zero_shot_teacher(dataset, dataset_info):
-    # Parallel multi-GPU inference with zero-shot object detector teacher models
-    # Also runs on single GPU
-
-    # Get config for selected zero-shot models
+    # Zero-shot object detector teacher models from Huggingface
+    # Optimized for parallel multi-GPU inference, also supports single GPU
     config = WORKFLOWS["zero_shot_teacher"]
-
-    # Convert V51 dataset to torch dataset
-    pytorch_dataset = FiftyOneTorchDatasetCOCO(dataset)
-    teacher = ZeroShotTeacher(dataset_v51 = dataset, dataset_torch=pytorch_dataset, dataset_info=dataset_info)
-    distributor = ZeroShotDistributer(config=config, n_samples=len(pytorch_dataset), dataset_info=dataset_info, teacher=teacher)
-    distributor.distribute_and_run()
+    dataset_torch = FiftyOneTorchDatasetCOCO(dataset)
+    teacher = ZeroShotTeacher(dataset_torch=dataset_torch, dataset_info=dataset_info, config=config)
+    
+    # Check if model detections are already stored in V51 dataset or on disk
+    # TODO Think about config. Teacher already has it in init before it is processed, but does not use the hf_models. Could be more elegant.
+    models_splits_dict = teacher.exclude_stored_predictions(dataset_v51=dataset, config=config)
+    if len(models_splits_dict) > 0:
+        config["hf_models_zeroshot_objectdetection"] = models_splits_dict
+        distributor = ZeroShotDistributer(config=config, n_samples=len(dataset_torch), dataset_info=dataset_info, teacher=teacher)
+        distributor.distribute_and_run()
+    else:
+        logging.info("All teacher models already have predictions stored in the dataset.")
     
 
 def main(args):
+    configure_logging()
     time_start = time.time()
     selected_dataset = SELECTED_DATASET
-    configure_logging()
 
     if args.tags:
         wandb_tags = args.tags.split(",")
@@ -345,6 +354,7 @@ def main(args):
     # Launch V51 session
     if args.queue == None:
         dataset.save()
+        logging.info(f"Launching Voxel51 session for dataset {dataset.name}:")
         logging.info(dataset)
         fo.pprint(dataset.stats(include_media=True))
         session = fo.launch_app(
@@ -356,6 +366,9 @@ def main(args):
 
 
 if __name__ == "__main__":
+    # Set multiprocessing mode for CUDA multiprocessing
+    mp.set_start_method("spawn")
+
     parser = argparse.ArgumentParser(description="Run script locally or in W&B queue.")
     parser.add_argument(
         "--queue",
