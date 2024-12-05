@@ -74,7 +74,7 @@ class ZeroShotDistributer(Distributer):
         self.dataset_info = dataset_info
         self.teacher = teacher
 
-    def distribute_and_run(self, post_processing_factor = 2):
+    def distribute_and_run(self, post_processing_factor = 4):
         dataset_name = self.dataset_info["name"]
         models_dict = self.config["hf_models_zeroshot_objectdetection"]
 
@@ -162,6 +162,9 @@ class ZeroShotDistributer(Distributer):
             inference_processes.append(p)
             p.start()
             logging.info(f"Started inference worker {index} for GPU {gpu_id}")
+
+        # Create a worker to evaluate and store model results
+        
 
         logging.info(f"Started {len(post_processing_processes)} post-processing workers and {len(inference_processes)} GPU inference workers.")
         
