@@ -236,9 +236,7 @@ class ZeroShotTeacher:
                         task_metadata = task_queue.get(timeout=5)  # Timeout to prevent indefinite blocking
                     except Exception as e:
                         break  # Exit if no more tasks
-                    logging.info(f"GPU Memory Usage Before: {torch.cuda.memory_allocated() / 1e9} GB")
                     run_successful = self.model_inference(task_metadata, device, self.dataset_torch, self.object_classes, results_queue, self.tensorboard_root)
-                    logging.info(f"GPU Memory Usage After: {torch.cuda.memory_allocated() / 1e9} GB")
                     logging.info(f"Worker for GPU {gpu_id} finished run successful: {run_successful}")
                 else:
                     continue
@@ -254,7 +252,7 @@ class ZeroShotTeacher:
     def model_inference(self, metadata: dict, device: str, dataset: torch.utils.data.Dataset, object_classes: list, results_queue: Union[queue.Queue, mp.Queue], root_log_dir: str, num_workers: int = 4, persistent_workers: bool = False, prefetch_factor: int = 4):
         writer = None
         run_successful = True
-        processor, model, inputs, outputs, result = None, None, None, None # For finally block
+        processor, model, inputs, outputs, result = None, None, None, None, None # For finally block
 
         try:
             # Metadata
