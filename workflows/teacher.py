@@ -13,6 +13,7 @@ import numpy as np
 import psutil
 import torch
 import torch.multiprocessing as mp
+import wandb
 from datasets import Split
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
@@ -28,6 +29,7 @@ from transformers.utils.import_utils import (is_torch_available,
 
 from config.config import NUM_WORKERS
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
+from utils.logging import configure_logging
 
 
 def transform_batch(examples, image_processor, return_pixel_mask=False):
@@ -159,6 +161,11 @@ class ZeroShotTeacher:
 
                     # Copy all detections from stored dataset into our dataset
                     detections = temp_dataset.values("detections.detections")
+                    dataset_v51.add_sample_field(
+                        pred_key,
+                        fo.EmbeddedDocumentField,
+                        embedded_doc_type=fo.Detections,
+                    )
                     dataset_v51.set_values(f"{pred_key}.detections", detections)
                     logging.info(f"Model {model_name} predictions loaded from disk.")
                 except Exception as e:
@@ -176,6 +183,7 @@ class ZeroShotTeacher:
 
     # Worker functions
     def process_outputs_worker(self, results_queue, inference_finished, queue_warning_threshold=5):
+        configure_logging()
         logging.info(f"Process ID: {os.getpid()}. Results processing process started")    
         dataset_v51 = fo.load_dataset(self.dataset_name)
         processing_successful = None
@@ -197,7 +205,8 @@ class ZeroShotTeacher:
                 continue
         return processing_successful    # Return last processing status
     
-    def gpu_worker(self, gpu_id, cpu_cores, task_queue, results_queue, done_event, post_processing_finished, auto_batch_size=True, set_cpu_affinity=False):
+    def gpu_worker(self, gpu_id, cpu_cores, task_queue, results_queue, done_event, post_processing_finished, set_cpu_affinity=False):
+        configure_logging()
         # Set CPU
         if set_cpu_affinity:
             # Allow only certain CPU cores
@@ -225,34 +234,11 @@ class ZeroShotTeacher:
 
                 if not task_queue.empty():
                     try:
-                        task_metadata = task_queue.get_nowait() # TODO Check if new approach works. Was .get(timeout=5)  # Timeout to prevent indefinite blocking
+                        task_metadata = task_queue.get(timeout=5)  # Timeout to prevent indefinite blocking
                     except Exception as e:
                         break  # Exit if no more tasks
 
-                    # Either perform inference with given batch size or automatically adjust batch size
-                    if auto_batch_size == False:
-                        run_successful = self.model_inference(task_metadata, device, self.dataset_torch, self.object_classes, results_queue, root_log_dir)
-                    else:
-                        successful_run = False
-                        # Run inference with maximum batch size
-                        while task_metadata["batch_size"] >= 1 and successful_run == False:
-                            try:
-                                run_successful = self.model_inference(task_metadata, device, self.dataset_torch, self.object_classes, results_queue, root_log_dir)
-                                successful_run = True
-
-                            except RuntimeError as e:
-                                if "CUDA out of memory" in str(e):
-                                    task_metadata["batch_size"] //= 2
-                                    logging.info("Batch size reduced to " + str(task_metadata["batch_size"]))
-                                else:
-                                    logging.error(f"Runtime error: {e}")
-                                    raise e
-                            finally:
-                                torch.cuda.empty_cache()
-
-                        if task_metadata["batch_size"] < 1:
-                            logging.error("The model failed to run with batch_size = 1.")
-
+                    run_successful = self.model_inference(task_metadata, device, self.dataset_torch, self.object_classes, results_queue, root_log_dir)
                     logging.info(f"Worker for GPU {gpu_id} finished run successful: {run_successful}")
                 else:
                     continue
@@ -302,6 +288,13 @@ class ZeroShotTeacher:
             # Logging
             experiment_name = f"{model_name}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{device}"
             log_directory = os.path.join(root_log_dir, dataset_name, experiment_name)
+            wandb.tensorboard.patch(root_logdir=log_directory)
+            wandb.init(
+                name=f"{model_name}_{device}",
+                job_type="inference",
+                project="Zero Shot Teacher",
+                config=metadata,
+            )
             writer = SummaryWriter(log_dir=log_directory)
 
             # Inference Loop
@@ -335,18 +328,21 @@ class ZeroShotTeacher:
                 n_processed_images += n_images
                 writer.add_scalar(f'inference/frames_per_second', frames_per_second, n_processed_images)    
             
-            writer.close()
+            # Flawless execution
+            wandb.finish(exit_code=0)
+        
         except Exception as e:
+            run_successful = False
+            wandb.finish(exit_code=1)
+            logging.error(f"Error in Process {os.getpid()}: {e}")
+        finally:
+            wandb.tensorboard.unpatch()
+            if writer:
+                writer.close()
             torch.cuda.empty_cache()
-            if "CUDA out of memory" in str(e):
-                logging.warning(f"Error in Process {os.getpid()}: {e}")
-                raise  # Re-raise the exception so the outer loop can handle it
-            else:
-                logging.error(f"Error in Process {os.getpid()}: {e}")
-                if writer:
-                    writer.close()
-                run_successful = False
-                return run_successful
+            return run_successful
+
+
         
     def process_outputs(self, dataset_v51, result, object_classes, detection_threshold=0.2):
         processing_successful = True
@@ -413,8 +409,15 @@ class ZeroShotTeacher:
                             box_width = (box[2] - box[0]).item()
                             box_height = (box[3] - box[1]).item()
                         else:
-                            logging.warning(f"Skipped detection with {hf_model_config_name} due to unclear output: {label}")
-                            processing_successful = False
+                            matches = get_close_matches(processed_label, object_classes, n=1, cutoff=0.6)
+                            selected_label = matches[0] if matches else None
+                            if selected_label:
+                                processed_label = selected_label
+                            else:
+                                logging.warning(object_classes)
+                                logging.warning(f"Skipped detection with {hf_model_config_name} due to unclear output: {label}")
+                                processing_successful = False
+                                
 
                     elif hf_model_config_name in [
                         "Owlv2Config",
@@ -556,10 +559,10 @@ class ZeroShotTeacher_Legacy:
                 )
                 successful_run = True
 
-            except RuntimeError as e:
+            except Exception as e:
                 if "CUDA out of memory" in str(e):
                     batch_size //= 2
-                    logging.info("Batch size reduced to " + str(batch_size))
+                    logging.warning("Batch size reduced to " + str(batch_size))
                 else:
                     logging.error(f"Runtime error: {e}")
                     raise e

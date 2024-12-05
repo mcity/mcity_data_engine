@@ -2,11 +2,11 @@ import os
 
 # Selection from WORKFLOWS
 SELECTED_WORKFLOW = [
-    "aws_download",
+    "zero_shot_teacher",
 ]
 
 # Choose from config/datasets.yaml
-SELECTED_DATASET = "mcity_fisheye_3_months"
+SELECTED_DATASET = "mcity_fisheye_2000"
 
 PERSISTENT = True  # If V51 database is stored
 
@@ -92,21 +92,19 @@ WORKFLOWS = {
     },
     "zero_shot_teacher": {
          "hf_models_zeroshot_objectdetection": {
-             # batch_size_max: Will be reduced (//2) automatically if CUDA OOM errors occur
-             # dataset_chunks: Number of chunks to split the dataset into for parallel processing (for slow models)
+             # dataset_chunks: Number of chunks to split the dataset into for parallel processing
             "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 64, "n_dataset_chunks": 1},
-            "IDEA-Research/grounding-dino-tiny": {"batch_size": 4, "n_dataset_chunks": 1},
-            "IDEA-Research/grounding-dino-base": {"batch_size": 4, "n_dataset_chunks": 1},
+            "IDEA-Research/grounding-dino-tiny": {"batch_size": 16, "n_dataset_chunks": 1},
+            "IDEA-Research/grounding-dino-base": {"batch_size": 8, "n_dataset_chunks": 1},
             "google/owlvit-base-patch16": {"batch_size": 16, "n_dataset_chunks": 1},
             "google/owlvit-base-patch32": {"batch_size": 16, "n_dataset_chunks": 1},
             "google/owlvit-large-patch14": {"batch_size": 8, "n_dataset_chunks": 1},
             "google/owlv2-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},
             "google/owlv2-base-patch16-ensemble": {"batch_size": 8, "n_dataset_chunks": 1},
             "google/owlv2-base-patch16-finetuned": {"batch_size": 8, "n_dataset_chunks": 1},
-            "google/owlv2-large-patch14": {"batch_size": 2, "n_dataset_chunks": 1},
-            "google/owlv2-large-patch14-ensemble": {"batch_size": 2, "n_dataset_chunks": 1},
-            "google/owlv2-large-patch14-finetuned": {"batch_size": 2, "n_dataset_chunks": 1},
-            # TODO Add YOLO-World support https://docs.ultralytics.com/models/yolo-world/#overview
+            "google/owlv2-large-patch14": {"batch_size": 4, "n_dataset_chunks": 1},
+            "google/owlv2-large-patch14-ensemble": {"batch_size": 4, "n_dataset_chunks": 1},
+            "google/owlv2-large-patch14-finetuned": {"batch_size": 4, "n_dataset_chunks": 1},
     },
     "detection_threshold": 0.2,
     "object_classes": [
@@ -137,20 +135,6 @@ WORKFLOWS = {
                 "emergency vehicle",
                 "delivery driver"
             ],
-            #"hf_models_zeroshot_objectdetection": [
-            #    "IDEA-Research/grounding-dino-tiny",
-            #    "IDEA-Research/grounding-dino-base",
-            #    # "google/owlvit-base-patch16",
-            #    # "google/owlvit-base-patch32",
-            #    "google/owlvit-large-patch14",
-            #    "google/owlv2-base-patch16",
-            #    "google/owlv2-base-patch16-ensemble",
-            #    "google/owlv2-base-patch16-finetuned",
-            #    "google/owlv2-large-patch14",
-            #    "google/owlv2-large-patch14-ensemble",
-            #    "google/owlv2-large-patch14-finetuned",
-            #    "omlab/omdet-turbo-swin-tiny-hf",
-            #    ]
     },
     "ensemble_exploration": {},
 }
