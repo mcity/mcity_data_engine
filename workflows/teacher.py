@@ -115,7 +115,7 @@ class ZeroShotInferenceCollateFn:
             logging.error(f"Error in collate function of DataLoader: {e}")
 
 class ZeroShotTeacher:
-    def __init__(self, dataset_torch: torch.utils.data.Dataset, dataset_info, config, detections_path="./output/detections/"):
+    def __init__(self, dataset_torch: torch.utils.data.Dataset, dataset_info, config, detections_path="./output/detections/", log_root="./logs/"):
         # Can only store objects that are pickable for multiprocessing
         self.dataset_torch = dataset_torch
         self.dataset_info = dataset_info
@@ -123,6 +123,7 @@ class ZeroShotTeacher:
         self.object_classes = config["object_classes"]
         self.detection_threshold = config["detection_threshold"]
         self.detections_root = os.path.join(detections_path, self.dataset_name)
+        self.tensorboard_root = os.path.join(log_root, "tensorboard/teacher_zeroshot")
 
         logging.info(f"Zero-shot models will look for {self.object_classes}")
 
@@ -199,6 +200,7 @@ class ZeroShotTeacher:
                 try:
                     result = results_queue.get_nowait()
                     processing_successful = self.process_outputs(dataset_v51, result, self.object_classes)
+                    del result   # Explicit removal from device
                 except Exception as e:
                     continue
             else:
@@ -217,10 +219,7 @@ class ZeroShotTeacher:
         
         # Set GPU
         logging.info(f"GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)}")
-        device = torch.device(f"cuda:{gpu_id}")
-
-        # Set WandB directory
-        root_log_dir = "logs/tensorboard/teacher_zeroshot"  # FIXME Use paths from init
+        device = torch.device(f"cuda:{gpu_id}")        
         
         run_successful = None
         with torch.cuda.device(gpu_id):
@@ -237,18 +236,25 @@ class ZeroShotTeacher:
                         task_metadata = task_queue.get(timeout=5)  # Timeout to prevent indefinite blocking
                     except Exception as e:
                         break  # Exit if no more tasks
-
-                    run_successful = self.model_inference(task_metadata, device, self.dataset_torch, self.object_classes, results_queue, root_log_dir)
+                    logging.info(f"GPU Memory Usage Before: {torch.cuda.memory_allocated() / 1e9} GB")
+                    run_successful = self.model_inference(task_metadata, device, self.dataset_torch, self.object_classes, results_queue, self.tensorboard_root)
+                    logging.info(f"GPU Memory Usage After: {torch.cuda.memory_allocated() / 1e9} GB")
                     logging.info(f"Worker for GPU {gpu_id} finished run successful: {run_successful}")
                 else:
                     continue
         return run_successful   # Return last processing status
 
+    def eval_and_export_worker(self):
+        configure_logging()
+
+        
+        pass
+
     # Functionality functions
-    def model_inference(self, metadata: dict, device: str, dataset: torch.utils.data.Dataset, object_classes: list, results_queue: Union[queue.Queue, mp.Queue], root_log_dir: str, num_workers: int = 4, persistent_workers: bool = False, prefetch_factor: int = 4, detection_threshold: int = 0.2):
+    def model_inference(self, metadata: dict, device: str, dataset: torch.utils.data.Dataset, object_classes: list, results_queue: Union[queue.Queue, mp.Queue], root_log_dir: str, num_workers: int = 4, persistent_workers: bool = False, prefetch_factor: int = 4):
         writer = None
         run_successful = True
-        model = None
+        processor, model, inputs, outputs, result = None, None, None, None # For finally block
 
         try:
             # Metadata
@@ -336,14 +342,13 @@ class ZeroShotTeacher:
             wandb.finish(exit_code=1)
             logging.error(f"Error in Process {os.getpid()}: {e}")
         finally:
+            del processor, model, inputs, outputs, result    # Explicit removal from device
             wandb.tensorboard.unpatch()
             if writer:
                 writer.close()
             torch.cuda.empty_cache()
             return run_successful
-
-
-        
+    
     def process_outputs(self, dataset_v51, result, object_classes, detection_threshold=0.2):
         processing_successful = True
         try:
@@ -412,9 +417,9 @@ class ZeroShotTeacher:
                             matches = get_close_matches(processed_label, object_classes, n=1, cutoff=0.6)
                             selected_label = matches[0] if matches else None
                             if selected_label:
+                                logging.debug(f"Mapped output '{processed_label}' to class '{selected_label}'")
                                 processed_label = selected_label
                             else:
-                                logging.warning(object_classes)
                                 logging.warning(f"Skipped detection with {hf_model_config_name} due to unclear output: {label}")
                                 processing_successful = False
                                 
@@ -461,6 +466,28 @@ class ZeroShotTeacher:
             processing_successful = False
         finally:
             return processing_successful
+
+    def eval_and_export(self, dataset_v51, pred_key, eval_key):
+        # Populate dataset with evaluation results
+        try:
+            self.dataset.evaluate_detections(
+                pred_key,
+                gt_field="ground_truth",
+                eval_key=eval_key,
+                compute_mAP=True,
+            )
+        except Exception as e:
+            logging.warning(f"Evaluation not possible. Error: {e}")
+
+        # Store labels https://docs.voxel51.com/api/fiftyone.core.collections.html#fiftyone.core.collections.SampleCollection.export
+        self.dataset.export(
+            export_dir=self.detections_root,
+            dataset_type=fo.types.COCODetectionDataset,
+            data_path="data.json",
+            export_media=None,  # "manifest",
+            label_field=pred_key,
+            progress=True,
+        )
 
 class Teacher:
     def __init__(self, dataset, config=None, detections_path="./output/detections/"):
