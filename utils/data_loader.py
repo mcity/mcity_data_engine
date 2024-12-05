@@ -1,5 +1,7 @@
 # https://docs.python.org/2/library/multiprocessing.html#sharing-state-between-processes
 # https://pytorch.org/docs/stable/multiprocessing.html
+import logging
+
 import fiftyone.utils.coco as fouc
 import numpy as np
 import torch
@@ -68,7 +70,11 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         ids = fiftyone_dataset.values("id")
         metadata = fiftyone_dataset.values("metadata")
 
-        ground_truths = fiftyone_dataset.values(gt_field)
+        try:
+            ground_truths = fiftyone_dataset.values(gt_field)
+        except:
+            logging.info("Voxel51 dataset has no field named 'ground_truth'")
+            ground_truths = None
         tags = fiftyone_dataset.values("tags")
 
         # Process all samples with values() in place of the loop
@@ -78,7 +84,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
             self.metadata.append(metadata[i])
 
             # Extract labels and splits for each sample
-            if ground_truths[i]:  # Check if the ground truth exists for the sample
+            if ground_truths and ground_truths[i]:  # Check if the ground truth exists for the sample
                 self.labels[sample_id] = ground_truths[i].detections
             if tags[i]:  # Check if the tags exist for the sample
                 self.splits[sample_id] = tags[i][0]  # Assume first tag is split
