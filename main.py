@@ -64,6 +64,8 @@ def workflow_brain(dataset, dataset_info, MODEL_NAME):
     return v51_keys
 
 def workflow_zero_shot_teacher(dataset, dataset_info):
+    # Set multiprocessing mode for CUDA multiprocessing
+    mp.set_start_method("spawn")
     # Zero-shot object detector teacher models from Huggingface
     # Optimized for parallel multi-GPU inference, also supports single GPU
     config = WORKFLOWS["zero_shot_teacher"]
@@ -366,9 +368,6 @@ def main(args):
 
 
 if __name__ == "__main__":
-    # Set multiprocessing mode for CUDA multiprocessing
-    mp.set_start_method("spawn")
-
     parser = argparse.ArgumentParser(description="Run script locally or in W&B queue.")
     parser.add_argument(
         "--queue",
