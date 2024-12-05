@@ -295,7 +295,7 @@ umap-learn==0.5.7
 universal-analytics-python3==1.1.1
 urllib3==2.2.3
 voxel51-eta==0.13.0
-wandb==0.18.7
+wandb==0.19.0
 wcwidth==0.2.13
 webencodings==0.5.1
 websocket-client==1.8.0
