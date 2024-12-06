@@ -240,7 +240,6 @@ class ZeroShotTeacher:
         device = torch.device(f"cuda:{gpu_id}")        
         
         run_successful = None
-        previous_model = None
         with torch.cuda.device(gpu_id):
             while True:
                 if post_processing_finished.value and task_queue.empty():
@@ -256,17 +255,6 @@ class ZeroShotTeacher:
                     except Exception as e:
                         break  # Exit if no more tasks
                     run_successful = self.model_inference(task_metadata, device, self.dataset_torch, self.object_classes, results_queue, self.tensorboard_root)
-                    
-                    # Check if this was last run for model (might have multiple dataset chunks)
-                    # FIXME Remove, not needed anymore
-                    executed_model = task_metadata["model_name"]
-                    if executed_model != previous_model:
-                        # manager.dict() does not allow direct in-place updates for nested dictionaries like a regular Python dict
-                        nested_dict = model_progress_dict[executed_model]
-                        nested_dict["inference_done"] = True
-                        model_progress_dict[executed_model] = nested_dict
-                        # Update previous model
-                        previous_model = executed_model
         
                     logging.info(f"Worker for GPU {gpu_id} finished run successful: {run_successful}")
                 else:
@@ -288,7 +276,7 @@ class ZeroShotTeacher:
                     model_name = dict["model_name"]
                     pred_key = re.sub(r"[\W-]+", "_", "pred_" + model_name)
                     eval_key = re.sub(r"[\W-]+", "_", "eval_" + model_name)
-                    print(dataset)
+                    dataset.reload()
                     run_successful = self.eval_and_export(dataset, pred_key, eval_key)
                     models_done += 1
                 except Exception as e:
