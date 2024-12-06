@@ -74,7 +74,7 @@ class ZeroShotDistributer(Distributer):
         self.dataset_info = dataset_info
         self.teacher = teacher
 
-    def distribute_and_run(self, post_processing_factor = 4):
+    def distribute_and_run(self, n_eval_export_worker = 1 ,post_processing_factor = 4):
         dataset_name = self.dataset_info["name"]
         models_dict = self.config["hf_models_zeroshot_objectdetection"]
 
@@ -131,62 +131,91 @@ class ZeroShotDistributer(Distributer):
         # Queue for results
         results_queue = mp.Queue()
 
+        # Queue for models that are ready for eval & save
+        models_ready_queue = mp.Queue()
+
         # Flags for synchronizations
         inference_finished = mp.Value('b', False)
         post_processing_finished = mp.Value('b', False)
 
         # Distribute CPU cores
+        # Save-and-eval workers
+        cpu_cores_save_eval = self.cpu_cores[:n_eval_export_worker]
+        remaining_cores = self.cpu_cores[n_eval_export_worker:]
+        # Post-processing workers
         n_cores_post_processing = post_processing_factor * n_parallel_processes
-        cpu_cores_post_processing = self.cpu_cores[:n_cores_post_processing]
-        cpu_cores_inference = self.cpu_cores[n_cores_post_processing:]
+        cpu_cores_post_processing = remaining_cores[:n_cores_post_processing]
+        # Inference workers
+        cpu_cores_inference = remaining_cores[n_cores_post_processing:]
         cpu_cores_per_process = self.distribute_cpu_cores(cpu_cores_inference, n_parallel_processes)
 
-        # Create n post-processing worker processes per GPU
-        post_processing_processes = []
+        with mp.Manager() as manager:
 
-        for index in range(n_parallel_processes * post_processing_factor):
-            p = mp.Process(target=self.teacher.process_outputs_worker, args=(results_queue, inference_finished))
-            post_processing_processes.append(p)
-            p.start()
-            logging.info(f"Started post-processing worker {index}")
+            # Use Manager to track progress in shared dict
+            model_progress_dict = manager.dict()
+            for run in runs:
+                model_name = run["model_name"]
+                model_progress_dict[model_name] = {
+                    "inference_done": False,
+                    "n_frames_processed": 0,
+                    "ready_export": False
+                }
+            # Create worker for evaluation and export of detection results
+            eval_export_processes = []
+            n_models = len(model_progress_dict)
+            for index in range(n_eval_export_worker):
+                p = mp.Process(target=self.teacher.eval_and_export_worker, args=(models_ready_queue, n_models))
+                eval_export_processes.append(p)
+                p.start()
+                logging.info(f"Started eval-and-export worker {index}")
 
-        # Create worker processes, max one per GPU
-        inference_processes = []
-        gpu_worker_events = [mp.Event() for _ in range(n_parallel_processes)]
+            # Create n post-processing worker processes per GPU
+            post_processing_processes = []
+            for index in range(n_parallel_processes * post_processing_factor):
+                p = mp.Process(target=self.teacher.process_outputs_worker, args=(results_queue, model_progress_dict, models_ready_queue, inference_finished))
+                post_processing_processes.append(p)
+                p.start()
+                logging.info(f"Started post-processing worker {index}")
 
-        for index in range(n_parallel_processes):
-            gpu_id = index
-            cpu_cores_for_run = cpu_cores_per_process[gpu_id]
-            done_event = gpu_worker_events[index]
-            p = mp.Process(target=self.teacher.gpu_worker, args=(gpu_id, cpu_cores_for_run, task_queue, results_queue, done_event, post_processing_finished))
-            inference_processes.append(p)
-            p.start()
-            logging.info(f"Started inference worker {index} for GPU {gpu_id}")
+            # Create worker processes, max one per GPU
+            inference_processes = []
+            gpu_worker_done_events = [mp.Event() for _ in range(n_parallel_processes)]  # Signals when a GPU worker is done
 
-        # Create a worker to evaluate and store model results
-        
+            for index in range(n_parallel_processes):
+                gpu_id = index
+                cpu_cores_for_run = cpu_cores_per_process[gpu_id]
+                done_event = gpu_worker_done_events[index]
+                p = mp.Process(target=self.teacher.gpu_worker, args=(gpu_id, cpu_cores_for_run, task_queue, results_queue, model_progress_dict, done_event, post_processing_finished))
+                inference_processes.append(p)
+                p.start()
+                logging.info(f"Started inference worker {index} for GPU {gpu_id}")            
 
-        logging.info(f"Started {len(post_processing_processes)} post-processing workers and {len(inference_processes)} GPU inference workers.")
-        
-        # Wait for all inference tasks to complete
-        while not all(worker_event.is_set() for worker_event in gpu_worker_events):
-            continue
-        logging.info("All workers have finished inference tasks.")
-        inference_finished.value = True
+            logging.info(f"Started {len(eval_export_processes)} eval-and-export workers, {len(post_processing_processes)} post-processing workers and {len(inference_processes)} GPU inference workers.")
+            
+            # Wait for all inference tasks to complete
+            while not all(worker_event.is_set() for worker_event in gpu_worker_done_events):
+                continue
+            logging.info("All workers have finished inference tasks.")
+            inference_finished.value = True
 
-        # Wait for results processing to finish
-        for p in post_processing_processes:
-            p.join()
-        logging.info("Results processing worker has shut down.")
-        post_processing_finished.value = True
+            # Wait for results processing to finish
+            for p in post_processing_processes:
+                p.join()
+            logging.info("Results processing worker has shut down.")
+            post_processing_finished.value = True
 
-        # Wait for workers to finish
-        for p in inference_processes:
-            p.join()
-        logging.info("All inference workers have shut down.")
+            # Wait for workers to finish
+            for p in inference_processes:
+                p.join()
+            logging.info("All inference workers have shut down.")
 
-        # Close queues
-        task_queue.close()
-        results_queue.close()
-        logging.info("All multiprocessing queues are closed.")
+            # Wait for eval and export processes to finish
+            for p in eval_export_processes:
+                p.join()
+            logging.info("All eval-and-export workers have shut down.")
+
+            # Close queues
+            task_queue.close()
+            results_queue.close()
+            logging.info("All multiprocessing queues are closed.")
 
