@@ -156,7 +156,6 @@ class ZeroShotDistributer(Distributer):
             for run in runs:
                 model_name = run["model_name"]
                 model_progress_dict[model_name] = {
-                    "inference_done": False,
                     "n_frames_processed": 0,
                     "ready_export": False
                 }
