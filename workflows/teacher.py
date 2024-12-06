@@ -183,7 +183,7 @@ class ZeroShotTeacher:
         return models_splits_dict
 
     # Worker functions
-    def process_outputs_worker(self, results_queue, inference_finished, queue_warning_threshold=5):
+    def process_outputs_worker(self, results_queue, model_progress_dict, models_ready_queue, inference_finished, queue_warning_threshold=5):
         configure_logging()
         logging.info(f"Process ID: {os.getpid()}. Results processing process started")    
         dataset_v51 = fo.load_dataset(self.dataset_name)
@@ -193,6 +193,7 @@ class ZeroShotTeacher:
                 logging.warning(f"Queue size of {results_queue.qsize()}. Consider increasing number of post-processing workers.")
             # Exit only when inference is finished and the queue is empty
             if inference_finished.value and results_queue.empty():
+                dataset_v51.save()
                 logging.info(f"Post-processing worker {os.getpid()} has finished all outputs.")
                 break
             # Process results from the queue if available
@@ -200,6 +201,23 @@ class ZeroShotTeacher:
                 try:
                     result = results_queue.get_nowait()
                     processing_successful = self.process_outputs(dataset_v51, result, self.object_classes)
+
+                    # Update shared dictionary with progress
+                    # manager.dict() does not allow direct in-place updates for nested dictionaries like a regular Python dict
+                    model_name = result["model_name"]
+                    batch_size = len(result["target_sizes"])
+                    nested_dict = model_progress_dict[model_name]
+                    nested_dict["n_frames_processed"] += batch_size
+
+                    # Check if all frames have been processed
+                    if nested_dict["n_frames_processed"] == len(dataset_v51) and nested_dict["ready_export"] == False:
+                        nested_dict["ready_export"] = True
+                        model_progress_dict[model_name] = nested_dict
+                        nested_dict["model_name"] = model_name
+                        models_ready_queue.put(nested_dict)
+                    else:
+                        model_progress_dict[model_name] = nested_dict
+
                     del result   # Explicit removal from device
                 except Exception as e:
                     continue
@@ -207,7 +225,7 @@ class ZeroShotTeacher:
                 continue
         return processing_successful    # Return last processing status
     
-    def gpu_worker(self, gpu_id, cpu_cores, task_queue, results_queue, done_event, post_processing_finished, set_cpu_affinity=False):
+    def gpu_worker(self, gpu_id, cpu_cores, task_queue, results_queue, model_progress_dict, done_event, post_processing_finished, set_cpu_affinity=False):
         configure_logging()
         # Set CPU
         if set_cpu_affinity:
@@ -222,6 +240,7 @@ class ZeroShotTeacher:
         device = torch.device(f"cuda:{gpu_id}")        
         
         run_successful = None
+        previous_model = None
         with torch.cuda.device(gpu_id):
             while True:
                 if post_processing_finished.value and task_queue.empty():
@@ -237,22 +256,54 @@ class ZeroShotTeacher:
                     except Exception as e:
                         break  # Exit if no more tasks
                     run_successful = self.model_inference(task_metadata, device, self.dataset_torch, self.object_classes, results_queue, self.tensorboard_root)
+                    
+                    # Check if this was last run for model (might have multiple dataset chunks)
+                    # FIXME Remove, not needed anymore
+                    executed_model = task_metadata["model_name"]
+                    if executed_model != previous_model:
+                        # manager.dict() does not allow direct in-place updates for nested dictionaries like a regular Python dict
+                        nested_dict = model_progress_dict[executed_model]
+                        nested_dict["inference_done"] = True
+                        model_progress_dict[executed_model] = nested_dict
+                        # Update previous model
+                        previous_model = executed_model
+        
                     logging.info(f"Worker for GPU {gpu_id} finished run successful: {run_successful}")
                 else:
                     continue
         return run_successful   # Return last processing status
 
-    def eval_and_export_worker(self):
+    def eval_and_export_worker(self, models_ready_queue, n_models):
         configure_logging()
+        logging.info(f"Process ID: {os.getpid()}. Eval-and-export process started")  
 
-        
-        pass
+        dataset = fo.load_dataset(self.dataset_name)
+        run_successful = None
+        models_done = 0
+
+        while True:
+            if not models_ready_queue.empty():
+                try:
+                    dict = models_ready_queue.get(timeout=5)  # Timeout to prevent indefinite blocking
+                    model_name = dict["model_name"]
+                    pred_key = re.sub(r"[\W-]+", "_", "pred_" + model_name)
+                    eval_key = re.sub(r"[\W-]+", "_", "eval_" + model_name)
+                    print(dataset)
+                    run_successful = self.eval_and_export(dataset, pred_key, eval_key)
+                    models_done += 1
+                except Exception as e:
+                    continue
+
+            if models_done == n_models:
+                break
+
+        return run_successful
 
     # Functionality functions
     def model_inference(self, metadata: dict, device: str, dataset: torch.utils.data.Dataset, object_classes: list, results_queue: Union[queue.Queue, mp.Queue], root_log_dir: str, num_workers: int = 4, persistent_workers: bool = False, prefetch_factor: int = 4):
         writer = None
         run_successful = True
-        processor, model, inputs, outputs, result = None, None, None, None, None # For finally block
+        processor, model, inputs, outputs, result, dataloader = None, None, None, None, None, None # For finally block
 
         try:
             # Metadata
@@ -325,6 +376,7 @@ class ZeroShotTeacher:
 
                 results_queue.put(result)
 
+                # Logging
                 time_end = time.time()
                 duration = time_end - time_start
                 batches_per_second = 1 / duration
@@ -340,11 +392,11 @@ class ZeroShotTeacher:
             wandb.finish(exit_code=1)
             logging.error(f"Error in Process {os.getpid()}: {e}")
         finally:
-            del processor, model, inputs, outputs, result    # Explicit removal from device
+            del processor, model, inputs, outputs, result, dataloader    # Explicit removal from device
+            torch.cuda.empty_cache()
             wandb.tensorboard.unpatch()
             if writer:
                 writer.close()
-            torch.cuda.empty_cache()
             return run_successful
     
     def process_outputs(self, dataset_v51, result, object_classes, detection_threshold=0.2):
@@ -459,6 +511,7 @@ class ZeroShotTeacher:
                 sample = dataset_v51[target["image_id"]]
                 sample[pred_key] = fo.Detections(detections=detections)
                 sample.save()
+
         except Exception as e:
             logging.error(f"Error in processing outputs: {e}")
             processing_successful = False
@@ -466,19 +519,19 @@ class ZeroShotTeacher:
             return processing_successful
 
     def eval_and_export(self, dataset_v51, pred_key, eval_key):
-        # Populate dataset with evaluation results
+        # Populate dataset with evaluation results (if ground_truth available)
         try:
-            self.dataset.evaluate_detections(
+            dataset_v51.evaluate_detections(
                 pred_key,
                 gt_field="ground_truth",
                 eval_key=eval_key,
                 compute_mAP=True,
             )
         except Exception as e:
-            logging.warning(f"Evaluation not possible. Error: {e}")
+            logging.warning(f"Evaluation not possible: {e}")
 
         # Store labels https://docs.voxel51.com/api/fiftyone.core.collections.html#fiftyone.core.collections.SampleCollection.export
-        self.dataset.export(
+        dataset_v51.export(
             export_dir=self.detections_root,
             dataset_type=fo.types.COCODetectionDataset,
             data_path="data.json",
@@ -486,6 +539,8 @@ class ZeroShotTeacher:
             label_field=pred_key,
             progress=True,
         )
+
+        return True
 
 class Teacher:
     def __init__(self, dataset, config=None, detections_path="./output/detections/"):

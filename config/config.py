@@ -94,17 +94,17 @@ WORKFLOWS = {
          "hf_models_zeroshot_objectdetection": {
              # dataset_chunks: Number of chunks to split the dataset into for parallel processing       # batch_size
             "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 64, "n_dataset_chunks": 1},                # RTX 4090: 64
-            "IDEA-Research/grounding-dino-tiny": {"batch_size": 16, "n_dataset_chunks": 1},             # RTX 4090: 16
-            "IDEA-Research/grounding-dino-base": {"batch_size": 8, "n_dataset_chunks": 1},              # RTX 4090: 8
-            "google/owlvit-base-patch16": {"batch_size": 16, "n_dataset_chunks": 1},                    # RTX 4090: 16
-            "google/owlvit-base-patch32": {"batch_size": 16, "n_dataset_chunks": 1},                    # RTX 4090: 16
-            "google/owlvit-large-patch14": {"batch_size": 8, "n_dataset_chunks": 1},                    # RTX 4090: 8
-            "google/owlv2-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},                      # RTX 4090: 8
-            "google/owlv2-base-patch16-ensemble": {"batch_size": 8, "n_dataset_chunks": 1},             # RTX 4090: 8
-            "google/owlv2-base-patch16-finetuned": {"batch_size": 8, "n_dataset_chunks": 1},            # RTX 4090: 8
-            "google/owlv2-large-patch14": {"batch_size": 4, "n_dataset_chunks": 1},                     # RTX 4090: 4
-            "google/owlv2-large-patch14-ensemble": {"batch_size": 4, "n_dataset_chunks": 1},            # RTX 4090: 4
-            "google/owlv2-large-patch14-finetuned": {"batch_size": 4, "n_dataset_chunks": 1},           # RTX 4090: 4
+            #"IDEA-Research/grounding-dino-tiny": {"batch_size": 16, "n_dataset_chunks": 1},             # RTX 4090: 16
+            #"IDEA-Research/grounding-dino-base": {"batch_size": 8, "n_dataset_chunks": 1},              # RTX 4090: 8
+            #"google/owlvit-base-patch16": {"batch_size": 16, "n_dataset_chunks": 1},                    # RTX 4090: 16
+            #"google/owlvit-base-patch32": {"batch_size": 16, "n_dataset_chunks": 1},                    # RTX 4090: 16
+            #"google/owlvit-large-patch14": {"batch_size": 4, "n_dataset_chunks": 1},                    # RTX 4090: 4
+            #"google/owlv2-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},                      # RTX 4090: 8
+            #"google/owlv2-base-patch16-ensemble": {"batch_size": 8, "n_dataset_chunks": 1},             # RTX 4090: 8
+            #"google/owlv2-base-patch16-finetuned": {"batch_size": 8, "n_dataset_chunks": 1},            # RTX 4090: 8
+            #"google/owlv2-large-patch14": {"batch_size": 2, "n_dataset_chunks": 1},                     # RTX 4090: 2
+            #"google/owlv2-large-patch14-ensemble": {"batch_size": 2, "n_dataset_chunks": 1},            # RTX 4090: 2
+            #"google/owlv2-large-patch14-finetuned": {"batch_size": 2, "n_dataset_chunks": 1},           # RTX 4090: 2
     },
     "detection_threshold": 0.2,
     "object_classes": [
