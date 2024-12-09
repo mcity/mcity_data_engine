@@ -355,6 +355,7 @@ def main(args):
 
     # Launch V51 session
     if args.queue == None:
+        dataset.reload()
         dataset.save()
         logging.info(f"Launching Voxel51 session for dataset {dataset.name}:")
         logging.info(dataset)
