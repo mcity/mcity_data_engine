@@ -46,29 +46,30 @@ clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadata
 > In case there are issues with MongoDB, use ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
 
 ## Repository Structure
-
-.  
-├── main.py&emsp;&emsp;&emsp;&emsp;# Entry point of the framework  
-├── session_v51.py&emsp;&emsp;&emsp;&emsp;# Script to launch [Voxel51](https://voxel51.com/) sessions  
-├── workflows/&emsp;&emsp;&emsp;&emsp;# [Workflows](https://github.com/daniel-bogdoll/mcity_data_engine/wiki/Workflows) for the Data Engine  
-├── config/&emsp;&emsp;&emsp;&emsp;# Local configuration files  
-├── wandb_runs/&emsp;&emsp;&emsp;&emsp;# Entrypoints and configuration files for WandB experiments  
-├── utils/&emsp;&emsp;&emsp;&emsp;# General-purpose utility functions  
-├── scripts/&emsp;&emsp;&emsp;&emsp;# Experiment scripts and one-time operations  
-├── datasets/&emsp;&emsp;&emsp;&emsp;# Default storage directory for datasets  
-├── cloud/&emsp;&emsp;&emsp;&emsp;# Scripts run in the cloud to pre-process data prior to local processing
-├── output/&emsp;&emsp;&emsp;&emsp;# Default storage for models, embeddings, and related outputs  
-├── logs/&emsp;&emsp;&emsp;&emsp;# Default storage for log files  
-├── docs/&emsp;&emsp;&emsp;&emsp;# Documentation generated with `pdoc`  
-├── tests/&emsp;&emsp;&emsp;&emsp;# Unit tests using Pytest  
-├── custom_models/&emsp;&emsp;&emsp;&emsp;# External models with containerized environments  
-├── Dockerfile.wandb&emsp;&emsp;&emsp;&emsp;# Dockerfile for WandB experiments  
-├── .github/workflows/&emsp;&emsp;&emsp;&emsp;# GitHub Action workflows  
-├── .gitignore&emsp;&emsp;&emsp;&emsp;# Files and directories to be ignored by Git  
-├── .gitattributes&emsp;&emsp;&emsp;&emsp;# Rules for handling files like Notebooks during commits  
-├── .gitmodules&emsp;&emsp;&emsp;&emsp;# Configuration for managing Git submodules  
-├── .secret&emsp;&emsp;&emsp;&emsp;                   # Secret tokens (not tracked by Git)  
-└── requirements.txt&emsp;&emsp;&emsp;&emsp;# Python dependencies (`pip install -r requirements.txt`)  
+```
+.
+├── main.py               # Entry point of the framework → Terminal 1
+├── session_v51.py        # Script to launch Voxel51 session → Terminal 2
+├── workflows/            # Workflows for the Mcity Data Engine
+├── config/               # Local configuration files
+├── wandb_runs/           # Entrypoints and configs for WandB experiments
+├── utils/                # General-purpose utility functions
+├── scripts/              # Experiment scripts and one-time operations
+├── cloud/                # Scripts run in the cloud to pre-process data
+├── datasets/             # Default storage directory for datasets
+├── output/               # Default storage for models, embeddings, etc.
+├── logs/                 # Default storage for log files
+├── docs/                 # Documentation generated with `pdoc`
+├── tests/                # Unit tests using Pytest
+├── custom_models/        # External models with containerized environments
+├── Dockerfile.wandb      # Dockerfile for WandB experiments
+├── .github/workflows/    # GitHub Action workflows
+├── .gitignore            # Files and directories to be ignored by Git
+├── .gitattributes        # Rules for handling files like Notebooks during commits
+├── .gitmodules           # Configuration for managing Git submodules
+├── .secret               # Secret tokens (not tracked by Git)
+└── requirements.txt      # Python dependencies (pip install -r requirements.txt)
+```
 
 
 
