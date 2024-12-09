@@ -108,7 +108,7 @@ Locally, you will need to clean up old docker images once in a while. Run ```doc
 
 ### Huggingface
 
-For object detection, the data engine supports HF models of the types [AutoModelForObjectDetection](https://huggingface.co/docs/transformers/en/model_doc/auto#transformers.AutoModelForObjectDetection) and [AutoModelForZeroShotObjectDetection](https://huggingface.co/docs/transformers/en/model_doc/auto#transformers.AutoModelForZeroShotObjectDetection). At this point, [multi-GPU training is not working](https://github.com/huggingface/transformers/pull/33561) for the object detection pipeline.
+For object detection, the data engine supports Hugging Face (HF) models of the types [AutoModelForObjectDetection](https://huggingface.co/docs/transformers/en/model_doc/auto#transformers.AutoModelForObjectDetection) and [AutoModelForZeroShotObjectDetection](https://huggingface.co/docs/transformers/en/model_doc/auto#transformers.AutoModelForZeroShotObjectDetection). At this point, [multi-GPU training is not working](https://github.com/huggingface/transformers/pull/33561) for the object detection pipeline, but multi-GPU inference is implemented.
 
 ### Custom models
 
@@ -127,23 +127,20 @@ singularity run --pwd /launch --bind /<root>/mcity_data_engine/custom_models/<mo
 ```
 ## Datasets
 
-### Huggingface Integration
+### Hugging Face Integration
 
-To upload datasets to Huggingface with Voxel51, load private datasets from Huggingface, and run the tests successfully, you need to set a [Huggingface token](https://huggingface.co/docs/hub/en/security-tokens):
+To upload datasets to Hugging Face with Voxel51, load private datasets from Hugging Face, and run the tests successfully, you need to set a [Hugging Face token](https://huggingface.co/docs/hub/en/security-tokens):
 
-```.secrets``` file in the root folder with the following content:
+Locally: Create a ```.secrets``` file in the root folder with the following content:
 ```
 HF_TOKEN=<YOUR_HF_TOKEN>
 ```
 
-[Secret in Github Action](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) with the same name and content as above.
-
-
-
+GitHub: Create a [secret in Github Actions](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) with the same name and content as above.
 
 ### Mcity Fisheye 2000 (labeled)
 
-Download the data with
+This dataset is currently only available internally at Mcity. Download the data with
 ```
 cd datasets
 scp -r <uniqname>@lighthouse.arc-ts.umich.edu:/nfs/turbo/coe-mcity/tinghanw/midadvrb_2000 .
@@ -152,13 +149,15 @@ scp -r <uniqname>@lighthouse.arc-ts.umich.edu:/nfs/turbo/coe-mcity/tinghanw/mida
 If ```images/val``` contains json files, delete them.
 
 ### Mcity Fisheye 3-Months (unlabeled)
+
+This dataset is currently only available internally at Mcity.
 ```
 cd datasets
 scp -r <uniqname>@lighthouse.arc-ts.umich.edu:/nfs/turbo/coe-mcity/tinghanw/midadv_swinl_label_veh_0p3_ped_0p3_2023q4_yolov8_format_v2 .
 ```
 
 ### Mcity Fisheye Anomalies: Pedestrians
-This dataset is based on the ```Mcity Fisheye 2000 (labeled)``` dataset. It computes the splits newly with a ```train``` split that does not contain any pedestrians, and a ```val``` split which has pedestrians on every frame. This way, pedestrians can be treated as anomalies. It was first designed to evaluate the Anomalib library.
+This dataset is currently only available internally at Mcity. It is based on the ```Mcity Fisheye 2000 (labeled)``` dataset. It computes the splits newly with a ```train``` split that does not contain any pedestrians, and a ```val``` split which has pedestrians on every frame. This way, pedestrians can be treated as anomalies. It was first designed to evaluate the Anomalib library.
 
 
 ### Fisheye 8k
@@ -172,20 +171,13 @@ sudo apt-get install p7zip-full
 Afterwards, delete intermediate folders, such that the ```test``` and ```train``` folders are at the root level of the dataset folder. Scripts are designed for the dataset version ```Fisheye8K_all_including_train&test_update_2024Jan Update.zip```.
 
 
-### [MARS](https://ai4ce.github.io/MARS/)
-Make sure you have entered your [SSH key at huggingface](https://huggingface.co/settings/keys). Download the dataset with
+### MARS
+Make sure you have entered your [SSH key at Hugging Face](https://huggingface.co/settings/keys). Download the [MARS](https://ai4ce.github.io/MARS/) dataset with
 
 ```
 sudo apt-get install git-lfs
 git lfs install
 git clone git@hf.co:datasets/ai4ce/MARS
-```
-
-If not installed yet, install the nuscenes-devkit with
-
-```
-cd data_loader/nuscenes-devkit
-pip install .
 ```
 
 
