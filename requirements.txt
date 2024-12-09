@@ -285,7 +285,7 @@ torch-tb-profiler==0.4.3
 torchaudio==2.5.1
 torchmetrics==1.4.2
 torchvision==0.20.1
-tornado==6.4.1
+tornado==6.4.2
 tqdm==4.67.1
 traitlets==5.14.3
 transformers==4.47.0
