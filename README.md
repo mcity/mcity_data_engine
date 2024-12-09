@@ -47,27 +47,29 @@ clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadata
 
 ## Repository Structure
 
-.   
-├── main.py                   # Starting point of the framework    
-├── session_v51.py            # Launch [Voxel51](https://voxel51.com/) session    
-├── workflows/                # Data Engine [workflows](https://github.com/daniel-bogdoll/mcity_data_engine/wiki/Workflows)    
+.  
+├── main.py                   # Entry point of the framework  
+├── session_v51.py            # Script to launch [Voxel51](https://voxel51.com/) sessions  
+├── workflows/                # [Workflows](https://github.com/daniel-bogdoll/mcity_data_engine/wiki/Workflows) for the Data Engine  
 ├── config/                   # Local configuration files  
-├── wandb_runs/               # Entrypoints and configs for WandB experiments  
-├── utils/                    # Utility functions  
-├── scripts/                  # Experiments and one-time operations  
-├── datasets/                 # Default storage for datasets  
-├── output/                   # Default storage for models, embeddings etc.  
-├── logs/                     # Default storage for logs  
-├── docs/                     # pdoc Documentation    
-├── tests/                    # Pytest cases  
-├── custom_models/            # External models with contanierized environments   
+├── wandb_runs/               # Entrypoints and configuration files for WandB experiments  
+├── utils/                    # General-purpose utility functions  
+├── scripts/                  # Experiment scripts and one-time operations  
+├── datasets/                 # Default storage directory for datasets  
+├── cloud/                    # Scripts run in the cloud to pre-process data prior to local processing
+├── output/                   # Default storage for models, embeddings, and related outputs  
+├── logs/                     # Default storage for log files  
+├── docs/                     # Documentation generated with `pdoc`  
+├── tests/                    # Unit tests using Pytest  
+├── custom_models/            # External models with containerized environments  
 ├── Dockerfile.wandb          # Dockerfile for WandB experiments  
-├── .github/workflows         # Github Action Workflows  
-├── .gitignore                # Ignored files for Git tracking  
-├── .gitattributes            # Used to clean Notebooks prior to commits  
-├── .gitmodules               # Managing Git submodules  
-├── .secret                   # Secret TOKENS (untracked)  
-└── requirements.txt          # pip install -r requirements.txt   
+├── .github/workflows/        # GitHub Action workflows  
+├── .gitignore                # Files and directories to be ignored by Git  
+├── .gitattributes            # Rules for handling files like Notebooks during commits  
+├── .gitmodules               # Configuration for managing Git submodules  
+├── .secret                   # Secret tokens (not tracked by Git)  
+└── requirements.txt          # Python dependencies (`pip install -r requirements.txt`)  
+
 
 
 ## Documentation
