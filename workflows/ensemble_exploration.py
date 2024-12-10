@@ -76,7 +76,7 @@ class EnsembleExploration:
         self.max_bbox_size = config[
             "max_bbox_size"
         ]  # Value between [0,1] for the max size of considered bboxes
-        self.v51_agreement_tag = "vru_overlap"
+        self.v51_agreement_tag = "detections_overlap"
 
         # Get V51 fields that store detection results
         self.v51_detection_fields = []
