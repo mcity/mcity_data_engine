@@ -20,8 +20,8 @@ Download, install requirements, and run:
 ```
 git clone --recurse-submodules git@github.com:mcity/mcity_data_engine.git
 cd mcity_data_engine
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
@@ -53,6 +53,7 @@ Open Voxel51 in your browser:
 ├── tests/                # Unit tests using Pytest
 ├── custom_models/        # External models with containerized environments
 ├── Dockerfile.wandb      # Dockerfile for WandB experiments
+├── .vscode               # Settings for VS Code IDE
 ├── .github/workflows/    # GitHub Action workflows
 ├── .gitignore            # Files and directories to be ignored by Git
 ├── .gitattributes        # Rules for handling files like Notebooks during commits
