@@ -182,7 +182,7 @@ In case there are issues with MongoDB, use ```ps aux | grep mongod``` and ```kil
 
 ## Contributors
 
-Special thanks to these amazing people for contributing to FiftyOne! 🙌
+Special thanks to these amazing people for contributing to the Mcity Data Engine! 🙌
 
 <a href="https://github.com/mcity/mcity_data_engine/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=mcity/mcity_data_engine" />
@@ -190,8 +190,7 @@ Special thanks to these amazing people for contributing to FiftyOne! 🙌
 
 ## Citation
 
-If you use the Mcity Data Engine in your research, feel free to cite the project (but only
-if you love it 😊):
+If you use the Mcity Data Engine in your research, feel free to cite the project:
 
 ```bibtex
 @article{bogdoll2024mcitydataengine,
