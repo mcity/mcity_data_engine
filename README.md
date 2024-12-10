@@ -18,7 +18,7 @@ The Mcity Data Engine is an essential tool in the Mcity makerspace for transport
 
 Download, install requirements, and run:
 ```
-git clone --recurse-submodules git@github.com:daniel-bogdoll/mcity_data_engine.git
+git clone --recurse-submodules git@github.com:mcity/mcity_data_engine.git
 cd mcity_data_engine
 python3 -m venv venv
 source venv/bin/activate
@@ -34,16 +34,6 @@ Launch the Mcity Data Engine in a second terminal:
 
 Open Voxel51 in your browser:
 ```http://localhost:5151/```
-
-To exclude the output of jupyter notebooks from git tracking, add the following lines to your ```.git/config```:
-
-```
-[filter "strip-notebook-output"]
-clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadataPreprocessor.enabled=True --to=notebook --stdin --stdout --log-level=ERROR
-```
-
-> [!NOTE]
-> In case there are issues with MongoDB, use ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
 
 ## Repository Structure
 ```
@@ -70,8 +60,6 @@ clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadata
 ├── .secret               # Secret tokens (not tracked by Git)
 └── requirements.txt      # Python dependencies (pip install -r requirements.txt)
 ```
-
-
 
 ## Documentation
 
@@ -180,4 +168,36 @@ git lfs install
 git clone git@hf.co:datasets/ai4ce/MARS
 ```
 
+## Notes
+
+To exclude the output of jupyter notebooks from git tracking, add the following lines to your ```.git/config```:
+
+```
+[filter "strip-notebook-output"]
+clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadataPreprocessor.enabled=True --to=notebook --stdin --stdout --log-level=ERROR
+```
+
+In case there are issues with MongoDB, use ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
+
+## Contributors
+
+Special thanks to these amazing people for contributing to FiftyOne! 🙌
+
+<a href="https://github.com/mcity/mcity_data_engine/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=mcity/mcity_data_engine" />
+</a>
+
+## Citation
+
+If you use the Mcity Data Engine in your research, feel free to cite the project (but only
+if you love it 😊):
+
+```bibtex
+@article{bogdoll2024mcitydataengine,
+  title={Mcity Data Engine},
+  author={Bogdoll, Daniel and Stevens, Gregory},
+  journal={GitHub. Note: https://github.com/mcity/mcity_data_engine},
+  year={2024}
+}
+```
 
