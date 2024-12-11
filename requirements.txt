@@ -201,7 +201,7 @@ nest-asyncio==1.6.0
 networkx==3.3
 nltk==3.9.1
 numba==0.60.0
-numpy==2.2.0
+numpy==2.0.0
 nuscenes-devkit @ git+https://github.com/daniel-bogdoll/nuscenes-devkit.git@e9a832e608484c5496c6236ed78a185be6d7a44b
 nvidia-cublas-cu12==12.4.5.8
 nvidia-cuda-cupti-cu12==12.4.127
@@ -289,6 +289,7 @@ regex==2024.9.11
 requests==2.32.3
 requests-mock==1.12.1
 requests-oauthlib==2.0.0
+requirements-parser==0.11.0
 retrying==1.3.4
 rich==13.9.1
 rich-argparse==1.5.2
@@ -353,6 +354,7 @@ tqdm==4.67.1
 traitlets==5.14.3
 transformers==4.47.0
 triton==3.1.0
+types-setuptools==75.6.0.20241126
 typeshed_client==2.7.0
 typing_extensions==4.12.2
 tzdata==2024.2
