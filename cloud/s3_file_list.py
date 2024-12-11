@@ -7,10 +7,8 @@ import shutil
 import time
 
 import boto3
-from tqdm import tqdm
 from dotenv import load_dotenv
-
-
+from tqdm import tqdm
 
 load_dotenv()
 class AwsDownloader:
@@ -21,8 +19,11 @@ class AwsDownloader:
         start_date: datetime.datetime,
         end_date: datetime.datetime,
         sample_rate_hz: float,
+        log_time: datetime.datetime,
+        storage_root: str = ".",
+        subfolder_data: str = "data",
+        subfolder_logs: str = "logs",
         source: str = "mcity_gridsmart",
-        storage_target_root: str = ".",
         test_run: bool = False,
         delete_old_data: bool = False,
     ):
@@ -30,7 +31,6 @@ class AwsDownloader:
         self.end_date = end_date
         self.sample_rate_hz = sample_rate_hz
         self.source = source
-        self.storage_target_root = storage_target_root
         self.test_run = test_run
         self.delete_old_data = delete_old_data
         self.name = name
@@ -41,18 +41,22 @@ class AwsDownloader:
         # Fill log
         self.log["source"] = source
         self.log["sample_rate_hz"] = sample_rate_hz
-        self.log["storage_target_root"] = storage_target_root
+        self.log["storage_target_root"] = storage_root
         self.log["selection_start_date"] = start_date.strftime("%Y-%m-%d")
         self.log["selection_end_date"] = end_date.strftime("%Y-%m-%d")
         self.log["delete_old_data"] = delete_old_data
         self.log["test_run"] = test_run
 
         # Setup storage folders
-        self.data_target = os.path.join(storage_target_root, "data")
+        self.data_target = os.path.join(storage_root, subfolder_data)
         os.makedirs(self.data_target, exist_ok=True)
 
-        self.log_target = os.path.join(storage_target_root, "logs")
+        log_target = os.path.join(storage_root, subfolder_logs)
         os.makedirs(self.log_target, exist_ok=True)
+        log_name = (log_time + "_" + self.name).replace(" ", "_").replace(
+            ":", "_"
+        ) + ".json"
+        self.log_file_path = os.path.join(log_target, log_name)
 
         self.s3 = boto3.client(
             "s3",
@@ -61,7 +65,6 @@ class AwsDownloader:
             region_name='us-east-1'
 
         )
-
 
     def get_list(self):
         try:
@@ -94,12 +97,7 @@ class AwsDownloader:
             return
         finally:
             self.log["data"] = cameras_dict
-            log_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            log_name = (log_time + "_" + self.name).replace(" ", "_").replace(
-                ":", "_"
-            ) + ".json"
-            log_file_path = os.path.join(self.log_target, log_name)
-            with open(log_file_path, "w") as json_file:
+            with open(self.log_file_path, "w") as json_file:
                 json.dump(self.log, json_file, indent=4)
 
     def _mcity_init_cameras(
@@ -257,11 +255,10 @@ class AwsDownloader:
                         if self.test_run and file_downloaded_test:
                             break  # escape for folder_day in folders_day
 
-        print(f"Found {n_cameras} cameras")
-        print(f"Found {n_aws_sources} AWS sources")
-        print(f"Found {n_files_to_download} files to download")
-        self.log["n_files_to_download"] = n_files_to_download
-        self.log["download_size_tb"] = download_size_bytes / (1024**4)
+        self.log["n_cameras"] = n_cameras
+        self.log["n_aws_sources"] = n_aws_sources
+        self.log["n_files_to_process"] = n_files_to_download
+        self.log["selection_size_tb"] = download_size_bytes / (1024**4)
         return self.file_names
 
     def _mcity_download_data(self, cameras_dict, n_files_to_download, passed_checks):
