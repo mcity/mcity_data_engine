@@ -1,10 +1,12 @@
-import json
 import datetime
-import numpy as np
-from tqdm import tqdm
+import json
+import os
+import shutil
+
 import boto3
-import os, shutil
+import numpy as np
 from dotenv import load_dotenv
+from tqdm import tqdm
 
 load_dotenv()
 
@@ -39,8 +41,7 @@ class SampleTimestamps():
         else:
             raise ValueError("Either file_path or aws_bucket and aws_prefix must be provided")
 
-    def get_framerate(self
-                      ):
+    def get_framerate(self, log):
         timestamps = []
 
         with open(self.file_path, "r") as file:
@@ -55,9 +56,9 @@ class SampleTimestamps():
                     timestamp = datetime.datetime.strptime(timestamp_raw, "%Y-%m-%d %H:%M:%S.%f")
 
                 elif (
-                        "image" in data
-                        and "sensor_name" in data
-                        and "event_timestamp" in data
+                    "image" in data
+                    and "sensor_name" in data
+                    and "event_timestamp" in data
                 ):
                     # Get time data
                     timestamp_raw = data.get("event_timestamp")
@@ -87,33 +88,35 @@ class SampleTimestamps():
         q3_time_diff = np.percentile(time_differences, 75)
         current_framerate_hz = 1 / median_time_diff  # Median is more robust to outliers
 
-        print(f"Average time difference between timestamps: {"{:.3f}".format(average_time_diff)} seconds")
-        print(f"Median time difference between timestamps: {"{:.3f}".format(median_time_diff)} seconds")
-        print(f"Standard deviation of time differences: {"{:.3f}".format(std_time_diff)} seconds")
-        print(f"25th percentile (Q1) of time differences: {"{:.3f}".format(q1_time_diff)} seconds")
-        print(f"75th percentile (Q3) of time differences: {"{:.3f}".format(q3_time_diff)} seconds")
-        print(f"Min time difference between timestamps: {"{:.3f}".format(min_time_diff)} seconds")
-        print(f"Max time difference between timestamps: {"{:.3f}".format(max_time_diff)} seconds")
-        print(f"Range of time differences: {"{:.3f}".format(range_time_diff)} seconds")
-        print(f"Framerate: {"{:.3f}".format(current_framerate_hz)} Hz")
+        log["time_s_avg_between_timestamps"] =  average_time_diff
+        log["time_s_median_between_timestamps"] =  median_time_diff
+        log["time_s_std_between_timestamps"] =  std_time_diff
+        log["time_s_min_between_timestamps"] =  min_time_diff
+        log["time_s_max_between_timestamps"] =  max_time_diff
+        log["time_s_range_between_timestamps"] =  range_time_diff
+        log["time_s_25_percentile_between_timestamps"] =  q1_time_diff
+        log["time_s_75_percentile_between_timestamps"] =  q3_time_diff
+        log["framerate_hz_original"] =  current_framerate_hz
+        log["framerate_hz_target"] =  self.target_framerate_hz
 
         # Compute threshold
         interquartile_range = q3_time_diff - q1_time_diff  # Interquartile Range
         upper_bound_threshold = q3_time_diff + 1.5 * interquartile_range  # (1.5 * IQR rule)
-        print(f"Upper bound threshold: {"{:.3f}".format(upper_bound_threshold)} seconds")
+        log["upper_bound_threshold"] =  upper_bound_threshold
 
         return current_framerate_hz, timestamps, upper_bound_threshold
 
-    def check_target_framerate(self, current_framerate_hz):
+    def check_target_framerate(self, current_framerate_hz, log):
         # Check if target framerate is valid
         if self.target_framerate_hz > current_framerate_hz:
-            print(
-                f"Target framerate of {self.target_framerate_hz} Hz cannot exceed original framerate of {current_framerate_hz} Hz")
+            print(f"Target framerate of {self.target_framerate_hz} Hz cannot exceed original framerate of {current_framerate_hz} Hz")
+            log["framerate_target_ok"] = False
             return False
         else:
+            log["framerate_target_ok"] = True
             return True
 
-    def sample_timestamps(self, timestamps, threshold_to_target):
+    def sample_timestamps(self, timestamps, threshold_to_target, log):
         # Generate target timestamps
         start_time = timestamps[0][1]
         end_time = timestamps[-1][1]
@@ -142,8 +145,25 @@ class SampleTimestamps():
                 selected_indices.append(nearest_index)
                 selected_timestamps.append(timestamps[nearest_index])
 
-        print(
-            f"{len(timestamps)} timestamps reduced to {len(selected_timestamps)} timestamps with target framerate of {self.target_framerate_hz} Hz")
+        # Compute new framerate
+        time_differences_new = []
+        timestamps_new = sorted(selected_timestamps, key=lambda x: x[1])
+
+        previous_time = None
+        for index, timestamp in tqdm(timestamps_new, desc="Calculating new time differences"):
+            if previous_time is not None:
+                time_difference = (timestamp - previous_time).total_seconds()
+                time_differences_new.append(time_difference)
+            previous_time = timestamp
+        median_time_diff_new = np.median(time_differences_new)
+        new_framerate_hz = 1 / median_time_diff_new
+        log["framerate_hz_sampled"] =  new_framerate_hz
+
+        # Log statistics
+        log["n_original_timestamps"] = len(timestamps)
+        log["n_target_timestamps"] = len(target_timestamps)
+        log["n_selected_timestamps"] = len(selected_timestamps)
+
         return selected_indices, selected_timestamps, target_timestamps, selected_target_timestamps
 
     def update_upload_file(self, file_name, selected_indices):
@@ -158,7 +178,6 @@ class SampleTimestamps():
             output_file.writelines(lines)
 
         try:
-            # print(f'Uploading {base_path+"/"+file_name} to {S3_BUCKET_NAME}/{file_name}')
             head, tail = os.path.split(output_file.name)
 
             s3.upload_file(output_file.name, S3_BUCKET_NAME, str(self.target_framerate_hz) + '/' + tail)
