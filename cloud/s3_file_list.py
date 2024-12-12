@@ -17,18 +17,18 @@ load_dotenv()
 class AwsDownloader:
 
     def __init__(
-        self,
-        name: str,
-        start_date: datetime.datetime,
-        end_date: datetime.datetime,
-        sample_rate_hz: float,
-        log_time: datetime.datetime,
-        source: str = "mcity_gridsmart",
-        storage_target_root: str = ".",
-        subfolder_data: str = "data",
-        subfolder_logs: str = "logs",
-        test_run: bool = False,
-        delete_old_data: bool = False,
+            self,
+            name: str,
+            start_date: datetime.datetime,
+            end_date: datetime.datetime,
+            sample_rate_hz: float,
+            log_time: datetime.datetime,
+            source: str = "mcity_gridsmart",
+            storage_target_root: str = ".",
+            subfolder_data: str = "data",
+            subfolder_logs: str = "logs",
+            test_run: bool = False,
+            delete_old_data: bool = False,
     ):
         self.start_date = start_date
         self.end_date = end_date
@@ -71,7 +71,7 @@ class AwsDownloader:
         try:
             cameras_dict = self._mcity_init_cameras()
             self._mcity_process_aws_buckets(cameras_dict)
-            self.file_names = self._mcity_select_data(cameras_dict)            
+            self.file_names = self._mcity_select_data(cameras_dict)
 
             targets = []
             with tqdm(desc="Downloading data", total=1) as pbar:
@@ -88,18 +88,18 @@ class AwsDownloader:
                                 target = './data/' + file_name
                                 targets.append(target)
                                 self.s3.download_file(bucket, key, target)
-                                
+
                                 # Sample data
                                 sampler = SampleTimestamps(file_path=target, target_framerate_hz=1)
                                 framerate_hz, timestamps, upper_bound_threshold = sampler.get_framerate(log_run)
                                 valid_target_framerate = sampler.check_target_framerate(framerate_hz, log_run)
-                                
+
                                 # Upload data to new bucket
                                 if valid_target_framerate:
                                     selected_indices, selected_timestamps, target_timestamps, selected_target_timestamps = sampler.sample_timestamps(
                                         timestamps, upper_bound_threshold, log_run)
                                     sampler.update_upload_file(target, selected_indices)
-                                
+
                                 # Update log
                                 self.log_sampling[file] = log_run
 
@@ -291,8 +291,8 @@ class AwsDownloader:
         print(f"Found {n_cameras} cameras")
         print(f"Found {n_aws_sources} AWS sources")
         print(f"Found {n_files_to_download} files to download")
-        self.log["n_files_to_download"] = n_files_to_download
-        self.log["download_size_tb"] = download_size_bytes / (1024 ** 4)
+        self.log_download["n_files_to_download"] = n_files_to_download
+        self.log_download["download_size_tb"] = download_size_bytes / (1024 ** 4)
         return self.file_names
 
     def _mcity_download_data(self, cameras_dict, n_files_to_download, passed_checks):

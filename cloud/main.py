@@ -8,13 +8,13 @@ from s3_file_list import AwsDownloader
 
 def main():
     # Prepare logging and storing
-    storage_root: str = "."    
+    storage_root = "."
     subfolder_data = "data"
-    subfolder_logs = "logs"                     
-    storage_logs = os.path.join(storage_root, subfolder_logs) 
-    storage_data = os.path.join(storage_root, subfolder_data) 
-    os.makedirs(storage_logs, exist_ok=True)  
-    os.makedirs(storage_data, exist_ok=True) 
+    subfolder_logs = "logs"
+    storage_logs = os.path.join(storage_root, subfolder_logs)
+    storage_data = os.path.join(storage_root, subfolder_data)
+    os.makedirs(storage_logs, exist_ok=True)
+    os.makedirs(storage_data, exist_ok=True)
 
     log_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -23,11 +23,12 @@ def main():
     sample_rate= 1
 
     aws_downloader = AwsDownloader(
+        name= "mcity-data-engine",
         start_date=start_date,
         end_date=end_date,
         sample_rate_hz=sample_rate,
         test_run=True,
-        storage_root=storage_root,
+        storage_target_root=storage_root,
         subfolder_data=subfolder_data,
         subfolder_logs=subfolder_logs,
         log_time=log_time
