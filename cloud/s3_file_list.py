@@ -288,11 +288,10 @@ class AwsDownloader:
                         if self.test_run and file_downloaded_test:
                             break  # escape for folder_day in folders_day
 
-        print(f"Found {n_cameras} cameras")
-        print(f"Found {n_aws_sources} AWS sources")
-        print(f"Found {n_files_to_download} files to download")
-        self.log_download["n_files_to_download"] = n_files_to_download
-        self.log_download["download_size_tb"] = download_size_bytes / (1024 ** 4)
+        self.log["n_cameras"] = n_cameras
+        self.log["n_aws_sources"] = n_aws_sources
+        self.log["n_files_to_process"] = n_files_to_download
+        self.log["selection_size_tb"] = download_size_bytes / (1024**4)
         return self.file_names
 
     def _mcity_download_data(self, cameras_dict, n_files_to_download, passed_checks):
