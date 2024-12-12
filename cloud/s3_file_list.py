@@ -7,9 +7,9 @@ import shutil
 import time
 
 import boto3
-from tqdm import tqdm
-from dotenv import load_dotenv
 from aws_stream_filter_framerate import SampleTimestamps
+from dotenv import load_dotenv
+from tqdm import tqdm
 
 load_dotenv()
 
@@ -17,15 +17,18 @@ load_dotenv()
 class AwsDownloader:
 
     def __init__(
-            self,
-            name: str,
-            start_date: datetime.datetime,
-            end_date: datetime.datetime,
-            sample_rate_hz: float,
-            source: str = "mcity_gridsmart",
-            storage_target_root: str = ".",
-            test_run: bool = False,
-            delete_old_data: bool = False,
+        self,
+        name: str,
+        start_date: datetime.datetime,
+        end_date: datetime.datetime,
+        sample_rate_hz: float,
+        log_time: datetime.datetime,
+        source: str = "mcity_gridsmart",
+        storage_target_root: str = ".",
+        subfolder_data: str = "data",
+        subfolder_logs: str = "logs",
+        test_run: bool = False,
+        delete_old_data: bool = False,
     ):
         self.start_date = start_date
         self.end_date = end_date
@@ -34,40 +37,41 @@ class AwsDownloader:
         self.storage_target_root = storage_target_root
         self.test_run = test_run
         self.delete_old_data = delete_old_data
-        self.name = name
+        self.log_time = log_time
         self.file_names = []
 
-        self.log = {}
+        self.log_download = {}
+        self.log_sampling = {}
 
         # Fill log
-        self.log["source"] = source
-        self.log["sample_rate_hz"] = sample_rate_hz
-        self.log["storage_target_root"] = storage_target_root
-        self.log["selection_start_date"] = start_date.strftime("%Y-%m-%d")
-        self.log["selection_end_date"] = end_date.strftime("%Y-%m-%d")
-        self.log["delete_old_data"] = delete_old_data
-        self.log["test_run"] = test_run
+        self.log_download["source"] = source
+        self.log_download["sample_rate_hz"] = sample_rate_hz
+        self.log_download["storage_target_root"] = storage_target_root
+        self.log_download["selection_start_date"] = start_date.strftime("%Y-%m-%d")
+        self.log_download["selection_end_date"] = end_date.strftime("%Y-%m-%d")
+        self.log_download["delete_old_data"] = delete_old_data
+        self.log_download["test_run"] = test_run
 
         # Setup storage folders
-        self.data_target = os.path.join(storage_target_root, "data")
+        self.data_target = os.path.join(storage_target_root, subfolder_data)
         os.makedirs(self.data_target, exist_ok=True)
 
-        self.log_target = os.path.join(storage_target_root, "logs")
+        self.log_target = os.path.join(storage_target_root, subfolder_logs)
         os.makedirs(self.log_target, exist_ok=True)
 
+        # Connect to AWS S3
         self.s3 = boto3.client(
             "s3",
             aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID", None),
             aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", None),
             region_name='us-east-1'
-
         )
 
-    def get_list(self):
+    def process_data(self):
         try:
             cameras_dict = self._mcity_init_cameras()
             self._mcity_process_aws_buckets(cameras_dict)
-            self.file_names = self._mcity_select_data(cameras_dict)
+            self.file_names = self._mcity_select_data(cameras_dict)            
 
             targets = []
             with tqdm(desc="Downloading data", total=1) as pbar:
@@ -76,25 +80,32 @@ class AwsDownloader:
                         bucket = aws_source.split("/", 1)[0]
                         for date in cameras_dict[camera]["aws-sources"][aws_source]:
                             for file in cameras_dict[camera]["aws-sources"][aws_source][date]:
-                                time_start = time.time()
+                                log_run = {}
 
                                 # AWS S3 Download
                                 file_name = os.path.basename(file)
                                 key = cameras_dict[camera]["aws-sources"][aws_source][date][file_name]["key"]
                                 target = './data/' + file_name
-                                print('target =' + target)
                                 targets.append(target)
                                 self.s3.download_file(bucket, key, target)
+                                
+                                # Sample data
                                 sampler = SampleTimestamps(file_path=target, target_framerate_hz=1)
-                                framerate_hz, timestamps, upper_bound_threshold = sampler.get_framerate()
-                                valid_target_framerate = sampler.check_target_framerate(framerate_hz)
+                                framerate_hz, timestamps, upper_bound_threshold = sampler.get_framerate(log_run)
+                                valid_target_framerate = sampler.check_target_framerate(framerate_hz, log_run)
+                                
+                                # Upload data to new bucket
                                 if valid_target_framerate:
                                     selected_indices, selected_timestamps, target_timestamps, selected_target_timestamps = sampler.sample_timestamps(
-                                        timestamps, upper_bound_threshold)
+                                        timestamps, upper_bound_threshold, log_run)
                                     sampler.update_upload_file(target, selected_indices)
+                                
+                                # Update log
+                                self.log_sampling[file] = log_run
+
+                                # Delete local data
                                 os.remove(target)
                                 os.remove(target + '_sampled_1Hz')
-                                break
 
             return targets
 
@@ -103,14 +114,24 @@ class AwsDownloader:
             print("Stack trace:", exc_info=True)
             return
         finally:
-            self.log["data"] = cameras_dict
-            log_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            log_name = (log_time + "_" + self.name).replace(" ", "_").replace(
+            # Store download log
+            name_log_download = "FileDownload"
+            self.log_download["data"] = cameras_dict
+            log_name = (self.log_time + "_" + name_log_download).replace(" ", "_").replace(
                 ":", "_"
             ) + ".json"
             log_file_path = os.path.join(self.log_target, log_name)
             with open(log_file_path, "w") as json_file:
-                json.dump(self.log, json_file, indent=4)
+                json.dump(self.log_download, json_file, indent=4)
+
+            # Store sampling log
+            name_log_sampling = "FileSampling"
+            log_name = (self.log_time + "_" + name_log_sampling).replace(" ", "_").replace(
+                ":", "_"
+            ) + ".json"
+            log_file_path = os.path.join(self.log_target, log_name)
+            with open(log_file_path, "w") as json_file:
+                json.dump(self.log_sampling, json_file, indent=4)
 
     def _mcity_init_cameras(
             self,
