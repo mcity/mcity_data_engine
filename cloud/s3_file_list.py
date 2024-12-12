@@ -91,21 +91,24 @@ class AwsDownloader:
 
                                 # Sample data
                                 sampler = SampleTimestamps(file_path=target, target_framerate_hz=1)
-                                framerate_hz, timestamps, upper_bound_threshold = sampler.get_framerate(log_run)
-                                valid_target_framerate = sampler.check_target_framerate(framerate_hz, log_run)
+                                timestamps = sampler.get_timestamps()
+                                
+                                if len(timestamps) > 0:
+                                    framerate_hz, timestamps, upper_bound_threshold = sampler.get_framerate(timestamps, log_run)
+                                    valid_target_framerate = sampler.check_target_framerate(framerate_hz, log_run)
 
-                                # Upload data to new bucket
-                                if valid_target_framerate:
-                                    selected_indices, selected_timestamps, target_timestamps, selected_target_timestamps = sampler.sample_timestamps(
-                                        timestamps, upper_bound_threshold, log_run)
-                                    sampler.update_upload_file(target, selected_indices)
+                                    # Upload data to new bucket
+                                    if valid_target_framerate:
+                                        selected_indices, selected_timestamps, target_timestamps, selected_target_timestamps = sampler.sample_timestamps(
+                                            timestamps, upper_bound_threshold, log_run)
+                                        sampler.update_upload_file(target, selected_indices)
 
-                                # Update log
-                                self.log_sampling[file] = log_run
+                                    # Update log
+                                    self.log_sampling[file] = log_run
 
-                                # Delete local data
-                                os.remove(target)
-                                os.remove(target + '_sampled_1Hz')
+                                    # Delete local data
+                                    os.remove(target)
+                                    os.remove(target + '_sampled_1Hz')
 
             return targets
 
