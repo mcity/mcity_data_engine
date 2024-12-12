@@ -7,56 +7,53 @@ import shutil
 import time
 
 import boto3
-from dotenv import load_dotenv
 from tqdm import tqdm
+from dotenv import load_dotenv
+from aws_stream_filter_framerate import SampleTimestamps
 
 load_dotenv()
+
+
 class AwsDownloader:
 
     def __init__(
-        self,
-        name: str,
-        start_date: datetime.datetime,
-        end_date: datetime.datetime,
-        sample_rate_hz: float,
-        log_time: datetime.datetime,
-        storage_root: str = ".",
-        subfolder_data: str = "data",
-        subfolder_logs: str = "logs",
-        source: str = "mcity_gridsmart",
-        test_run: bool = False,
-        delete_old_data: bool = False,
+            self,
+            name: str,
+            start_date: datetime.datetime,
+            end_date: datetime.datetime,
+            sample_rate_hz: float,
+            source: str = "mcity_gridsmart",
+            storage_target_root: str = ".",
+            test_run: bool = False,
+            delete_old_data: bool = False,
     ):
         self.start_date = start_date
         self.end_date = end_date
         self.sample_rate_hz = sample_rate_hz
         self.source = source
+        self.storage_target_root = storage_target_root
         self.test_run = test_run
         self.delete_old_data = delete_old_data
         self.name = name
-        self.file_names= []
+        self.file_names = []
 
         self.log = {}
 
         # Fill log
         self.log["source"] = source
         self.log["sample_rate_hz"] = sample_rate_hz
-        self.log["storage_target_root"] = storage_root
+        self.log["storage_target_root"] = storage_target_root
         self.log["selection_start_date"] = start_date.strftime("%Y-%m-%d")
         self.log["selection_end_date"] = end_date.strftime("%Y-%m-%d")
         self.log["delete_old_data"] = delete_old_data
         self.log["test_run"] = test_run
 
         # Setup storage folders
-        self.data_target = os.path.join(storage_root, subfolder_data)
+        self.data_target = os.path.join(storage_target_root, "data")
         os.makedirs(self.data_target, exist_ok=True)
 
-        log_target = os.path.join(storage_root, subfolder_logs)
+        self.log_target = os.path.join(storage_target_root, "logs")
         os.makedirs(self.log_target, exist_ok=True)
-        log_name = (log_time + "_" + self.name).replace(" ", "_").replace(
-            ":", "_"
-        ) + ".json"
-        self.log_file_path = os.path.join(log_target, log_name)
 
         self.s3 = boto3.client(
             "s3",
@@ -72,7 +69,7 @@ class AwsDownloader:
             self._mcity_process_aws_buckets(cameras_dict)
             self.file_names = self._mcity_select_data(cameras_dict)
 
-            targets =[]
+            targets = []
             with tqdm(desc="Downloading data", total=1) as pbar:
                 for camera in cameras_dict:
                     for aws_source in cameras_dict[camera]["aws-sources"]:
@@ -84,11 +81,21 @@ class AwsDownloader:
                                 # AWS S3 Download
                                 file_name = os.path.basename(file)
                                 key = cameras_dict[camera]["aws-sources"][aws_source][date][file_name]["key"]
-                                target = os.path.join(self.data_target, file_name)
+                                target = './data/' + file_name
+                                print('target =' + target)
                                 targets.append(target)
-                                # self.s3.download_file(bucket, key, target)
+                                self.s3.download_file(bucket, key, target)
+                                sampler = SampleTimestamps(file_path=target, target_framerate_hz=1)
+                                framerate_hz, timestamps, upper_bound_threshold = sampler.get_framerate()
+                                valid_target_framerate = sampler.check_target_framerate(framerate_hz)
+                                if valid_target_framerate:
+                                    selected_indices, selected_timestamps, target_timestamps, selected_target_timestamps = sampler.sample_timestamps(
+                                        timestamps, upper_bound_threshold)
+                                    sampler.update_upload_file(target, selected_indices)
+                                os.remove(target)
+                                os.remove(target + '_sampled_1Hz')
                                 break
-            
+
             return targets
 
         except Exception as e:
@@ -97,37 +104,42 @@ class AwsDownloader:
             return
         finally:
             self.log["data"] = cameras_dict
-            with open(self.log_file_path, "w") as json_file:
+            log_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            log_name = (log_time + "_" + self.name).replace(" ", "_").replace(
+                ":", "_"
+            ) + ".json"
+            log_file_path = os.path.join(self.log_target, log_name)
+            with open(log_file_path, "w") as json_file:
                 json.dump(self.log, json_file, indent=4)
 
     def _mcity_init_cameras(
-        self,
-        cameras={
-            "Geddes_Huron_1",
-            "Geddes_Huron_2",
-            "Huron_Plymouth_1",
-            "Huron_Plymouth_2",
-            "Main_stadium_1",
-            "Main_stadium_2",
-            "Plymouth_Beal",
-            "Plymouth_Bishop",
-            "Plymouth_EPA",
-            "Plymouth_Georgetown",
-            "State_Ellsworth_NE",
-            "State_Ellsworth_NW",
-            "State_Ellsworth_SE",
-            "State_Ellsworth_SW",
-            "Fuller_Fuller_CT",
-            "Fuller_Glazier_1",
-            "Fuller_Glazier_2",
-            "Fuller_Glen",
-            "Dexter_Maple_1",
-            "Dexter_Maple_2",
-            "Hubbard_Huron_1",
-            "Hubbard_Huron_2",
-            "Maple_Miller_1",
-            "Maple_Miller_2",
-        },
+            self,
+            cameras={
+                "Geddes_Huron_1",
+                "Geddes_Huron_2",
+                "Huron_Plymouth_1",
+                "Huron_Plymouth_2",
+                "Main_stadium_1",
+                "Main_stadium_2",
+                "Plymouth_Beal",
+                "Plymouth_Bishop",
+                "Plymouth_EPA",
+                "Plymouth_Georgetown",
+                "State_Ellsworth_NE",
+                "State_Ellsworth_NW",
+                "State_Ellsworth_SE",
+                "State_Ellsworth_SW",
+                "Fuller_Fuller_CT",
+                "Fuller_Glazier_1",
+                "Fuller_Glazier_2",
+                "Fuller_Glen",
+                "Dexter_Maple_1",
+                "Dexter_Maple_2",
+                "Hubbard_Huron_1",
+                "Hubbard_Huron_2",
+                "Maple_Miller_1",
+                "Maple_Miller_2",
+            },
     ):
 
         cameras_dict = {camera.lower(): {} for camera in cameras}
@@ -139,12 +151,12 @@ class AwsDownloader:
         return cameras_dict
 
     def _mcity_process_aws_buckets(
-        self,
-        cameras_dict,
-        aws_sources={
-            "sip-sensor-data": [""],
-            "sip-sensor-data2": ["wheeler1/", "wheeler2/"],
-        },
+            self,
+            cameras_dict,
+            aws_sources={
+                "sip-sensor-data": [""],
+                "sip-sensor-data2": ["wheeler1/", "wheeler2/"],
+            },
     ):
         for bucket in tqdm(aws_sources, desc="Processing AWS sources"):
             for folder in aws_sources[bucket]:
@@ -171,16 +183,16 @@ class AwsDownloader:
                 if folders:
                     for camera_name in cameras_dict:
                         for folder_name, folder_name_aligned in zip(
-                            folders, folders_aligned
+                                folders, folders_aligned
                         ):
                             if (
-                                camera_name in folder_name_aligned
-                                and "gs_" in folder_name_aligned
+                                    camera_name in folder_name_aligned
+                                    and "gs_" in folder_name_aligned
                             ):  # gs_ is the prefix used in AWS
                                 aws_source = f"{bucket}/{folder_name}"
                                 if (
-                                    aws_source
-                                    not in cameras_dict[camera_name]["aws-sources"]
+                                        aws_source
+                                        not in cameras_dict[camera_name]["aws-sources"]
                                 ):
                                     cameras_dict[camera_name]["aws-sources"][aws_source] = {}
                 else:
@@ -255,10 +267,11 @@ class AwsDownloader:
                         if self.test_run and file_downloaded_test:
                             break  # escape for folder_day in folders_day
 
-        self.log["n_cameras"] = n_cameras
-        self.log["n_aws_sources"] = n_aws_sources
-        self.log["n_files_to_process"] = n_files_to_download
-        self.log["selection_size_tb"] = download_size_bytes / (1024**4)
+        print(f"Found {n_cameras} cameras")
+        print(f"Found {n_aws_sources} AWS sources")
+        print(f"Found {n_files_to_download} files to download")
+        self.log["n_files_to_download"] = n_files_to_download
+        self.log["download_size_tb"] = download_size_bytes / (1024 ** 4)
         return self.file_names
 
     def _mcity_download_data(self, cameras_dict, n_files_to_download, passed_checks):
@@ -291,7 +304,6 @@ class AwsDownloader:
                                 target = os.path.join(self.data_target, file_name)
                                 self.s3.download_file(bucket, key, target)
 
-                          
             download_ended = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.log["download_ended"] = download_ended
 
@@ -300,8 +312,6 @@ class AwsDownloader:
             print("Safety checks failed. Not downloading data")
 
         return download_successful
-
-
 
     def _process_aws_result(self, result):
         # Get list of folders from AWS response
