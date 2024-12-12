@@ -114,7 +114,6 @@ class AwsDownloader:
 
         except Exception as e:
             print(f"Error in mcity_gridsmart_loader: {e}")
-            print("Stack trace:", exc_info=True)
             return
         finally:
             # Store download log
