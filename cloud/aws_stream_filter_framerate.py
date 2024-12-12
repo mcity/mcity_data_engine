@@ -41,7 +41,7 @@ class SampleTimestamps():
         else:
             raise ValueError("Either file_path or aws_bucket and aws_prefix must be provided")
 
-    def get_framerate(self, log):
+    def get_timestamps(self):
         timestamps = []
 
         with open(self.file_path, "r") as file:
@@ -66,6 +66,11 @@ class SampleTimestamps():
 
                 timestamps.append((index, timestamp))
 
+        return timestamps
+
+
+    def get_framerate(self, timestamps, log):
+        
         # Calculate time differences (s) and current framerate (Hz)
         time_differences = []
         timestamps = sorted(timestamps, key=lambda x: x[1])
