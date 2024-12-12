@@ -288,10 +288,10 @@ class AwsDownloader:
                         if self.test_run and file_downloaded_test:
                             break  # escape for folder_day in folders_day
 
-        self.log["n_cameras"] = n_cameras
-        self.log["n_aws_sources"] = n_aws_sources
-        self.log["n_files_to_process"] = n_files_to_download
-        self.log["selection_size_tb"] = download_size_bytes / (1024**4)
+        self.log_download["n_cameras"] = n_cameras
+        self.log_download["n_aws_sources"] = n_aws_sources
+        self.log_download["n_files_to_process"] = n_files_to_download
+        self.log_download["selection_size_tb"] = download_size_bytes / (1024**4)
         return self.file_names
 
     def _mcity_download_data(self, cameras_dict, n_files_to_download, passed_checks):
@@ -309,7 +309,7 @@ class AwsDownloader:
 
             step = 0
             download_started = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.log["download_started"] = download_started
+            self.log_download["download_started"] = download_started
             with tqdm(desc="Downloading data", total=n_files_to_download) as pbar:
                 for camera in cameras_dict:
                     for aws_source in cameras_dict[camera]["aws-sources"]:
@@ -325,7 +325,7 @@ class AwsDownloader:
                                 self.s3.download_file(bucket, key, target)
 
             download_ended = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.log["download_ended"] = download_ended
+            self.log_download["download_ended"] = download_ended
 
         else:
             download_successful = False
