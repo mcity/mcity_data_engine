@@ -53,7 +53,12 @@ class SampleTimestamps():
                 if "time" in data and "data" in data:
                     # Get time data
                     timestamp_raw = data.get("time")
-                    timestamp = datetime.datetime.strptime(timestamp_raw, "%Y-%m-%d %H:%M:%S.%f")
+                    try:
+                        # Most timestamps have milliseconds
+                        timestamp = datetime.datetime.strptime(timestamp_raw, "%Y-%m-%d %H:%M:%S.%f")
+                    except:
+                        # Timestamps without milliseconds
+                        timestamp = datetime.datetime.strptime(timestamp_raw, "%Y-%m-%d %H:%M:%S")
 
                 elif (
                     "image" in data
