@@ -1,12 +1,32 @@
+import argparse
 import datetime
 import json
 import os
+from datetime import datetime as dt
 
 from aws_stream_filter_framerate import SampleTimestamps
 from s3_file_list import AwsDownloader
 
 
+def valid_date(s):
+    try:
+        return dt.strptime(s, "%Y-%m-%d")
+    except ValueError:
+        msg = f"'{s}' is not a valid date in YYYY-MM-DD format"
+        raise argparse.ArgumentTypeError(msg)
+
+
 def main():
+    parser = argparse.ArgumentParser(description='Process AWS data with specific date range and sample rate')
+    parser.add_argument('--start', type=valid_date, required=True,
+                      help='Start date in YYYY-MM-DD format')
+    parser.add_argument('--end', type=valid_date, required=True,
+                      help='End date in YYYY-MM-DD format')
+    parser.add_argument('--rate', type=float, default=1.0,
+                      help='Sample rate in Hz (default: 1.0)')
+    
+    args = parser.parse_args()
+
     # Prepare logging and storing
     storage_root = "."
     subfolder_data = "data"
@@ -18,15 +38,11 @@ def main():
 
     log_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    start_date = datetime.datetime.strptime("2023-11-19", "%Y-%m-%d")
-    end_date = datetime.datetime.strptime("2023-11-19", "%Y-%m-%d")
-    sample_rate = 1
-
     aws_downloader = AwsDownloader(
         name="mcity-data-engine",
-        start_date=start_date,
-        end_date=end_date,
-        sample_rate_hz=sample_rate,
+        start_date=args.start,
+        end_date=args.end,
+        sample_rate_hz=args.rate,
         test_run=False,
         storage_target_root=storage_root,
         subfolder_data=subfolder_data,
@@ -36,7 +52,6 @@ def main():
 
     # Load data, sample data, upload data, delete data
     aws_downloader.process_data()
-
 
 if __name__ == "__main__":
     main()
