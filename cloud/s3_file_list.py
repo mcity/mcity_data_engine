@@ -101,7 +101,7 @@ class AwsDownloader:
                                 key = cameras_dict[camera]["aws-sources"][aws_source][
                                     date
                                 ][file_name]["key"]
-                                target = "./data/" + file_name
+                                target = os.path.join(self.data_target, file_name)
                                 targets.append(target)
                                 self.s3.download_file(bucket, key, target)
 
