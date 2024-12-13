@@ -174,3 +174,4 @@ cython_debug/
 # generated cloud data
 cloud/data/
 cloud/logs
+cloud/wandb/
