@@ -53,5 +53,6 @@ def main():
     aws_downloader.process_data()
 
 # Example call: python main.py --start 2023-11-19 --end 2023-11-25 --rate 1
+# Multiple days can be processed in parallel by launching multiple instances of the script
 if __name__ == "__main__":
     main()
