@@ -217,6 +217,7 @@ class ZeroShotTeacher:
                         logging.info(f"Model {model_name} is ready for evaluation and export.")
                     else:
                         model_progress_dict[model_name] = nested_dict
+                        logging.debug(f"Model {model_name} processed {nested_dict['n_frames_processed']} of {len(dataset_v51)} frames.")
 
                     del result   # Explicit removal from device
                 except Exception as e:
