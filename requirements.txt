@@ -12,8 +12,12 @@ antlr4-python3-runtime==4.9.3
 anyio==4.6.0
 appdirs==1.4.4
 argcomplete==3.5.0
+argon2-cffi==23.1.0
+argon2-cffi-bindings==21.2.0
+arrow==1.3.0
 asgiref==3.8.1
 asttokens==2.4.1
+async-lru==2.0.4
 attr==0.3.1
 attrs==24.2.0
 awscli==1.35.0
@@ -90,6 +94,7 @@ filelock==3.16.1
 fire==0.6.0
 flake8==7.1.1
 fonttools==4.54.1
+fqdn==1.5.1
 FrEIA==0.2
 frozenlist==1.4.1
 fsspec==2024.6.1
@@ -147,6 +152,7 @@ ipython==8.27.0
 ipywidgets==8.1.5
 iso8601==2.1.0
 isodate==0.6.1
+isoduration==20.11.0
 isort==5.13.2
 jedi==0.19.1
 Jinja2==3.1.4
@@ -154,13 +160,23 @@ jiter==0.8.2
 jmespath==1.0.1
 joblib==1.4.2
 jsf==0.11.2
+json5==0.10.0
 jsonargparse==4.33.1
 jsonlines==4.0.0
+jsonpointer==3.0.0
 jsonschema==4.23.0
 jsonschema-specifications==2023.12.1
+jupyter==1.1.1
+jupyter-console==6.6.3
+jupyter-events==0.10.0
+jupyter-lsp==2.2.5
 jupyter_client==8.6.3
 jupyter_core==5.7.2
+jupyter_server==2.14.2
+jupyter_server_terminals==0.5.3
+jupyterlab==4.3.3
 jupyterlab_pygments==0.3.0
+jupyterlab_server==2.27.3
 jupyterlab_widgets==3.0.13
 kaleido==0.2.1
 kiwisolver==1.4.7
@@ -200,6 +216,8 @@ nbformat==5.10.4
 nest-asyncio==1.6.0
 networkx==3.3
 nltk==3.9.1
+notebook==7.3.1
+notebook_shim==0.2.4
 numba==0.60.0
 numpy==2.0.0
 nuscenes-devkit @ git+https://github.com/daniel-bogdoll/nuscenes-devkit.git@e9a832e608484c5496c6236ed78a185be6d7a44b
@@ -228,6 +246,7 @@ openvino-telemetry==2024.1.0
 optuna==4.0.0
 ordered-set==4.0.2
 orderedmultidict==1.0.1
+overrides==7.7.0
 packaging==24.1
 pandas==2.2.3
 pandocfilters==1.5.1
@@ -243,6 +262,7 @@ pluggy==1.5.0
 portalocker==2.10.1
 pprintpp==0.4.0
 priority==2.0.0
+prometheus_client==0.21.1
 prompt_toolkit==3.0.48
 proto-plus==1.24.0
 protobuf==5.26.1
@@ -291,6 +311,8 @@ requests-mock==1.12.1
 requests-oauthlib==2.0.0
 requirements-parser==0.11.0
 retrying==1.3.4
+rfc3339-validator==0.1.4
+rfc3986-validator==0.1.1
 rich==13.9.1
 rich-argparse==1.5.2
 rpds-py==0.20.0
@@ -306,6 +328,7 @@ scikit-learn==1.6.0
 scipy==1.14.1
 seaborn==0.13.2
 semver==3.0.2
+Send2Trash==1.8.3
 sentry-sdk==2.19.2
 setproctitle==1.3.3
 setuptools==75.6.0
@@ -336,6 +359,7 @@ tenacity==9.0.0
 tensorboard==2.18.0
 tensorboard-data-server==0.7.2
 termcolor==2.4.0
+terminado==0.18.1
 texttable==1.7.0
 threadpoolctl==3.5.0
 tifffile==2024.9.20
@@ -354,6 +378,7 @@ tqdm==4.67.1
 traitlets==5.14.3
 transformers==4.47.0
 triton==3.1.0
+types-python-dateutil==2.9.0.20241206
 types-setuptools==75.6.0.20241126
 typeshed_client==2.7.0
 typing_extensions==4.12.2
@@ -366,12 +391,14 @@ ultralytics==8.3.48
 ultralytics-thop==2.0.12
 umap-learn==0.5.7
 universal-analytics-python3==1.1.1
+uri-template==1.3.0
 uritemplate==4.1.1
 urllib3==1.26.20
 user-agents==2.2.0
 voxel51-eta==0.13.0
 wandb==0.19.1
 wcwidth==0.2.13
+webcolors==24.11.1
 webencodings==0.5.1
 websocket-client==1.8.0
 Werkzeug==3.0.4
