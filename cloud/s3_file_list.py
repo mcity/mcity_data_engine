@@ -19,7 +19,6 @@ class AwsDownloader:
 
     def __init__(
         self,
-        name: str,
         start_date: datetime.datetime,
         end_date: datetime.datetime,
         sample_rate_hz: float,

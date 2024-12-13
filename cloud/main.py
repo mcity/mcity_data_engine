@@ -39,7 +39,6 @@ def main():
     log_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     aws_downloader = AwsDownloader(
-        name="mcity-data-engine",
         start_date=args.start,
         end_date=args.end,
         sample_rate_hz=args.rate,
