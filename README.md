@@ -78,7 +78,7 @@ wandb launch-agent -q <queue-name> --max-jobs <n>
 In order to change the standard WandB directory, add the following line to the bottom of your ```~/.profile``` file and then run ```source ~/.profile```:
 
 ```
-export WANDB_DIR="/home/dbogdoll/mcity_data_engine/logs/wandb"
+export WANDB_DIR="<your_path>/mcity_data_engine/logs"
 ```
 In order to execute jobs on your own machine, the [following tools](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch) need to be installed:
 
