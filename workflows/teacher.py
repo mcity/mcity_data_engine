@@ -208,13 +208,13 @@ class ZeroShotTeacher:
                     batch_size = len(result["target_sizes"])
                     nested_dict = model_progress_dict[model_name]
                     nested_dict["n_frames_processed"] += batch_size
-
                     # Check if all frames have been processed
                     if nested_dict["n_frames_processed"] == len(dataset_v51) and nested_dict["ready_export"] == False:
                         nested_dict["ready_export"] = True
                         model_progress_dict[model_name] = nested_dict
                         nested_dict["model_name"] = model_name
                         models_ready_queue.put(nested_dict)
+                        logging.info(f"Model {model_name} is ready for evaluation and export.")
                     else:
                         model_progress_dict[model_name] = nested_dict
 
@@ -277,9 +277,11 @@ class ZeroShotTeacher:
                     pred_key = re.sub(r"[\W-]+", "_", "pred_" + model_name)
                     eval_key = re.sub(r"[\W-]+", "_", "eval_" + model_name)
                     dataset.reload()
-                    run_successful = self.eval_and_export(dataset, pred_key, eval_key)
+                    run_successful = self.eval_and_export(dataset, model_name, pred_key, eval_key)
                     models_done += 1
+                    logging.info(f"Evaluation and export of {models_done}/{n_models} models done.")
                 except Exception as e:
+                    logging.error(f"Error in eval-and-export worker: {e}")
                     continue
 
             if models_done == n_models:
@@ -305,7 +307,7 @@ class ZeroShotTeacher:
 
             # Load the model
             logging.info(f"Loading model {model_name}")
-            processor = AutoProcessor.from_pretrained(model_name)
+            processor = AutoProcessor.from_pretrained(model_name)   # TODO consider use_fast=True https://github.com/huggingface/transformers/pull/34354
             model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name)
             model = model.to(device)
             model.eval()
@@ -388,7 +390,6 @@ class ZeroShotTeacher:
             return run_successful
     
     def process_outputs(self, dataset_v51, result, object_classes, detection_threshold=0.2):
-        processing_successful = True
         try:
             inputs = result["inputs"]
             outputs = result["outputs"]
@@ -456,7 +457,11 @@ class ZeroShotTeacher:
                             selected_label = matches[0] if matches else None
                             if selected_label:
                                 logging.debug(f"Mapped output '{processed_label}' to class '{selected_label}'")
-                                processed_label = selected_label
+                                label = selected_label
+                                top_left_x = box[0].item()
+                                top_left_y = box[1].item()
+                                box_width = (box[2] - box[0]).item()
+                                box_height = (box[3] - box[1]).item()
                             else:
                                 logging.warning(f"Skipped detection with {hf_model_config_name} due to unclear output: {label}")
                                 processing_successful = False
@@ -506,7 +511,7 @@ class ZeroShotTeacher:
         finally:
             return processing_successful
 
-    def eval_and_export(self, dataset_v51, pred_key, eval_key):
+    def eval_and_export(self, dataset_v51, model_name, pred_key, eval_key):
         # Populate dataset with evaluation results (if ground_truth available)
         try:
             dataset_v51.evaluate_detections(
@@ -519,15 +524,15 @@ class ZeroShotTeacher:
             logging.warning(f"Evaluation not possible: {e}")
 
         # Store labels https://docs.voxel51.com/api/fiftyone.core.collections.html#fiftyone.core.collections.SampleCollection.export
+        model_name_key = re.sub(r"[\W-]+", "_", model_name)
         dataset_v51.export(
-            export_dir=self.detections_root,
+            export_dir=os.path.join(self.detections_root, model_name_key),
             dataset_type=fo.types.COCODetectionDataset,
             data_path="data.json",
             export_media=None,  # "manifest",
             label_field=pred_key,
             progress=True,
         )
-
         return True
 
 class Teacher:
@@ -572,7 +577,7 @@ class Teacher:
         pt_to_hf_converter = TorchToHFDatasetCOCO(pytorch_dataset)
         hf_dataset = pt_to_hf_converter.convert()
 
-        image_processor = AutoProcessor.from_pretrained(
+        image_processor = AutoProcessor.from_pretrained(    # # TODO consider use_fast=True https://github.com/huggingface/transformers/pull/34354
             self.model_name,
             do_resize=False,
             do_pad=False,  # Assumes all images have the same size
