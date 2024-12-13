@@ -48,7 +48,8 @@ class SampleTimestamps():
             total_lines = sum(1 for _ in file)
 
         with open(self.file_path, "r") as file:
-            for index, line in tqdm(enumerate(file), desc="Collecting data", total=total_lines):
+            # Collecting data
+            for index, line in enumerate(file):
                 data = json.loads(line)
                 if "time" in data and "data" in data:
                     # Get time data
@@ -81,7 +82,7 @@ class SampleTimestamps():
         timestamps = sorted(timestamps, key=lambda x: x[1])
 
         previous_time = None
-        for index, timestamp in tqdm(timestamps, desc="Calculating time differences"):
+        for index, timestamp in timestamps:
             if previous_time is not None:
                 time_difference = (timestamp - previous_time).total_seconds()
                 time_differences.append(time_difference)
@@ -141,7 +142,7 @@ class SampleTimestamps():
         selected_timestamps = []
         selected_target_timestamps = []
 
-        for target in tqdm(target_timestamps, desc="Finding nearest timestamps"):
+        for target in target_timestamps:
             # Compute the time difference with each original timestamp
             time_diffs = [(target - t).total_seconds() for i, t in timestamps]
             time_diffs = np.abs(time_diffs)  # Take absolute differences
@@ -160,7 +161,7 @@ class SampleTimestamps():
         timestamps_new = sorted(selected_timestamps, key=lambda x: x[1])
 
         previous_time = None
-        for index, timestamp in tqdm(timestamps_new, desc="Calculating new time differences"):
+        for index, timestamp in timestamps_new:
             if previous_time is not None:
                 time_difference = (timestamp - previous_time).total_seconds()
                 time_differences_new.append(time_difference)
@@ -180,7 +181,7 @@ class SampleTimestamps():
         output_file_path = file_name + f"_sampled_{self.target_framerate_hz}Hz"
         lines = []
         with open(file_name, "r") as file:
-            for index, line in tqdm(enumerate(file), "Collecting data"):
+            for index, line in enumerate(file):
                 if index in selected_indices:
                     lines.append(line)
 
@@ -191,9 +192,5 @@ class SampleTimestamps():
             head, tail = os.path.split(output_file.name)
 
             s3.upload_file(output_file.name, S3_BUCKET_NAME, str(self.target_framerate_hz) + '/' + tail)
-            print(f'Successfully uploaded {str(self.target_framerate_hz) + "/" + tail} to {S3_BUCKET_NAME}/{tail}')
         except Exception as e:
             print("S3 upload failed for file " + str(str(self.target_framerate_hz) + '/' + tail) + " - " + str(e))
-
-        # Delete the local files
-        # os.remove(self.file_path + '/' + file_name)

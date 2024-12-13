@@ -71,10 +71,10 @@ class AwsDownloader:
         try:
             cameras_dict = self._mcity_init_cameras()
             self._mcity_process_aws_buckets(cameras_dict)
-            self.file_names = self._mcity_select_data(cameras_dict)
+            self.file_names, n_files_to_download = self._mcity_select_data(cameras_dict)
 
             targets = []
-            with tqdm(desc="Downloading data", total=1) as pbar:
+            with tqdm(desc="Processing data", total=n_files_to_download) as pbar:
                 for camera in cameras_dict:
                     for aws_source in cameras_dict[camera]["aws-sources"]:
                         bucket = aws_source.split("/", 1)[0]
@@ -110,6 +110,9 @@ class AwsDownloader:
                                     os.remove(target)
                                     os.remove(target + '_sampled_1Hz')
 
+                                # Update progress bar
+                                pbar.update(1)
+            pbar.close()
             return targets
 
         except Exception as e:
@@ -294,7 +297,8 @@ class AwsDownloader:
         self.log_download["n_aws_sources"] = n_aws_sources
         self.log_download["n_files_to_process"] = n_files_to_download
         self.log_download["selection_size_tb"] = download_size_bytes / (1024**4)
-        return self.file_names
+
+        return self.file_names, n_files_to_download
 
     def _mcity_download_data(self, cameras_dict, n_files_to_download, passed_checks):
         mb_per_s_list = []
