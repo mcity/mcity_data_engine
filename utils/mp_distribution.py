@@ -74,7 +74,7 @@ class ZeroShotDistributer(Distributer):
         self.dataset_info = dataset_info
         self.teacher = teacher
 
-    def distribute_and_run(self, n_eval_export_worker = 1 ,post_processing_factor = 4):
+    def distribute_and_run(self, n_eval_export_worker: int = 1, post_processing_factor: int = 8):
         dataset_name = self.dataset_info["name"]
         models_dict = self.config["hf_models_zeroshot_objectdetection"]
 
