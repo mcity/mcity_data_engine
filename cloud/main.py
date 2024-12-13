@@ -27,7 +27,7 @@ def main():
         start_date=start_date,
         end_date=end_date,
         sample_rate_hz=sample_rate,
-        test_run=True,
+        test_run=False,
         storage_target_root=storage_root,
         subfolder_data=subfolder_data,
         subfolder_logs=subfolder_logs,
