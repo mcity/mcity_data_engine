@@ -172,24 +172,28 @@ class SampleTimestamps:
                 selected_indices.append(nearest_index)
                 selected_timestamps.append(timestamps[nearest_index])
 
-        # Compute new framerate
-        time_differences_new = []
-        timestamps_new = sorted(selected_timestamps, key=lambda x: x[1])
-
-        previous_time = None
-        for index, timestamp in timestamps_new:
-            if previous_time is not None:
-                time_difference = (timestamp - previous_time).total_seconds()
-                time_differences_new.append(time_difference)
-            previous_time = timestamp
-        median_time_diff_new = np.median(time_differences_new)
-        new_framerate_hz = 1 / median_time_diff_new
-        log["framerate_hz_sampled"] = new_framerate_hz
-
         # Log statistics
         log["n_original_timestamps"] = len(timestamps)
         log["n_target_timestamps"] = len(target_timestamps)
         log["n_selected_timestamps"] = len(selected_timestamps)
+
+        if len(selected_timestamps) >=2:
+            # Compute new framerate
+            time_differences_new = []
+            timestamps_new = sorted(selected_timestamps, key=lambda x: x[1])
+
+            previous_time = None
+            for index, timestamp in timestamps_new:
+                if previous_time is not None:
+                    time_difference = (timestamp - previous_time).total_seconds()
+                    time_differences_new.append(time_difference)
+                previous_time = timestamp
+            median_time_diff_new = np.median(time_differences_new)
+            new_framerate_hz = 1 / median_time_diff_new
+            log["framerate_hz_sampled"] = new_framerate_hz
+
+        else:
+            print(f"Not enough selected timestamps ({len(selected_timestamps)}) to compute new framerate. Original number of timestamps: {len(timestamps)}")
 
         return (
             selected_indices,
