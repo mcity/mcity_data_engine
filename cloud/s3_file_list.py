@@ -15,7 +15,6 @@ from tqdm import tqdm
 
 load_dotenv()
 
-
 class AwsDownloader:
 
     def __init__(
@@ -75,28 +74,26 @@ class AwsDownloader:
         )
 
     def process_data(self):
-        try:
-            cameras_dict = self._mcity_init_cameras()
-            self._mcity_process_aws_buckets(cameras_dict)
-            self.file_names, n_files_to_download = self._mcity_select_data(cameras_dict)
+        cameras_dict = self._mcity_init_cameras()
+        self._mcity_process_aws_buckets(cameras_dict)
+        self.file_names, n_files_to_download = self._mcity_select_data(cameras_dict)
 
-            # Tracking
-            wandb.init(
-                name=self.run_name,
-                job_type="download",
-                project="Data Engine Download",
-            )
+        # Tracking
+        wandb.init(
+            name=self.run_name,
+            job_type="download",
+            project="Data Engine Download",
+        )
 
-            targets = []
-            step = 0
-            with tqdm(desc="Processing data", total=n_files_to_download) as pbar:
-                for camera in cameras_dict:
-                    for aws_source in cameras_dict[camera]["aws-sources"]:
-                        bucket = aws_source.split("/", 1)[0]
-                        for date in cameras_dict[camera]["aws-sources"][aws_source]:
-                            for file in cameras_dict[camera]["aws-sources"][aws_source][
-                                date
-                            ]:
+        targets = []
+        step = 0
+        with tqdm(desc="Processing data", total=n_files_to_download) as pbar:
+            for camera in cameras_dict:
+                for aws_source in cameras_dict[camera]["aws-sources"]:
+                    bucket = aws_source.split("/", 1)[0]
+                    for date in cameras_dict[camera]["aws-sources"][aws_source]:
+                        for file in cameras_dict[camera]["aws-sources"][aws_source][date]:
+                            try:
                                 log_run = {}
 
                                 # AWS S3 Download
@@ -109,7 +106,7 @@ class AwsDownloader:
                                 targets.append(target)
                                 self.s3.download_file(bucket, key, target)
 
-                                # Calculate duration and GB/s
+                                # Logging
                                 file_size_mb = cameras_dict[camera]["aws-sources"][
                                     aws_source
                                 ][date][file_name]["size"] / (1024**2)
@@ -126,9 +123,8 @@ class AwsDownloader:
                                 )
                                 timestamps = sampler.get_timestamps()
 
-                                if (
-                                    len(timestamps) > 1
-                                ):  # We need at least 2 timestamps to calculate a framerate
+                                # We need at least 2 timestamps to calculate a framerate
+                                if (len(timestamps) >= 2):  
                                     # Get framerate
                                     framerate_hz, timestamps, upper_bound_threshold = (
                                         sampler.get_framerate(timestamps, log_run)
@@ -138,8 +134,8 @@ class AwsDownloader:
                                             framerate_hz, log_run
                                         )
                                     )
+                                    # We need a target framerate lower than the oririinal framerate
                                     if valid_target_framerate:
-
                                         # Sample data
                                         (
                                             selected_indices,
@@ -184,35 +180,33 @@ class AwsDownloader:
                                 # Update progress bar
                                 step += 1
                                 pbar.update(1)
+                        
+                            except Exception as e:
+                                print(f"Error in mcity_gridsmart_loader: {e}")
+                                print(traceback.format_exc())
 
-            wandb.finish(exit_code=1)
-            pbar.close()
-            return targets
+        # Finish tracking
+        wandb.finish()
+        pbar.close()
 
-        except Exception as e:
-            wandb.finish(exit_code=0)
-            print(f"Error in mcity_gridsmart_loader: {e}")
-            print(traceback.format_exc())
-            return None
-        finally:
-            # Store download log
-            name_log_download = "FileDownload"
-            self.log_download["data"] = cameras_dict
-            log_name = (self.log_time + "_" + name_log_download).replace(
-                " ", "_"
-            ).replace(":", "_") + ".json"
-            log_file_path = os.path.join(self.log_target, log_name)
-            with open(log_file_path, "w") as json_file:
-                json.dump(self.log_download, json_file, indent=4)
+        # Store download log
+        name_log_download = "FileDownload"
+        self.log_download["data"] = cameras_dict
+        log_name = (self.log_time + "_" + name_log_download).replace(
+            " ", "_"
+        ).replace(":", "_") + ".json"
+        log_file_path = os.path.join(self.log_target, log_name)
+        with open(log_file_path, "w") as json_file:
+            json.dump(self.log_download, json_file, indent=4)
 
-            # Store sampling log
-            name_log_sampling = "FileSampling"
-            log_name = (self.log_time + "_" + name_log_sampling).replace(
-                " ", "_"
-            ).replace(":", "_") + ".json"
-            log_file_path = os.path.join(self.log_target, log_name)
-            with open(log_file_path, "w") as json_file:
-                json.dump(self.log_sampling, json_file, indent=4)
+        # Store sampling log
+        name_log_sampling = "FileSampling"
+        log_name = (self.log_time + "_" + name_log_sampling).replace(
+            " ", "_"
+        ).replace(":", "_") + ".json"
+        log_file_path = os.path.join(self.log_target, log_name)
+        with open(log_file_path, "w") as json_file:
+            json.dump(self.log_sampling, json_file, indent=4)
 
     def _mcity_init_cameras(
         self,
