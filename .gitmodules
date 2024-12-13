@@ -1,6 +1,3 @@
 [submodule "custom_models/CoDETR/Co-DETR"]
 	path = custom_models/CoDETR/Co-DETR
 	url = git@github.com:daniel-bogdoll/Co-DETR.git
-[submodule "custom_models/GroundedSAM2/Grounded-SAM-2"]
-	path = custom_models/GroundedSAM2/Grounded-SAM-2
-	url = git@github.com:daniel-bogdoll/Grounded-SAM-2.git
