@@ -54,11 +54,16 @@ class AwsDownloader:
         self.log_download["delete_old_data"] = delete_old_data
         self.log_download["test_run"] = test_run
 
+        # Run name
+        formatted_start = self.start_date.strftime("%Y-%m-%d")
+        formatted_end = self.end_date.strftime("%Y-%m-%d")
+        self.run_name = f"data_engine_rolling_{formatted_start}_to_{formatted_end}"
+
         # Setup storage folders
-        self.data_target = os.path.join(storage_target_root, subfolder_data)
+        self.data_target = os.path.join(storage_target_root, subfolder_data, self.run_name)
         os.makedirs(self.data_target, exist_ok=True)
 
-        self.log_target = os.path.join(storage_target_root, subfolder_logs)
+        self.log_target = os.path.join(storage_target_root, subfolder_logs, self.run_name)
         os.makedirs(self.log_target, exist_ok=True)
 
         # Connect to AWS S3
@@ -76,11 +81,8 @@ class AwsDownloader:
             self.file_names, n_files_to_download = self._mcity_select_data(cameras_dict)
 
             # Tracking
-            formatted_start = self.start_date.strftime("%Y-%m-%d")
-            formatted_end = self.end_date.strftime("%Y-%m-%d")
-            run_name = f"data_engine_rolling_{formatted_start}_to_{formatted_end}"
             wandb.init(
-                name=run_name,
+                name=self.run_name,
                 job_type="download",
                 project="Data Engine Download",
             )
@@ -115,6 +117,7 @@ class AwsDownloader:
                                 duration = time_end - time_start
                                 mb_per_s = file_size_mb / duration
                                 wandb.log({"download/mb_per_s": mb_per_s}, step)
+                                wandb.log({"download/s": duration}, step)
 
                                 # Sample data
                                 time_start = time.time()
@@ -151,6 +154,7 @@ class AwsDownloader:
                                         duration = time_end - time_start
                                         timestamps_per_s = len(timestamps) / duration
                                         wandb.log({"sampling/timestamps_per_s": timestamps_per_s}, step)
+                                        wandb.log({"sampling/s": duration}, step)
 
                                         # Upload data
                                         time_start = time.time()
@@ -162,18 +166,20 @@ class AwsDownloader:
                                         duration = time_end - time_start
                                         mb_per_s = file_size_mb / duration
                                         wandb.log({"upload/mb_per_s": mb_per_s}, step)
+                                        wandb.log({"upload/s": duration}, step)
+
 
                                     # Update log
                                     self.log_sampling[file] = log_run
-
-                                    # Delete local data
-                                    os.remove(target)
-                                    os.remove(target + "_sampled_1Hz")
 
                                 else:
                                     print(
                                         f"Not enough timestamps to calculate framerate. Skipping {file}"
                                     )
+
+                                # Delete local data
+                                os.remove(target)
+                                os.remove(target + "_sampled_1Hz")
 
                                 # Update progress bar
                                 step += 1
