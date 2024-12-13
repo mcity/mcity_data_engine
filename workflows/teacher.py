@@ -153,8 +153,9 @@ class ZeroShotTeacher:
             # Check if data already stored on disk
             elif os.path.isdir(os.path.join(self.detections_root, model_name_key)):
                 try:
+                    logging.info(f"Loading {model_name} predictions from disk.")
                     temp_dataset = fo.Dataset.from_dir(
-                        dataset_dir=self.detections_root,
+                        dataset_dir=os.path.join(self.detections_root, model_name_key),
                         dataset_type=fo.types.COCODetectionDataset,
                         name="temp_dataset",
                         data_path="data.json",
@@ -168,10 +169,9 @@ class ZeroShotTeacher:
                         embedded_doc_type=fo.Detections,
                     )
                     dataset_v51.set_values(f"{pred_key}.detections", detections)
-                    logging.info(f"Model {model_name} predictions loaded from disk.")
                 except Exception as e:
                     logging.error(
-                        f"Data in {self.detections_root} could not be loaded. Error: {e}"
+                        f"Data in {os.path.join(self.detections_root, model_name_key)} could not be loaded. Error: {e}"
                     )
                 finally:
                     fo.delete_dataset("temp_dataset")
