@@ -4,7 +4,7 @@ import fiftyone as fo
 import pytest
 from fiftyone.utils.huggingface import load_from_hub
 
-from main import workflow_brain
+from main import workflow_brain_selection
 from utils.dataset_loader import load_dataset_info
 
 
@@ -27,7 +27,7 @@ def test_brain(dataset_v51):
     MODEL_NAME = "mobilenet-v2-imagenet-torch"
     dataset_info = load_dataset_info("mcity_fisheye_2000")  # Use loader for actual dataset
     dataset_info["name"] = "mcity_fisheye_v51_brain_test"   # Update with test name for local tests where both exist
-    v51_keys = workflow_brain(dataset_v51, dataset_info, MODEL_NAME)
+    v51_keys = workflow_brain_selection(dataset_v51, dataset_info, MODEL_NAME)
 
     embedding_key = v51_keys["embedding"]
     uniqueness_key = v51_keys["uniqueness"]
