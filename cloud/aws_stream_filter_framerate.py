@@ -11,21 +11,23 @@ from tqdm import tqdm
 load_dotenv()
 
 S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "mcity-data-engine")
-aws_access_key_id = os.environ.get('AWS_ACCESS_KEY_ID')
-aws_secret_access_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
-region_name = os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
+aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
+aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+region_name = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 
 session = boto3.Session(
     aws_access_key_id=aws_access_key_id,
     aws_secret_access_key=aws_secret_access_key,
-    region_name=region_name
+    region_name=region_name,
 )
-s3 = session.client('s3')
+s3 = session.client("s3")
 
 
-class SampleTimestamps():
+class SampleTimestamps:
 
-    def __init__(self, file_path: str, target_framerate_hz=1, aws_bucket=None, aws_prefix=None):
+    def __init__(
+        self, file_path: str, target_framerate_hz=1, aws_bucket=None, aws_prefix=None
+    ):
         self.file_path = file_path
         self.aws_bucket = aws_bucket
         self.aws_prefix = aws_prefix
@@ -39,7 +41,9 @@ class SampleTimestamps():
         elif aws_bucket and aws_prefix:
             self.execution_mode = "aws"
         else:
-            raise ValueError("Either file_path or aws_bucket and aws_prefix must be provided")
+            raise ValueError(
+                "Either file_path or aws_bucket and aws_prefix must be provided"
+            )
 
     def get_timestamps(self):
         timestamps = []
@@ -56,10 +60,14 @@ class SampleTimestamps():
                     timestamp_raw = data.get("time")
                     try:
                         # Most timestamps have milliseconds
-                        timestamp = datetime.datetime.strptime(timestamp_raw, "%Y-%m-%d %H:%M:%S.%f")
+                        timestamp = datetime.datetime.strptime(
+                            timestamp_raw, "%Y-%m-%d %H:%M:%S.%f"
+                        )
                     except:
                         # Timestamps without milliseconds
-                        timestamp = datetime.datetime.strptime(timestamp_raw, "%Y-%m-%d %H:%M:%S")
+                        timestamp = datetime.datetime.strptime(
+                            timestamp_raw, "%Y-%m-%d %H:%M:%S"
+                        )
 
                 elif (
                     "image" in data
@@ -68,15 +76,16 @@ class SampleTimestamps():
                 ):
                     # Get time data
                     timestamp_raw = data.get("event_timestamp")
-                    timestamp = datetime.datetime.fromtimestamp(timestamp_raw, tz=datetime.timezone.utc)
+                    timestamp = datetime.datetime.fromtimestamp(
+                        timestamp_raw, tz=datetime.timezone.utc
+                    )
 
                 timestamps.append((index, timestamp))
 
         return timestamps
 
-
     def get_framerate(self, timestamps, log):
-        
+
         # Calculate time differences (s) and current framerate (Hz)
         time_differences = []
         timestamps = sorted(timestamps, key=lambda x: x[1])
@@ -99,28 +108,32 @@ class SampleTimestamps():
         q3_time_diff = np.percentile(time_differences, 75)
         current_framerate_hz = 1 / median_time_diff  # Median is more robust to outliers
 
-        log["time_s_avg_between_timestamps"] =  average_time_diff
-        log["time_s_median_between_timestamps"] =  median_time_diff
-        log["time_s_std_between_timestamps"] =  std_time_diff
-        log["time_s_min_between_timestamps"] =  min_time_diff
-        log["time_s_max_between_timestamps"] =  max_time_diff
-        log["time_s_range_between_timestamps"] =  range_time_diff
-        log["time_s_25_percentile_between_timestamps"] =  q1_time_diff
-        log["time_s_75_percentile_between_timestamps"] =  q3_time_diff
-        log["framerate_hz_original"] =  current_framerate_hz
-        log["framerate_hz_target"] =  self.target_framerate_hz
+        log["time_s_avg_between_timestamps"] = average_time_diff
+        log["time_s_median_between_timestamps"] = median_time_diff
+        log["time_s_std_between_timestamps"] = std_time_diff
+        log["time_s_min_between_timestamps"] = min_time_diff
+        log["time_s_max_between_timestamps"] = max_time_diff
+        log["time_s_range_between_timestamps"] = range_time_diff
+        log["time_s_25_percentile_between_timestamps"] = q1_time_diff
+        log["time_s_75_percentile_between_timestamps"] = q3_time_diff
+        log["framerate_hz_original"] = current_framerate_hz
+        log["framerate_hz_target"] = self.target_framerate_hz
 
         # Compute threshold
         interquartile_range = q3_time_diff - q1_time_diff  # Interquartile Range
-        upper_bound_threshold = q3_time_diff + 1.5 * interquartile_range  # (1.5 * IQR rule)
-        log["upper_bound_threshold"] =  upper_bound_threshold
+        upper_bound_threshold = (
+            q3_time_diff + 1.5 * interquartile_range
+        )  # (1.5 * IQR rule)
+        log["upper_bound_threshold"] = upper_bound_threshold
 
         return current_framerate_hz, timestamps, upper_bound_threshold
 
     def check_target_framerate(self, current_framerate_hz, log):
         # Check if target framerate is valid
         if self.target_framerate_hz > current_framerate_hz:
-            print(f"Target framerate of {self.target_framerate_hz} Hz cannot exceed original framerate of {current_framerate_hz} Hz")
+            print(
+                f"Target framerate of {self.target_framerate_hz} Hz cannot exceed original framerate of {current_framerate_hz} Hz"
+            )
             log["framerate_target_ok"] = False
             return False
         else:
@@ -151,7 +164,10 @@ class SampleTimestamps():
             nearest_index = np.argmin(time_diffs)
 
             # Ensure no duplicates are selected
-            if time_diffs[nearest_index] <= threshold_to_target and nearest_index not in selected_indices:
+            if (
+                time_diffs[nearest_index] <= threshold_to_target
+                and nearest_index not in selected_indices
+            ):
                 selected_target_timestamps.append(target)
                 selected_indices.append(nearest_index)
                 selected_timestamps.append(timestamps[nearest_index])
@@ -168,14 +184,19 @@ class SampleTimestamps():
             previous_time = timestamp
         median_time_diff_new = np.median(time_differences_new)
         new_framerate_hz = 1 / median_time_diff_new
-        log["framerate_hz_sampled"] =  new_framerate_hz
+        log["framerate_hz_sampled"] = new_framerate_hz
 
         # Log statistics
         log["n_original_timestamps"] = len(timestamps)
         log["n_target_timestamps"] = len(target_timestamps)
         log["n_selected_timestamps"] = len(selected_timestamps)
 
-        return selected_indices, selected_timestamps, target_timestamps, selected_target_timestamps
+        return (
+            selected_indices,
+            selected_timestamps,
+            target_timestamps,
+            selected_target_timestamps,
+        )
 
     def update_upload_file(self, file_name, selected_indices):
         output_file_path = file_name + f"_sampled_{self.target_framerate_hz}Hz"
@@ -190,7 +211,19 @@ class SampleTimestamps():
 
         try:
             head, tail = os.path.split(output_file.name)
+            file_size_mb = os.path.getsize(output_file.name) / (1024 * 1024)
+            s3.upload_file(
+                output_file.name,
+                S3_BUCKET_NAME,
+                str(self.target_framerate_hz) + "/" + tail,
+            )
+            return file_size_mb
 
-            s3.upload_file(output_file.name, S3_BUCKET_NAME, str(self.target_framerate_hz) + '/' + tail)
         except Exception as e:
-            print("S3 upload failed for file " + str(str(self.target_framerate_hz) + '/' + tail) + " - " + str(e))
+            print(
+                "S3 upload failed for file "
+                + str(str(self.target_framerate_hz) + "/" + tail)
+                + " - "
+                + str(e)
+            )
+            return None

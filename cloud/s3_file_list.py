@@ -5,8 +5,10 @@ import os
 import re
 import shutil
 import time
+import traceback
 
 import boto3
+import wandb
 from aws_stream_filter_framerate import SampleTimestamps
 from dotenv import load_dotenv
 from tqdm import tqdm
@@ -17,18 +19,18 @@ load_dotenv()
 class AwsDownloader:
 
     def __init__(
-            self,
-            name: str,
-            start_date: datetime.datetime,
-            end_date: datetime.datetime,
-            sample_rate_hz: float,
-            log_time: datetime.datetime,
-            source: str = "mcity_gridsmart",
-            storage_target_root: str = ".",
-            subfolder_data: str = "data",
-            subfolder_logs: str = "logs",
-            test_run: bool = False,
-            delete_old_data: bool = False,
+        self,
+        name: str,
+        start_date: datetime.datetime,
+        end_date: datetime.datetime,
+        sample_rate_hz: float,
+        log_time: datetime.datetime,
+        source: str = "mcity_gridsmart",
+        storage_target_root: str = ".",
+        subfolder_data: str = "data",
+        subfolder_logs: str = "logs",
+        test_run: bool = False,
+        delete_old_data: bool = False,
     ):
         self.start_date = start_date
         self.end_date = end_date
@@ -64,7 +66,7 @@ class AwsDownloader:
             "s3",
             aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID", None),
             aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", None),
-            region_name='us-east-1'
+            region_name="us-east-1",
         )
 
     def process_data(self):
@@ -73,99 +75,167 @@ class AwsDownloader:
             self._mcity_process_aws_buckets(cameras_dict)
             self.file_names, n_files_to_download = self._mcity_select_data(cameras_dict)
 
+            # Tracking
+            formatted_start = self.start_date.strftime("%Y-%m-%d")
+            formatted_end = self.end_date.strftime("%Y-%m-%d")
+            run_name = f"data_engine_rolling_{formatted_start}_to_{formatted_end}"
+            wandb.init(
+                name=run_name,
+                job_type="download",
+                project="Data Engine Download",
+            )
+
             targets = []
+            step = 0
             with tqdm(desc="Processing data", total=n_files_to_download) as pbar:
                 for camera in cameras_dict:
                     for aws_source in cameras_dict[camera]["aws-sources"]:
                         bucket = aws_source.split("/", 1)[0]
                         for date in cameras_dict[camera]["aws-sources"][aws_source]:
-                            for file in cameras_dict[camera]["aws-sources"][aws_source][date]:
+                            for file in cameras_dict[camera]["aws-sources"][aws_source][
+                                date
+                            ]:
                                 log_run = {}
 
                                 # AWS S3 Download
+                                time_start = time.time()
                                 file_name = os.path.basename(file)
-                                key = cameras_dict[camera]["aws-sources"][aws_source][date][file_name]["key"]
-                                target = './data/' + file_name
+                                key = cameras_dict[camera]["aws-sources"][aws_source][
+                                    date
+                                ][file_name]["key"]
+                                target = "./data/" + file_name
                                 targets.append(target)
                                 self.s3.download_file(bucket, key, target)
 
-                                # Sample data
-                                sampler = SampleTimestamps(file_path=target, target_framerate_hz=1)
-                                timestamps = sampler.get_timestamps()
-                                
-                                if len(timestamps) > 0:
-                                    framerate_hz, timestamps, upper_bound_threshold = sampler.get_framerate(timestamps, log_run)
-                                    valid_target_framerate = sampler.check_target_framerate(framerate_hz, log_run)
+                                # Calculate duration and GB/s
+                                file_size_mb = cameras_dict[camera]["aws-sources"][
+                                    aws_source
+                                ][date][file_name]["size"] / (1024**2)
+                                time_end = time.time()
+                                duration = time_end - time_start
+                                mb_per_s = file_size_mb / duration
+                                wandb.log({"download/mb_per_s": mb_per_s}, step)
 
-                                    # Upload data to new bucket
+                                # Sample data
+                                time_start = time.time()
+                                sampler = SampleTimestamps(
+                                    file_path=target, target_framerate_hz=1
+                                )
+                                timestamps = sampler.get_timestamps()
+
+                                if (
+                                    len(timestamps) > 1
+                                ):  # We need at least 2 timestamps to calculate a framerate
+                                    # Get framerate
+                                    framerate_hz, timestamps, upper_bound_threshold = (
+                                        sampler.get_framerate(timestamps, log_run)
+                                    )
+                                    valid_target_framerate = (
+                                        sampler.check_target_framerate(
+                                            framerate_hz, log_run
+                                        )
+                                    )
                                     if valid_target_framerate:
-                                        selected_indices, selected_timestamps, target_timestamps, selected_target_timestamps = sampler.sample_timestamps(
-                                            timestamps, upper_bound_threshold, log_run)
-                                        sampler.update_upload_file(target, selected_indices)
+
+                                        # Sample data
+                                        (
+                                            selected_indices,
+                                            selected_timestamps,
+                                            target_timestamps,
+                                            selected_target_timestamps,
+                                        ) = sampler.sample_timestamps(
+                                            timestamps, upper_bound_threshold, log_run
+                                        )
+
+                                        time_end = time.time()
+                                        duration = time_end - time_start
+                                        timestamps_per_s = len(timestamps) / duration
+                                        wandb.log({"sampling/timestamps_per_s": timestamps_per_s}, step)
+
+                                        # Upload data
+                                        time_start = time.time()
+                                        file_size_mb = sampler.update_upload_file(
+                                            target, selected_indices
+                                        )
+
+                                        time_end = time.time()
+                                        duration = time_end - time_start
+                                        mb_per_s = file_size_mb / duration
+                                        wandb.log({"upload/mb_per_s": mb_per_s}, step)
 
                                     # Update log
                                     self.log_sampling[file] = log_run
 
                                     # Delete local data
                                     os.remove(target)
-                                    os.remove(target + '_sampled_1Hz')
+                                    os.remove(target + "_sampled_1Hz")
+
+                                else:
+                                    print(
+                                        f"Not enough timestamps to calculate framerate. Skipping {file}"
+                                    )
 
                                 # Update progress bar
+                                step += 1
                                 pbar.update(1)
+
+            wandb.finish(exit_code=1)
             pbar.close()
             return targets
 
         except Exception as e:
+            wandb.finish(exit_code=0)
             print(f"Error in mcity_gridsmart_loader: {e}")
-            return
+            print(traceback.format_exc())
+            return None
         finally:
             # Store download log
             name_log_download = "FileDownload"
             self.log_download["data"] = cameras_dict
-            log_name = (self.log_time + "_" + name_log_download).replace(" ", "_").replace(
-                ":", "_"
-            ) + ".json"
+            log_name = (self.log_time + "_" + name_log_download).replace(
+                " ", "_"
+            ).replace(":", "_") + ".json"
             log_file_path = os.path.join(self.log_target, log_name)
             with open(log_file_path, "w") as json_file:
                 json.dump(self.log_download, json_file, indent=4)
 
             # Store sampling log
             name_log_sampling = "FileSampling"
-            log_name = (self.log_time + "_" + name_log_sampling).replace(" ", "_").replace(
-                ":", "_"
-            ) + ".json"
+            log_name = (self.log_time + "_" + name_log_sampling).replace(
+                " ", "_"
+            ).replace(":", "_") + ".json"
             log_file_path = os.path.join(self.log_target, log_name)
             with open(log_file_path, "w") as json_file:
                 json.dump(self.log_sampling, json_file, indent=4)
 
     def _mcity_init_cameras(
-            self,
-            cameras={
-                "Geddes_Huron_1",
-                "Geddes_Huron_2",
-                "Huron_Plymouth_1",
-                "Huron_Plymouth_2",
-                "Main_stadium_1",
-                "Main_stadium_2",
-                "Plymouth_Beal",
-                "Plymouth_Bishop",
-                "Plymouth_EPA",
-                "Plymouth_Georgetown",
-                "State_Ellsworth_NE",
-                "State_Ellsworth_NW",
-                "State_Ellsworth_SE",
-                "State_Ellsworth_SW",
-                "Fuller_Fuller_CT",
-                "Fuller_Glazier_1",
-                "Fuller_Glazier_2",
-                "Fuller_Glen",
-                "Dexter_Maple_1",
-                "Dexter_Maple_2",
-                "Hubbard_Huron_1",
-                "Hubbard_Huron_2",
-                "Maple_Miller_1",
-                "Maple_Miller_2",
-            },
+        self,
+        cameras={
+            "Geddes_Huron_1",
+            "Geddes_Huron_2",
+            "Huron_Plymouth_1",
+            "Huron_Plymouth_2",
+            "Main_stadium_1",
+            "Main_stadium_2",
+            "Plymouth_Beal",
+            "Plymouth_Bishop",
+            "Plymouth_EPA",
+            "Plymouth_Georgetown",
+            "State_Ellsworth_NE",
+            "State_Ellsworth_NW",
+            "State_Ellsworth_SE",
+            "State_Ellsworth_SW",
+            "Fuller_Fuller_CT",
+            "Fuller_Glazier_1",
+            "Fuller_Glazier_2",
+            "Fuller_Glen",
+            "Dexter_Maple_1",
+            "Dexter_Maple_2",
+            "Hubbard_Huron_1",
+            "Hubbard_Huron_2",
+            "Maple_Miller_1",
+            "Maple_Miller_2",
+        },
     ):
 
         cameras_dict = {camera.lower(): {} for camera in cameras}
@@ -177,12 +247,12 @@ class AwsDownloader:
         return cameras_dict
 
     def _mcity_process_aws_buckets(
-            self,
-            cameras_dict,
-            aws_sources={
-                "sip-sensor-data": [""],
-                "sip-sensor-data2": ["wheeler1/", "wheeler2/"],
-            },
+        self,
+        cameras_dict,
+        aws_sources={
+            "sip-sensor-data": [""],
+            "sip-sensor-data2": ["wheeler1/", "wheeler2/"],
+        },
     ):
         for bucket in tqdm(aws_sources, desc="Processing AWS sources"):
             for folder in aws_sources[bucket]:
@@ -209,22 +279,22 @@ class AwsDownloader:
                 if folders:
                     for camera_name in cameras_dict:
                         for folder_name, folder_name_aligned in zip(
-                                folders, folders_aligned
+                            folders, folders_aligned
                         ):
                             if (
-                                    camera_name in folder_name_aligned
-                                    and "gs_" in folder_name_aligned
+                                camera_name in folder_name_aligned
+                                and "gs_" in folder_name_aligned
                             ):  # gs_ is the prefix used in AWS
                                 aws_source = f"{bucket}/{folder_name}"
                                 if (
-                                        aws_source
-                                        not in cameras_dict[camera_name]["aws-sources"]
+                                    aws_source
+                                    not in cameras_dict[camera_name]["aws-sources"]
                                 ):
-                                    cameras_dict[camera_name]["aws-sources"][aws_source] = {}
+                                    cameras_dict[camera_name]["aws-sources"][
+                                        aws_source
+                                    ] = {}
                 else:
-                    print(
-                        f"AWS did not return a list of folders for {bucket}/{folder}"
-                    )
+                    print(f"AWS did not return a list of folders for {bucket}/{folder}")
 
     def _mcity_select_data(self, cameras_dict):
         n_cameras = 0
@@ -321,12 +391,16 @@ class AwsDownloader:
                     for aws_source in cameras_dict[camera]["aws-sources"]:
                         bucket = aws_source.split("/", 1)[0]
                         for date in cameras_dict[camera]["aws-sources"][aws_source]:
-                            for file in cameras_dict[camera]["aws-sources"][aws_source][date]:
+                            for file in cameras_dict[camera]["aws-sources"][aws_source][
+                                date
+                            ]:
                                 time_start = time.time()
 
                                 # AWS S3 Download
                                 file_name = os.path.basename(file)
-                                key = cameras_dict[camera]["aws-sources"][aws_source][date][file_name]["key"]
+                                key = cameras_dict[camera]["aws-sources"][aws_source][
+                                    date
+                                ][file_name]["key"]
                                 target = os.path.join(self.data_target, file_name)
                                 self.s3.download_file(bucket, key, target)
 
