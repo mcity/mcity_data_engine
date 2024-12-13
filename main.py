@@ -43,7 +43,13 @@ def signal_handler(sig, frame):
         pass
     sys.exit(0)
 
-def workflow_brain(dataset, dataset_info, MODEL_NAME):
+def workflow_aws_download(dataset_info, config, args):
+    pass
+
+def workflow_anomaly_detection():
+    pass
+
+def workflow_brain_selection(dataset, dataset_info, MODEL_NAME):
     v51_brain = Brain(dataset, dataset_info, MODEL_NAME)
     v51_brain.compute_embeddings()
     v51_brain.compute_similarity()
@@ -63,6 +69,9 @@ def workflow_brain(dataset, dataset_info, MODEL_NAME):
 
     return v51_keys
 
+def workflow_train_teacher():
+    pass
+
 def workflow_zero_shot_teacher(dataset, dataset_info):
     # Set multiprocessing mode for CUDA multiprocessing
     mp.set_start_method("spawn")
@@ -81,7 +90,19 @@ def workflow_zero_shot_teacher(dataset, dataset_info):
         distributor.distribute_and_run()
     else:
         logging.info("All teacher models already have predictions stored in the dataset.")
-    
+
+def workflow_ensemble_exploration():
+    pass
+
+# Map workflow names to their functions
+WORKFLOW_REGISTRY = {
+    "aws_download": workflow_aws_download,
+    "brain_selection": workflow_brain_selection,
+    "anomaly_detection": workflow_anomaly_detection,
+    "train_teacher": workflow_train_teacher,
+    "zero_shot_teacher": workflow_zero_shot_teacher,
+    "ensemble_exploration": workflow_ensemble_exploration
+}
 
 def main(args):
     configure_logging()
@@ -90,10 +111,13 @@ def main(args):
 
     if args.tags:
         wandb_tags = args.tags.split(",")
-    if args.queue == None:
+    
+    # Run locally
+    if not args.queue:
+        # Handle CTRL+C gracefully
         signal.signal(signal.SIGINT, signal_handler)  # Signal handler for CTRL+C
 
-        # Load the selected dataset
+        # Load dataset
         dataset_info = load_dataset_info(selected_dataset)
 
         if dataset_info:
@@ -188,7 +212,7 @@ def main(args):
                         wandb_config["v51_dataset_name"],
                         "local",
                     )
-                    workflow_brain(dataset, dataset_info, MODEL_NAME)
+                    workflow_brain_selection(dataset, dataset_info, MODEL_NAME)
                     run.finish(exit_code=0)
             except Exception as e:
                 logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
