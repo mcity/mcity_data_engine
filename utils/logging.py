@@ -1,6 +1,7 @@
 import logging
 import os
 from datetime import datetime
+from logging import StreamHandler
 
 from colorlog import ColoredFormatter
 
@@ -33,7 +34,7 @@ def configure_logging():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_filename = f"logs/dataengine/{timestamp}_dataengine.log"
 
-    formatter = ColoredFormatter(
+    colored_formatter = ColoredFormatter(
         "%(log_color)s%(asctime)s - %(levelname)s - %(name)s - %(funcName)s - %(message)s",
         datefmt=None,
         reset=True,
@@ -48,15 +49,25 @@ def configure_logging():
         style="%",
     )
 
-    handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
+    # Create console handler with INFO level
+    console_handler = StreamHandler()  # Changed from ColoredFormatter to StreamHandler
+    console_handler.setFormatter(colored_formatter)
+    console_handler.setLevel(logging.INFO)
+
+    # Create file handler with DEBUG level
+    file_handler = logging.FileHandler(log_filename)
+    file_handler.setLevel(logging.DEBUG)
+
+    # Create formatter and add it to the handlers
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(funcName)s - %(message)s")
+    file_handler.setFormatter(formatter)
 
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,  # Set root logger to DEBUG to capture all logs
         format="%(asctime)s - %(levelname)s - %(name)s - %(funcName)s - %(message)s",
         handlers=[
-            handler,  # Log to console with colors
-            logging.FileHandler(log_filename),
+            console_handler,  # Log INFO and above to console with colors
+            file_handler,    # Log DEBUG and above to file
         ],
         force=True
     )
