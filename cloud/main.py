@@ -53,5 +53,6 @@ def main():
     # Load data, sample data, upload data, delete data
     aws_downloader.process_data()
 
+# Example call: python main.py --start 2023-11-19 --end 2023-11-25 --rate 1
 if __name__ == "__main__":
     main()
