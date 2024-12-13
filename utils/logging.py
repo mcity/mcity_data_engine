@@ -49,6 +49,9 @@ def configure_logging():
         style="%",
     )
 
+    # Set pymongo logger to only show WARN and above
+    logging.getLogger("pymongo").setLevel(logging.WARNING)
+
     # Create console handler with INFO level
     console_handler = StreamHandler()  # Changed from ColoredFormatter to StreamHandler
     console_handler.setFormatter(colored_formatter)
