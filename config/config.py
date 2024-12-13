@@ -96,8 +96,8 @@ WORKFLOWS = {
             "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 64, "n_dataset_chunks": 1},                # RTX 4090: 64
             "IDEA-Research/grounding-dino-tiny": {"batch_size": 8, "n_dataset_chunks": 1},              # RTX 4090: 8
             "IDEA-Research/grounding-dino-base": {"batch_size": 8, "n_dataset_chunks": 1},              # RTX 4090: 8
-            "google/owlvit-base-patch16": {"batch_size": 16, "n_dataset_chunks": 1},                    # RTX 4090: 16
-            "google/owlvit-base-patch32": {"batch_size": 16, "n_dataset_chunks": 1},                    # RTX 4090: 16
+            "google/owlvit-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},                     # RTX 4090: 8
+            "google/owlvit-base-patch32": {"batch_size": 8, "n_dataset_chunks": 1},                     # RTX 4090: 8
             "google/owlvit-large-patch14": {"batch_size": 4, "n_dataset_chunks": 1},                    # RTX 4090: 4
             "google/owlv2-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},                      # RTX 4090: 8
             "google/owlv2-base-patch16-ensemble": {"batch_size": 8, "n_dataset_chunks": 1},             # RTX 4090: 8
