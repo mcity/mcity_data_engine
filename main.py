@@ -44,7 +44,7 @@ def signal_handler(sig, frame):
         pass
     sys.exit(0)
 
-def workflow_aws_download():
+def workflow_aws_download(dataset_name):
     test_run = WORKFLOWS["aws_download"]["test_run"]
     source = WORKFLOWS["aws_download"]["source"]
     sample_rate = WORKFLOWS["aws_download"]["sample_rate_hz"]
@@ -53,6 +53,14 @@ def workflow_aws_download():
     start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d")
     end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d")
     dataset_name = f"data_engine_rolling_{start_date_str}_to_{end_date_str}"
+
+    wandb_run = wandb.init(
+        name=dataset_name,
+        sync_tensorboard=True,
+        group="S3",
+        job_type="download",
+        project="Data Engine Download",
+    )
 
     aws_downloader = AwsDownloader(
         name=dataset_name,
@@ -64,6 +72,8 @@ def workflow_aws_download():
     )
 
     dataset = aws_downloader.load_data()
+
+    wandb_run.finish(exit_code=0)
 
     return dataset, dataset_name
 
@@ -137,13 +147,6 @@ class WorkflowExecutor:
             wandb_run = None
             try:
                 if workflow == "aws_download":
-                    wandb_run = wandb.init(
-                        name=dataset_name,
-                        sync_tensorboard=True,
-                        group="S3",
-                        job_type="download",
-                        project="Data Engine Download",
-                    )
                     dataset, dataset_name = workflow_aws_download()
 
                     # Select downloaded dataset for further workflows if configured
@@ -153,8 +156,6 @@ class WorkflowExecutor:
                         self.dataset_info = dataset_info
                         self.selected_dataset = dataset_name
                         logging.warning(f"Selected dataset overwritten to {dataset_name}")
-
-                    wandb_run.finish(exit_code=0)
 
                 elif workflow == "brain_selection":
                     embedding_models = WORKFLOWS["brain_selection"]["embedding_models"]
