@@ -6,7 +6,6 @@ import re
 import fiftyone as fo
 import yaml
 from nuscenes.nuscenes import NuScenes
-from tqdm import tqdm
 
 from config.config import NUM_WORKERS, PERSISTENT
 
@@ -79,15 +78,11 @@ def load_mcity_fisheye_2000(dataset_info):
         dataset.compute_metadata(num_workers=NUM_WORKERS)
 
         # Add dataset specific metedata based on filename
-        view = dataset.view()
-        for sample in tqdm(
-            view, desc="Deriving metadata from filenames"
-        ):  # https://docs.voxel51.com/api/fiftyone.core.sample.html
+        for sample in dataset.iter_samples(progress=True, autosave=True):
             metadata = _process_mcity_fisheye_filename(sample["filepath"])
             sample["location"] = metadata["location"]
             sample["name"] = metadata["name"]
             sample["timestamp"] = metadata["timestamp"]
-            sample.save()
 
         dataset.persistent = PERSISTENT  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
     return dataset
@@ -224,15 +219,11 @@ def load_mcity_fisheye_3_months(dataset_info):
         dataset.compute_metadata(num_workers=NUM_WORKERS)
 
         # Add dataset specific metedata based on filename
-        view = dataset.view()
-        for sample in tqdm(
-            view, desc="Deriving metadata from filenames"
-        ):  # https://docs.voxel51.com/api/fiftyone.core.sample.html
+        for sample in dataset.iter_samples(progress=True, autosave=True):
             metadata = _process_mcity_fisheye_filename(sample["filepath"])
             sample["location"] = metadata["location"]
             sample["name"] = metadata["name"]
             sample["timestamp"] = metadata["timestamp"]
-            sample.save()
 
         dataset.persistent = PERSISTENT  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
     return dataset
@@ -283,16 +274,13 @@ def load_fisheye_8k(dataset_info):
 
         dataset.compute_metadata(num_workers=NUM_WORKERS)
 
-        view = dataset.view()
-        for sample in view:  # https://docs.voxel51.com/api/fiftyone.core.sample.html
+        for sample in dataset.iter_samples(progress=True, autosave=True):  # https://docs.voxel51.com/api/fiftyone.core.sample.html
             metadata = _process_fisheye_8k_filename(sample["filepath"])
             sample["location"] = metadata["location"]
             sample["time_of_day"] = metadata["time_of_day"]
-            sample.save()
 
         dataset.persistent = PERSISTENT  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
     return dataset
-
 
 def _process_fisheye_8k_filename(filename):
     """
