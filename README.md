@@ -16,7 +16,7 @@ The Mcity Data Engine is an essential tool in the Mcity makerspace for transport
 
 ## Instructions
 
-At least one GPU is required for the Data Engine. Check the hardware setups we have tested in the [Wiki](https://github.com/mcity/mcity_data_engine/wiki/Environments). To download the repository and install requirements run:
+At least one GPU is required for the Data Engine. Check the hardware setups we have tested in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki/Environments). To download the repository and install requirements run:
 ```
 git clone --recurse-submodules git@github.com:mcity/mcity_data_engine.git
 cd mcity_data_engine
@@ -26,10 +26,10 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Launch a Voxel51 session in one terminal:
+Launch a **Voxel51** session in one terminal:
 ```python session_v51.py```
 
-Launch the Mcity Data Engine in a second terminal:
+Configure your run in the [config/config.py](https://github.com/mcity/mcity_data_engine/blob/main/config/config.py) and launch the **Mcity Data Engine** in a second terminal:
 ```python main.py```
 
 Open Voxel51 in your browser:
@@ -57,28 +57,28 @@ git add .gitmodules $(git submodule foreach --quiet 'echo $name')
 ## Repository Structure
 ```
 .
-├── main.py               # Entry point of the framework → Terminal 1
-├── session_v51.py        # Script to launch Voxel51 session → Terminal 2
-├── workflows/            # Workflows for the Mcity Data Engine
-├── config/               # Local configuration files
-├── wandb_runs/           # Entrypoints and configs for WandB experiments
-├── utils/                # General-purpose utility functions
-├── cloud/                # Scripts run in the cloud to pre-process data
-├── datasets/             # Default storage directory for datasets
-├── output/               # Default storage for models, embeddings, etc.
-├── logs/                 # Default storage for log files
-├── docs/                 # Documentation generated with `pdoc`
-├── tests/                # Unit tests using Pytest
-├── custom_models/        # External models with containerized environments
-├── mcity_data_engine_scripts/              # Experiment scripts and one-time operations
-├── Dockerfile.wandb      # Dockerfile for WandB experiments
-├── .vscode               # Settings for VS Code IDE
-├── .github/workflows/    # GitHub Action workflows
-├── .gitignore            # Files and directories to be ignored by Git
-├── .gitattributes        # Rules for handling files like Notebooks during commits
-├── .gitmodules           # Configuration for managing Git submodules
-├── .secret               # Secret tokens (not tracked by Git)
-└── requirements.txt      # Python dependencies (pip install -r requirements.txt)
+├── main.py                   # Entry point of the framework → Terminal 1
+├── session_v51.py              # Script to launch Voxel51 session → Terminal 2
+├── workflows/                  # Workflows for the Mcity Data Engine
+├── config/                     # Local configuration files
+├── wandb_runs/                 # Entrypoints and configs for WandB experiments
+├── utils/                      # General-purpose utility functions
+├── cloud/                      # Scripts run in the cloud to pre-process data
+├── datasets/                   # Default storage directory for datasets
+├── output/                     # Default storage for models, embeddings, etc.
+├── logs/                       # Default storage for log files
+├── docs/                       # Documentation generated with `pdoc`
+├── tests/                      # Tests using Pytest
+├── custom_models/              # External models with containerized environments
+├── mcity_data_engine_scripts/  # Experiment scripts and one-time operations
+├── Dockerfile.wandb            # Dockerfile for WandB experiments
+├── .vscode                     # Settings for VS Code IDE
+├── .github/workflows/          # GitHub Action workflows
+├── .gitignore                  # Files and directories to be ignored by Git
+├── .gitattributes              # Rules for handling files like Notebooks during commits
+├── .gitmodules                 # Configuration for managing Git submodules
+├── .secret                     # Secret tokens (not tracked by Git)
+└── requirements.txt            # Python dependencies (pip install -r requirements.txt)
 ```
 
 ## Documentation
@@ -109,7 +109,7 @@ In order to execute jobs on your own machine, the [following tools](https://cata
 To launch a job on your machine with Docker, an [active agent](https://wandb.ai/mcity/launch/UnVuUXVldWU6NDQ0OTE4MA==/agents) needs to be running in a terminal. Adapt the [config](https://wandb.ai/mcity/launch/UnVuUXVldWU6NDQ0OTE4MA==/config) as necessary. Then, run
 
 ```
-wandb launch --uri "git@github.com:daniel-bogdoll/mcity_data_engine.git" --job-name <name-run> --project mcity-data-engine --entry-point "python main.py" --dockerfile Dockerfile.wandb --queue data-engine
+wandb launch --uri "git@github.com:mcity/mcity_data_engine.git" --job-name <name-run> --project mcity-data-engine --entry-point "python main.py" --dockerfile Dockerfile.wandb --queue data-engine
 ```
 
 Locally, you will need to clean up old docker images once in a while. Run ```docker image prune --all --filter until=48h``` to delete docker images older than 48 hours.
