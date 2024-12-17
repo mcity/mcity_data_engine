@@ -177,7 +177,7 @@ To exclude the output of jupyter notebooks from git tracking, add the following 
 
 ```
 [filter "strip-notebook-output"]
-    clean = <your_path>/mcity_data_engine/mcity_data_engine_scripts/.venv/bin/jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadataPreprocessor.enabled=True --to=notebook --stdin --stdout
+    clean = <your_path>/mcity_data_engine/.venv/bin/jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadataPreprocessor.enabled=True --to=notebook --stdin --stdout
     required = true
 ```
 

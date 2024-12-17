@@ -16,6 +16,7 @@ from config.config import GLOBAL_SEED, NUM_WORKERS
 
 """
 Implementing Voxel51 brain methods.
+https://docs.voxel51.com/brain.html
 """
 
 
@@ -23,6 +24,8 @@ class Brain:
     def __init__(
         self, dataset, dataset_info, model_name, embeddings_path="./output/embeddings/"
     ):
+        # WandB counter
+        self.steps = 0
         self.dataset = dataset
         self.brains = dataset.list_brain_runs()
         self.dataset_name = dataset_info["name"]
@@ -48,9 +51,6 @@ class Brain:
         self.representativeness = {}  # Multiple methods per model
         self.embeddings_model = None
         self.similarities = None
-
-        # WandB counter
-        self.steps = 0
 
         # Generate folder to store all embedding-related results
         self.embeddings_root = embeddings_path + self.dataset_name + "/"
@@ -266,6 +266,7 @@ class Brain:
                 representativeness_field=method_key,
                 method=method,
                 embeddings=self.embeddings_model,
+                similarity_index=self.similarities,
                 num_workers=NUM_WORKERS,
                 progress=True,
             )
@@ -359,6 +360,7 @@ class Brain:
             self.dataset,
             embeddings=self.embeddings_model,
             uniqueness_field=self.uniqueness_key,
+            similarity_index=self.similarities,
             num_workers=NUM_WORKERS,
         )
 
