@@ -37,6 +37,23 @@ Open Voxel51 in your browser:
 
 In case there are issues with MongoDB, the underlying database Voxel51 uses, run ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
 
+### Notebooks and Submodules
+
+To exclude the output of jupyter notebooks from git tracking, add the following lines to your ```.git/modules/mcity_data_engine_scripts/config```:
+
+```
+[filter "strip-notebook-output"]
+    clean = <your_path>/mcity_data_engine/.venv/bin/jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadataPreprocessor.enabled=True --to=notebook --stdin --stdout
+    required = true
+```
+
+In order to update the scripts submodule, add the following lines at the top of your ```.git/hooks/pre-commit```:
+
+```
+git submodule update --recursive --remote
+git add .gitmodules $(git submodule foreach --quiet 'echo $name')
+```
+
 ## Repository Structure
 ```
 .
@@ -169,28 +186,6 @@ Make sure you have entered your [SSH key at Hugging Face](https://huggingface.co
 sudo apt-get install git-lfs
 git lfs install
 git clone git@hf.co:datasets/ai4ce/MARS
-```
-
-## Scripts and Notebooks
-
-To exclude the output of jupyter notebooks from git tracking, add the following lines to your ```.git/modules/mcity_data_engine_scripts/config```:
-
-```
-[filter "strip-notebook-output"]
-    clean = <your_path>/mcity_data_engine/.venv/bin/jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadataPreprocessor.enabled=True --to=notebook --stdin --stdout
-    required = true
-```
-
-In order to update the scripts submodule, add the following lines at the top of your ```.git/hooks/pre-commit```:
-
-```
-git submodule update --recursive --remote
-git add .gitmodules $(git submodule foreach --quiet 'echo $name')
-```
-
-or run the command manually:
-```
-git submodule update --recursive --remote
 ```
 
 ## Contributors
