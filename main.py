@@ -6,7 +6,7 @@ import signal
 import sys
 import time
 import warnings
-from typing import Callable, Dict, List
+from typing import Dict, List
 
 IGNORE_FUTURE_WARNINGS=True
 if IGNORE_FUTURE_WARNINGS:
@@ -36,7 +36,7 @@ from workflows.teacher import Teacher, ZeroShotTeacher
 
 
 def signal_handler(sig, frame):
-    print("You pressed Ctrl+C!")
+    logging.error("You pressed Ctrl+C!")
     # Perform any cleanup or final actions here
     try:
         wandb.finish()
