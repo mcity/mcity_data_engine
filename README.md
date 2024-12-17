@@ -35,6 +35,8 @@ Launch the Mcity Data Engine in a second terminal:
 Open Voxel51 in your browser:
 ```http://localhost:5151/```
 
+In case there are issues with MongoDB, the underlying database Voxel51 uses, run ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
+
 ## Repository Structure
 ```
 .
@@ -169,7 +171,7 @@ git lfs install
 git clone git@hf.co:datasets/ai4ce/MARS
 ```
 
-## Notes
+## Scripts and Notebooks
 
 To exclude the output of jupyter notebooks from git tracking, add the following lines to your ```.git/modules/mcity_data_engine_scripts/config```:
 
@@ -179,7 +181,10 @@ To exclude the output of jupyter notebooks from git tracking, add the following 
     required = true
 ```
 
-In case there are issues with MongoDB, use ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
+In order to update the scripts submodule, run
+```
+git submodule update --recursive --remote
+```
 
 ## Contributors
 
