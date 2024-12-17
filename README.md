@@ -44,7 +44,6 @@ Open Voxel51 in your browser:
 ├── config/               # Local configuration files
 ├── wandb_runs/           # Entrypoints and configs for WandB experiments
 ├── utils/                # General-purpose utility functions
-├── scripts/              # Experiment scripts and one-time operations
 ├── cloud/                # Scripts run in the cloud to pre-process data
 ├── datasets/             # Default storage directory for datasets
 ├── output/               # Default storage for models, embeddings, etc.
@@ -52,6 +51,7 @@ Open Voxel51 in your browser:
 ├── docs/                 # Documentation generated with `pdoc`
 ├── tests/                # Unit tests using Pytest
 ├── custom_models/        # External models with containerized environments
+├── mcity_data_engine_scripts/              # Experiment scripts and one-time operations
 ├── Dockerfile.wandb      # Dockerfile for WandB experiments
 ├── .vscode               # Settings for VS Code IDE
 ├── .github/workflows/    # GitHub Action workflows
@@ -171,12 +171,12 @@ git clone git@hf.co:datasets/ai4ce/MARS
 
 ## Notes
 
-To exclude the output of jupyter notebooks from git tracking, add the following lines to your ```.git/config```:
+To exclude the output of jupyter notebooks from git tracking, add the following lines to your ```.git/modules/mcity_data_engine_scripts/config```:
 
 ```
 [filter "strip-notebook-output"]
-	clean = jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadataPreprocessor.enabled=True --to=notebook --stdin --stdout
-	required = true
+    clean = <your_path>/mcity_data_engine/mcity_data_engine_scripts/.venv/bin/jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadataPreprocessor.enabled=True --to=notebook --stdin --stdout
+    required = true
 ```
 
 In case there are issues with MongoDB, use ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
