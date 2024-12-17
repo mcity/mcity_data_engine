@@ -39,10 +39,18 @@ In case there are issues with MongoDB, the underlying database Voxel51 uses, run
 
 ### Notebooks and Submodules
 
-To exclude the output of jupyter notebooks from git tracking, add the following lines to your ```.git/config``` and ```.git/modules/mcity_data_engine_scripts/config```:
+To exclude the output of jupyter notebooks from git tracking, add the following lines to your ```.git/config``` :
 
 ```
-[filter "strip-notebook-output"]
+[filter "strip-notebook-output-engine"]
+    clean = <your_path>/mcity_data_engine/.venv/bin/jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadataPreprocessor.enabled=True --to=notebook --stdin --stdout
+    required = true
+```
+
+and those to and ```.git/modules/mcity_data_engine_scripts/config```
+
+```
+[filter "strip-notebook-output-scripts"]
     clean = <your_path>/mcity_data_engine/.venv/bin/jupyter nbconvert --ClearOutputPreprocessor.enabled=True --ClearMetadataPreprocessor.enabled=True --to=notebook --stdin --stdout
     required = true
 ```
