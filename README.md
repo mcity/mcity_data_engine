@@ -16,7 +16,7 @@ The Mcity Data Engine is an essential tool in the Mcity makerspace for transport
 
 ## Instructions
 
-Download, install requirements, and run:
+At least one GPU is required for the Data Engine. Check the hardware setups we have tested in the [Wiki](https://github.com/mcity/mcity_data_engine/wiki/Environments). To download the repository and install requirements run:
 ```
 git clone --recurse-submodules git@github.com:mcity/mcity_data_engine.git
 cd mcity_data_engine
@@ -26,7 +26,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Launch Voxel51 in one terminal:
+Launch a Voxel51 session in one terminal:
 ```python session_v51.py```
 
 Launch the Mcity Data Engine in a second terminal:
