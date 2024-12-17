@@ -47,7 +47,7 @@ To exclude the output of jupyter notebooks from git tracking, add the following 
     required = true
 ```
 
-In order to update the scripts submodule, add the following lines at the top of your ```.git/hooks/pre-commit```:
+In order to keep the submodules updated, add the following lines to the top of your ```.git/hooks/pre-commit```:
 
 ```
 git submodule update --recursive --remote
