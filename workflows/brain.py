@@ -266,7 +266,6 @@ class Brain:
                 representativeness_field=method_key,
                 method=method,
                 embeddings=self.embeddings_model,
-                similarity_index=self.similarities,
                 num_workers=NUM_WORKERS,
                 progress=True,
             )
@@ -360,7 +359,6 @@ class Brain:
             self.dataset,
             embeddings=self.embeddings_model,
             uniqueness_field=self.uniqueness_key,
-            similarity_index=self.similarities,
             num_workers=NUM_WORKERS,
         )
 
