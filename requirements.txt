@@ -48,7 +48,7 @@ cryptography==43.0.1
 cycler==0.12.1
 dacite==1.7.0
 datamodel-code-generator==0.26.1
-datasets==3.1.0
+datasets==3.2.0
 debugpy==1.8.6
 decorator==5.1.1
 defusedxml==0.7.1
@@ -387,7 +387,7 @@ tzlocal==5.2
 ua-parser==1.0.0
 ua-parser-builtins==0.18.0.post1
 ujson==5.10.0
-ultralytics==8.3.51
+ultralytics==8.3.57
 ultralytics-thop==2.0.12
 umap-learn==0.5.7
 universal-analytics-python3==1.1.1
