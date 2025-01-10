@@ -24,7 +24,7 @@ from utils.dataset_loader import (load_dataset_info, load_fisheye_8k,
                                   load_mars_multiagent,
                                   load_mars_multitraversal,
                                   load_mcity_fisheye_3_months,
-                                  load_mcity_fisheye_2000)
+                                  load_mcity_fisheye_2000, load_annarbor_rolling)
 from utils.logging import configure_logging
 from utils.mp_distribution import ZeroShotDistributer
 from utils.wandb_helper import launch_to_queue_terminal

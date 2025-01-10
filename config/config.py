@@ -6,7 +6,7 @@ SELECTED_WORKFLOW = [
 ]
 
 # Choose from config/datasets.yaml
-SELECTED_DATASET = "mcity_fisheye_2000"
+SELECTED_DATASET = "annarbor_rolling"
 
 PERSISTENT = True  # If V51 database is stored
 
@@ -95,16 +95,16 @@ WORKFLOWS = {
              # dataset_chunks: Number of chunks to split the dataset into for parallel processing       # batch_size
             "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 64, "n_dataset_chunks": 1},                # RTX 4090: 64
             "IDEA-Research/grounding-dino-tiny": {"batch_size": 8, "n_dataset_chunks": 1},              # RTX 4090: 8
-            "IDEA-Research/grounding-dino-base": {"batch_size": 8, "n_dataset_chunks": 1},              # RTX 4090: 8
-            "google/owlvit-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},                     # RTX 4090: 8
-            "google/owlvit-base-patch32": {"batch_size": 8, "n_dataset_chunks": 1},                     # RTX 4090: 8
+            #"IDEA-Research/grounding-dino-base": {"batch_size": 8, "n_dataset_chunks": 1},              # RTX 4090: 8
+            #"google/owlvit-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},                     # RTX 4090: 8
+            #"google/owlvit-base-patch32": {"batch_size": 8, "n_dataset_chunks": 1},                     # RTX 4090: 8
             "google/owlvit-large-patch14": {"batch_size": 4, "n_dataset_chunks": 1},                    # RTX 4090: 4
             "google/owlv2-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},                      # RTX 4090: 8
-            "google/owlv2-base-patch16-ensemble": {"batch_size": 8, "n_dataset_chunks": 1},             # RTX 4090: 8
+            #"google/owlv2-base-patch16-ensemble": {"batch_size": 8, "n_dataset_chunks": 1},             # RTX 4090: 8
             "google/owlv2-base-patch16-finetuned": {"batch_size": 8, "n_dataset_chunks": 1},            # RTX 4090: 8
             "google/owlv2-large-patch14": {"batch_size": 2, "n_dataset_chunks": 1},                     # RTX 4090: 2
-            "google/owlv2-large-patch14-ensemble": {"batch_size": 2, "n_dataset_chunks": 1},            # RTX 4090: 2
-            "google/owlv2-large-patch14-finetuned": {"batch_size": 2, "n_dataset_chunks": 1},           # RTX 4090: 2
+            "google/owlv2-large-patch14-ensemble": {"batch_size": 2, "n_dataset_chunks": 2},            # RTX 4090: 2
+            #"google/owlv2-large-patch14-finetuned": {"batch_size": 2, "n_dataset_chunks": 1},           # RTX 4090: 2
     },
     "detection_threshold": 0.2,
     "object_classes": [
