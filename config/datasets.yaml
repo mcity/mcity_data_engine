@@ -13,6 +13,7 @@ datasets:
   - name: fisheye_8k
     loader_fct: load_fisheye_8k
     local_path: /media/dbogdoll/Datasets/fisheye_8k/
+    hf_dataset_name: Voxel51/fisheye8k
     v51_type: COCODetectionDataset
     v51_splits: ["train", "test"]
   - name: mcity_fisheye_ano_ped
@@ -32,3 +33,7 @@ datasets:
     hf_dataset_name: ai4ce/MARS
     hf_path: /media/dbogdoll/Datasets/MARS/Multiagent_53scene/
     v51_config: mars_multiagent.yaml
+  - name: annarbor_rolling
+    loader_fct: load_annarbor_rolling
+    local_path: /nfs/turbo/coe-mcity/dbogdoll/datasets/dataengine_rolling/1/decoded
+    v51_type: FiftyOneDataset

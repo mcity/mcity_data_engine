@@ -33,6 +33,29 @@ def load_dataset_info(dataset_name, config_path="./config/datasets.yaml"):
     else:
         return None
 
+def load_annarbor_rolling(dataset_info):
+    dataset_name = dataset_info["name"]
+    dataset_dir = dataset_info["local_path"]
+    dataset_type = getattr(fo.types, dataset_info["v51_type"])
+
+    if PERSISTENT == False:
+        try:
+            fo.delete_dataset(dataset_info["name"])
+        except:
+            pass
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = fo.Dataset(dataset_name)
+        dataset.add_dir(
+            dataset_dir=dataset_dir,
+            dataset_type=dataset_type,
+        )
+        dataset.compute_metadata(num_workers=NUM_WORKERS)
+        dataset.persistent = PERSISTENT
+    return dataset
 
 def load_mcity_fisheye_2000(dataset_info):
     """
