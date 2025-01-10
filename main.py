@@ -308,7 +308,7 @@ class WorkflowExecutor:
                             continue
 
                 elif workflow == "zero_shot_teacher":
-                    workflow_zero_shot_teacher(dataset, dataset_info)
+                    workflow_zero_shot_teacher(self.dataset, self.dataset_info)
 
                 elif workflow == "ensemble_exploration":
                     wandb_project = "Data Engine Ensemble Exploration"
