@@ -142,7 +142,7 @@ docker push <dockerhub-account>/<image-name>:latest
 
 To run such a container with [singularity](https://github.com/sylabs/singularity/blob/main/INSTALL.md), run the following command:
 ```
-singularity run --pwd /launch --bind /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch docker://<dockerhub-account>/<image-name>:latest <optional argument>
+singularity run --nv --pwd /launch --bind /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch docker://<dockerhub-account>/<image-name>:latest <optional argument>
 ```
 
 Singularity was chosen as it is readily available in the UofM cluster environment.
