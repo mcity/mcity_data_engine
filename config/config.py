@@ -1,12 +1,10 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = [
-    "zero_shot_teacher",
-]
+SELECTED_WORKFLOW = ["zero_shot_teacher", "ensemble_exploration"]
 
 # Choose from config/datasets.yaml
-SELECTED_DATASET = "annarbor_rolling"
+SELECTED_DATASET = "annarbor_rolling_24h_0.5Hz"
 
 PERSISTENT = True  # If V51 database is stored
 
@@ -91,20 +89,23 @@ WORKFLOWS = {
         ],
     },
     "zero_shot_teacher": {
-         "hf_models_zeroshot_objectdetection": {
-             # dataset_chunks: Number of chunks to split the dataset into for parallel processing       # batch_size
-            "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 64, "n_dataset_chunks": 1},                # RTX 4090: 64
-            "IDEA-Research/grounding-dino-tiny": {"batch_size": 8, "n_dataset_chunks": 1},              # RTX 4090: 8
-            #"IDEA-Research/grounding-dino-base": {"batch_size": 8, "n_dataset_chunks": 1},              # RTX 4090: 8
-            #"google/owlvit-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},                     # RTX 4090: 8
-            #"google/owlvit-base-patch32": {"batch_size": 8, "n_dataset_chunks": 1},                     # RTX 4090: 8
-            "google/owlvit-large-patch14": {"batch_size": 4, "n_dataset_chunks": 1},                    # RTX 4090: 4
-            "google/owlv2-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},                      # RTX 4090: 8
-            #"google/owlv2-base-patch16-ensemble": {"batch_size": 8, "n_dataset_chunks": 1},             # RTX 4090: 8
-            "google/owlv2-base-patch16-finetuned": {"batch_size": 8, "n_dataset_chunks": 1},            # RTX 4090: 8
-            "google/owlv2-large-patch14": {"batch_size": 2, "n_dataset_chunks": 1},                     # RTX 4090: 2
-            "google/owlv2-large-patch14-ensemble": {"batch_size": 2, "n_dataset_chunks": 2},            # RTX 4090: 2
-            #"google/owlv2-large-patch14-finetuned": {"batch_size": 2, "n_dataset_chunks": 1},           # RTX 4090: 2
+        "n_post_processing_worker_per_inference_worker": 2, 
+        "n_worker_dataloader": 3,
+        "prefetch_factor_dataloader": 2,
+        "hf_models_zeroshot_objectdetection": {
+            # dataset_chunks: Number of chunks to split the dataset into for parallel processing       # batch_size
+            "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 180, "n_dataset_chunks": 1},              # RTX 4090: 64 ; H 100: 128
+            "IDEA-Research/grounding-dino-tiny": {"batch_size": 32, "n_dataset_chunks": 1},            # RTX 4090: 8 ;  H 100: 32
+            #"IDEA-Research/grounding-dino-base": {"batch_size": 8, "n_dataset_chunks": 1},            # RTX 4090: 8 ;  H 100: ?
+            #"google/owlvit-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},                   # RTX 4090: 8 ;  H 100: ?
+            #"google/owlvit-base-patch32": {"batch_size": 8, "n_dataset_chunks": 1},                   # RTX 4090: 8 ;  H 100: ?
+            "google/owlvit-large-patch14": {"batch_size": 24, "n_dataset_chunks": 8},                  # RTX 4090: 4 ;  H 100: 16
+            #"google/owlv2-base-patch16": {"batch_size": 32, "n_dataset_chunks": 1},                    # RTX 4090: 8 ;  H 100: 32
+            #"google/owlv2-base-patch16-ensemble": {"batch_size": 8, "n_dataset_chunks": 1},           # RTX 4090: 8 ;  H 100: ?
+            "google/owlv2-base-patch16-finetuned": {"batch_size": 32, "n_dataset_chunks": 8},          # RTX 4090: 8 ;  H 100: 16
+            #"google/owlv2-large-patch14": {"batch_size": 8, "n_dataset_chunks": 8},                   # RTX 4090: 2 ;  H 100: 8
+            "google/owlv2-large-patch14-ensemble": {"batch_size": 12, "n_dataset_chunks": 8},          # RTX 4090: 2 ;  H 100: 8
+            #"google/owlv2-large-patch14-finetuned": {"batch_size": 2, "n_dataset_chunks": },          # RTX 4090: 2 ;  H 100: ?
     },
     "detection_threshold": 0.2,
     "object_classes": [
