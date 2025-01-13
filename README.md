@@ -145,7 +145,7 @@ To run such a container with [singularity](https://github.com/sylabs/singularity
 singularity run --pwd /launch --bind /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch docker://<dockerhub-account>/<image-name>:latest <optional argument>
 ```
 
-Singularity was chosen as it is readily available in the UoFM cluster environment.
+Singularity was chosen as it is readily available in the UofM cluster environment.
 
 #### Co-DETR
 
