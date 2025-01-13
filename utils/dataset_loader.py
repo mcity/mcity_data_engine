@@ -21,7 +21,7 @@ def load_dataset_info(dataset_name, config_path="./config/datasets.yaml"):
     Returns:
         dict or None: A dictionary containing the dataset information if found, otherwise None.
     """
-    logging.info(f"Loaded V51 datasets: {fo.list_datasets()}")
+    logging.info(f"Currently active V51 datasets: {fo.list_datasets()}")
     with open(config_path) as f:
         datasets_config = yaml.safe_load(f)
 
