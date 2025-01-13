@@ -139,10 +139,20 @@ docker image tag <dockerhub-account>/<image-name>:latest <dockerhub-account>/<im
 docker login
 docker push <dockerhub-account>/<image-name>:latest
 ```
-To run such a container with [singularity](https://docs.sylabs.io/guides/latest/user-guide/introduction.html), run the following command:
+
+To run such a container with [singularity](https://github.com/sylabs/singularity/blob/main/INSTALL.md), run the following command:
 ```
 singularity run --pwd /launch --bind /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch docker://<dockerhub-account>/<image-name>:latest <optional argument>
 ```
+
+Singularity was chosen as it is readily available in the UoFM cluster environment.
+
+#### Co-DETR
+
+[Co-DETR](https://github.com/Sense-X/Co-DETR) is an object detection model and is leading the [COCO test-dev leaderboard](https://paperswithcode.com/sota/object-detection-on-coco) as of January 2025.
+Co-DETR is included as a submodule at [custom_models/CoDETR/Co-DETR](https://github.com/mcity/mcity_data_engine/tree/main/custom_models/CoDETR). A singularity image for CoDETR can be found at [dbogdollresearch/codetr](https://hub.docker.com/r/dbogdollresearch/codetr).
+
+
 ## Datasets
 
 ### Hugging Face Integration
