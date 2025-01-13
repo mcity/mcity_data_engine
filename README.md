@@ -156,6 +156,15 @@ docker run --gpus all --workdir /launch --volume /<root>/mcity_data_engine/custo
 [Co-DETR](https://github.com/Sense-X/Co-DETR) is an object detection model and is leading the [COCO test-dev leaderboard](https://paperswithcode.com/sota/object-detection-on-coco) as of January 2025.
 Co-DETR is included as a submodule at [custom_models/CoDETR/Co-DETR](https://github.com/mcity/mcity_data_engine/tree/main/custom_models/CoDETR). A singularity image for CoDETR can be found at [dbogdollresearch/codetr](https://hub.docker.com/r/dbogdollresearch/codetr).
 
+It is necessary to also mount the dataset used for training and increase shared memory:
+
+```
+docker run --gpus all --workdir /launch \
+  --volume /<root>/mcity_data_engine/custom_models/CoDETR/Co-DETR:/launch \
+  --volume /<root_datasets>/codetr_data/data:/launch/data \
+  --shm-size=8g \
+  dbogdollresearch/codetr:latest train
+```
 
 ## Datasets
 
