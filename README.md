@@ -148,7 +148,7 @@ singularity run --nv --pwd /launch --bind /<root>/mcity_data_engine/custom_model
 To run it with [Docker](https://docs.docker.com/engine/install/ubuntu/) instead, run the following command:
 
 ```
-docker run --gpus all --workdir /launch --volume /<root>/mcity_data_engine/custom_models/CoDETR/Co-DETR:/launch <dockerhub-account>/<image-name>:latest <optional argument>
+docker run --gpus all --workdir /launch --volume /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch <dockerhub-account>/<image-name>:latest <optional argument>
 ```
 
 #### Co-DETR
