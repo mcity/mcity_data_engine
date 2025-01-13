@@ -105,7 +105,10 @@ def workflow_train_teacher():
 
 def workflow_zero_shot_teacher(dataset, dataset_info):
     # Set multiprocessing mode for CUDA multiprocessing
-    mp.set_start_method("spawn")
+    try:
+        mp.set_start_method("spawn")
+    except:
+        pass
     # Zero-shot object detector teacher models from Huggingface
     # Optimized for parallel multi-GPU inference, also supports single GPU
     config = WORKFLOWS["zero_shot_teacher"]
@@ -127,10 +130,11 @@ def workflow_ensemble_exploration():
 
 
 class WorkflowExecutor:
-    def __init__(self, workflows: List[str], selected_dataset: str,dataset: fo.Dataset,  dataset_info: Dict, args):
+    def __init__(self, workflows: List[str], selected_dataset: str, dataset: fo.Dataset,  dataset_info: Dict, args):
         self.workflows = workflows
         self.selected_dataset = selected_dataset
-        self.dataset = dataset
+        #self.dataset = dataset
+        self.dataset = dataset.take(826_929, seed=51) #FIXME Remove, only testing
         self.dataset_info = dataset_info
         self.args = args
 
@@ -143,7 +147,7 @@ class WorkflowExecutor:
         logging.info(f"Selected workflows: {self.workflows}")
 
         for workflow in self.workflows:
-            logging.info(f"Running workflow {workflow} for dataset {self.dataset.name}")
+            logging.info(f"Running workflow {workflow} for dataset {self.selected_dataset}")
             wandb_run = None
             try:
                 if workflow == "aws_download":

@@ -7,6 +7,8 @@ import time
 from difflib import get_close_matches
 from functools import partial
 from typing import List, Union
+import random
+import signal
 
 import fiftyone as fo
 import numpy as np
@@ -27,10 +29,16 @@ from transformers.utils.generic import is_torch_device
 from transformers.utils.import_utils import (is_torch_available,
                                              requires_backends)
 
-from config.config import NUM_WORKERS
+from config.config import NUM_WORKERS, WORKFLOWS
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.logging import configure_logging
 
+# Handling timeouts
+class TimeoutException(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise TimeoutException("Dataloader creation timed out")
 
 def transform_batch(examples, image_processor, return_pixel_mask=False):
     """Apply format annotations in COCO format for object detection task"""
@@ -80,15 +88,16 @@ def transform_batch(examples, image_processor, return_pixel_mask=False):
 
     return result
 
-
 class ZeroShotInferenceCollateFn:
     def __init__(self, hf_model_config_name, hf_processor, batch_size, object_classes, batch_classes):
-        self.hf_model_config_name = hf_model_config_name
-        self.processor = hf_processor
-        self.batch_size = batch_size
-        self.object_classes = object_classes
-        self.batch_classes = batch_classes
-
+        try:
+            self.hf_model_config_name = hf_model_config_name
+            self.processor = hf_processor
+            self.batch_size = batch_size
+            self.object_classes = object_classes
+            self.batch_classes = batch_classes
+        except Exception as e:
+            logging.error(f"Error in collate init of DataLoader: {e}")
     def __call__(self, batch):
         try:
             images, labels = zip(*batch)
@@ -150,6 +159,7 @@ class ZeroShotTeacher:
             # Check if data already stored in V51 dataset
             if pred_key in dataset_schema:
                 logging.info(f"Model {model_name} predictions already stored in Voxel51 dataset.")
+                models_splits_dict[model_name] = value  # FIXME Remove, just for experiments
             # Check if data already stored on disk
             elif os.path.isdir(os.path.join(self.detections_root, model_name_key)):
                 try:
@@ -183,14 +193,78 @@ class ZeroShotTeacher:
         return models_splits_dict
 
     # Worker functions
-    def process_outputs_worker(self, results_queue, model_progress_dict, models_ready_queue, inference_finished, queue_warning_threshold=5):
+    def update_queue_sizes_worker(self, queues, queue_sizes, largest_queue_index, max_queue_size):
+        # Measure the sizes of multiple result queues (one per worker process)
+        # Logging
+        experiment_name = f"queue_size_monitor_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        log_directory = os.path.join(self.tensorboard_root, self.dataset_name, experiment_name)
+        wandb.tensorboard.patch(root_logdir=log_directory)
+        wandb.init(
+            name=f"queue_size_monitor_{os.getpid()}",
+            job_type="inference",
+            project="Zero Shot Teacher",
+        )
+        writer = SummaryWriter(log_dir=log_directory)
+
+        step = 0
+
+        while True:
+            for i, queue in enumerate(queues):
+                queue_sizes[i] = queue.qsize()
+                writer.add_scalar(f'queue_size/items/{i}', queue_sizes[i], step)  
+
+            step += 1
+
+            # Find the index of the largest queue
+            max_size = max(queue_sizes)
+            max_index = queue_sizes.index(max_size)
+
+            # Calculate the total size of all queues
+            total_size = sum(queue_sizes)
+
+            # If total_size is greater than 0, calculate the probabilities
+            if total_size > 0:
+                # Normalize the queue sizes by the max_queue_size
+                normalized_sizes = [size / max_queue_size for size in queue_sizes]
+                
+                # Calculate probabilities based on normalized sizes
+                probabilities = [size / sum(normalized_sizes) for size in normalized_sizes]
+                
+                # Use random.choices with weights (probabilities)
+                chosen_queue_index = random.choices(range(len(queues)), weights=probabilities, k=1)[0]
+
+                largest_queue_index.value = chosen_queue_index
+            else:
+                largest_queue_index.value = max_index
+
+            time.sleep(0.1)
+
+    def process_outputs_worker(self, result_queues, result_queues_sizes, largest_queue_index, inference_finished, queue_warning_threshold=5):
         configure_logging()
         logging.info(f"Process ID: {os.getpid()}. Results processing process started")    
         dataset_v51 = fo.load_dataset(self.dataset_name)
         processing_successful = None
+
+        # Logging
+        experiment_name = f"post_process_{os.getpid()}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        log_directory = os.path.join(self.tensorboard_root, self.dataset_name, experiment_name)
+        wandb.tensorboard.patch(root_logdir=log_directory)
+        wandb.init(
+            name=f"post_process_{os.getpid()}",
+            job_type="inference",
+            project="Zero Shot Teacher",
+        )
+        writer = SummaryWriter(log_dir=log_directory)
+        n_processed_images = 0
+
+        logging.info(f"Post-Processor {os.getpid()} starting loop.")    
+
         while True:
-            if results_queue.qsize() > queue_warning_threshold:
-                logging.warning(f"Queue size of {results_queue.qsize()}. Consider increasing number of post-processing workers.")
+            results_queue = result_queues[largest_queue_index.value]
+            writer.add_scalar(f'post_processing/selected_queue', largest_queue_index.value, n_processed_images)
+
+            #if results_queue.qsize() > queue_warning_threshold:
+                #logging.warning(f"Queue size of {results_queue.qsize()}. Consider increasing number of post-processing workers.")
             # Exit only when inference is finished and the queue is empty
             if inference_finished.value and results_queue.empty():
                 dataset_v51.save()
@@ -199,34 +273,36 @@ class ZeroShotTeacher:
             # Process results from the queue if available
             if not results_queue.empty():
                 try:
+                    time_start = time.time()
+
                     result = results_queue.get_nowait()
+                    #result = results_queue.get(block=True, timeout=0.5)
+                    
                     processing_successful = self.process_outputs(dataset_v51, result, self.object_classes)
 
-                    # Update shared dictionary with progress
-                    # manager.dict() does not allow direct in-place updates for nested dictionaries like a regular Python dict
-                    model_name = result["model_name"]
-                    batch_size = len(result["target_sizes"])
-                    nested_dict = model_progress_dict[model_name]
-                    nested_dict["n_frames_processed"] += batch_size
-                    # Check if all frames have been processed
-                    if nested_dict["n_frames_processed"] == len(dataset_v51) and nested_dict["ready_export"] == False:
-                        nested_dict["ready_export"] = True
-                        model_progress_dict[model_name] = nested_dict
-                        nested_dict["model_name"] = model_name
-                        models_ready_queue.put(nested_dict)
-                        logging.info(f"Model {model_name} is ready for evaluation and export.")
-                    else:
-                        model_progress_dict[model_name] = nested_dict
-                        logging.debug(f"Model {model_name} processed {nested_dict['n_frames_processed']} of {len(dataset_v51)} frames.")
+                    # Performance logging
+                    n_images = len(result["labels"])
+                    time_end = time.time()
+                    duration = time_end - time_start
+                    batches_per_second = 1 / duration
+                    frames_per_second = batches_per_second * n_images
+                    n_processed_images += n_images
+                    writer.add_scalar(f'post_processing/frames_per_second', frames_per_second, n_processed_images)  
 
                     del result   # Explicit removal from device
+
                 except Exception as e:
                     continue
+                
             else:
                 continue
+        
+        writer.close()
+        wandb.finish(exit_code=0)
         return processing_successful    # Return last processing status
     
-    def gpu_worker(self, gpu_id, cpu_cores, task_queue, results_queue, model_progress_dict, done_event, post_processing_finished, set_cpu_affinity=False):
+    def gpu_worker(self, gpu_id, cpu_cores, task_queue, results_queue, done_event, post_processing_finished, set_cpu_affinity=False):
+        dataset_v51 = fo.load_dataset(self.dataset_name)    # NOTE Only for the case of sequential processing
         configure_logging()
         # Set CPU
         if set_cpu_affinity:
@@ -255,8 +331,7 @@ class ZeroShotTeacher:
                         task_metadata = task_queue.get(timeout=5)  # Timeout to prevent indefinite blocking
                     except Exception as e:
                         break  # Exit if no more tasks
-                    run_successful = self.model_inference(task_metadata, device, self.dataset_torch, self.object_classes, results_queue, self.tensorboard_root)
-        
+                    run_successful = self.model_inference(task_metadata, device, self.dataset_torch, dataset_v51, self.object_classes, results_queue, self.tensorboard_root)
                     logging.info(f"Worker for GPU {gpu_id} finished run successful: {run_successful}")
                 else:
                     continue
@@ -291,10 +366,14 @@ class ZeroShotTeacher:
         return run_successful
 
     # Functionality functions
-    def model_inference(self, metadata: dict, device: str, dataset: torch.utils.data.Dataset, object_classes: list, results_queue: Union[queue.Queue, mp.Queue], root_log_dir: str, num_workers: int = 4, persistent_workers: bool = False, prefetch_factor: int = 4):
+    def model_inference(self, metadata: dict, device: str, dataset: torch.utils.data.Dataset, dataset_v51: fo.Dataset, object_classes: list, results_queue: Union[queue.Queue, mp.Queue], root_log_dir: str, persistent_workers: bool = False):
         writer = None
         run_successful = True
         processor, model, inputs, outputs, result, dataloader = None, None, None, None, None, None # For finally block
+
+        # Timeout handler
+        dataloader_timeout = 60
+        signal.signal(signal.SIGALRM, timeout_handler)
 
         try:
             # Metadata
@@ -308,9 +387,9 @@ class ZeroShotTeacher:
 
             # Load the model
             logging.info(f"Loading model {model_name}")
-            processor = AutoProcessor.from_pretrained(model_name)   # TODO consider use_fast=True https://github.com/huggingface/transformers/pull/34354
+            processor = AutoProcessor.from_pretrained(model_name, use_fast=True)   # TODO consider use_fast=True https://github.com/huggingface/transformers/pull/34354
             model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name)
-            model = model.to(device)
+            model = model.to(device, non_blocking=True)
             model.eval()
             hf_model_config = AutoConfig.from_pretrained(model_name)
             hf_model_config_name = type(hf_model_config).__name__
@@ -329,8 +408,14 @@ class ZeroShotTeacher:
                 dataset = Subset(dataset, range(chunk_index_start, chunk_index_end))
             
             zero_shot_inference_preprocessing = ZeroShotInferenceCollateFn(hf_model_config_name=hf_model_config_name, hf_processor=processor, object_classes=object_classes, batch_size=batch_size, batch_classes=batch_classes)
+            num_workers = WORKFLOWS["zero_shot_teacher"]["n_worker_dataloader"]
+            prefetch_factor = WORKFLOWS["zero_shot_teacher"]["prefetch_factor_dataloader"]
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, persistent_workers=persistent_workers, pin_memory=True, prefetch_factor=prefetch_factor, collate_fn=zero_shot_inference_preprocessing)
-            
+
+            dataloader_length = len(dataloader)
+            if dataloader_length < 1:
+                logging.error(f"Dataloader has insufficient data: {dataloader_length} entries. Please check your dataset and DataLoader configuration.")
+
             # Logging
             experiment_name = f"{model_name}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{device}"
             log_directory = os.path.join(root_log_dir, dataset_name, experiment_name)
@@ -344,37 +429,49 @@ class ZeroShotTeacher:
             writer = SummaryWriter(log_dir=log_directory)
 
             # Inference Loop
-            logging.info("Starting inference")
+            logging.info(f"{os.getpid()}: Starting inference loop")
             n_processed_images = 0
             for inputs, labels, target_sizes, batch_classes in dataloader:
-                time_start = time.time()
-                n_images = len(labels)
-                inputs = inputs.to(device)  # TODO Add non_blocking=True after HF PR is merged: https://github.com/huggingface/transformers/pull/34883
+                signal.alarm(dataloader_timeout)
+                try:
+                    time_start = time.time()
+                    n_images = len(labels)
+                    inputs = inputs.to(device, non_blocking=True)
 
-                with torch.amp.autocast("cuda"), torch.inference_mode():
-                    outputs = model(**inputs)
+                    with torch.amp.autocast("cuda"), torch.inference_mode():
+                        outputs = model(**inputs)
 
-                result = {
-                    "inputs": inputs,
-                    "outputs": outputs,
-                    "processor": processor,
-                    "target_sizes": target_sizes,
-                    "labels": labels,
-                    "model_name": model_name,
-                    "hf_model_config_name": hf_model_config_name,
-                    "batch_classes": batch_classes
-                }
+                    result = {
+                        "inputs": inputs,
+                        "outputs": outputs,
+                        "processor": processor,
+                        "target_sizes": target_sizes,
+                        "labels": labels,
+                        "model_name": model_name,
+                        "hf_model_config_name": hf_model_config_name,
+                        "batch_classes": batch_classes
+                    }
 
-                results_queue.put(result)
+                    logging.debug(f"{os.getpid()}: Putting result into queue")
 
-                # Logging
-                time_end = time.time()
-                duration = time_end - time_start
-                batches_per_second = 1 / duration
-                frames_per_second = batches_per_second * n_images
-                n_processed_images += n_images
-                writer.add_scalar(f'inference/frames_per_second', frames_per_second, n_processed_images)    
+                    results_queue.put(result, timeout=60)  # Ditch data only after 60 seconds
+
+                    # Logging
+                    time_end = time.time()
+                    duration = time_end - time_start
+                    batches_per_second = 1 / duration
+                    frames_per_second = batches_per_second * n_images
+                    n_processed_images += n_images
+                    logging.debug(f"{os.getpid()}: Number of processes images: {n_processed_images}")
+                    writer.add_scalar(f'inference/frames_per_second', frames_per_second, n_processed_images)    
             
+                except TimeoutException:
+                    logging.warning(f"Dataloader loop got stuck. Continuing with next batch.")
+                    continue
+
+                finally:
+                    signal.alarm(0)  # Cancel the alarm
+
             # Flawless execution
             wandb.finish(exit_code=0)
         

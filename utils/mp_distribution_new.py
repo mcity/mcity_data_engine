@@ -1,6 +1,5 @@
 import logging
 import subprocess
-import time
 
 import psutil
 import torch
@@ -78,11 +77,12 @@ class ZeroShotDistributer(Distributer):
     def distribute_and_run(self):
         dataset_name = self.dataset_info["name"]
         models_dict = self.config["hf_models_zeroshot_objectdetection"]
-        n_post_worker = self.config["n_post_processing_worker_per_inference_worker"]
 
         runs = []
         run_id = 0
 
+        n_total_workers = 0     # Must not be larger than available CPU cores
+        n_post_worker = self.config["n_post_processing_worker_per_inference_worker"]
 
         for model_name in models_dict:
             batch_size = models_dict[model_name]["batch_size"]
@@ -111,9 +111,14 @@ class ZeroShotDistributer(Distributer):
                         "chunk_index_start": chunk_index_start,
                         "chunk_index_end": chunk_index_end,
                         "batch_size": batch_size,
+                        "n_post_worker": n_post_worker,
                         "dataset_name": dataset_name
                     })
 
+                run_name = str(run_id) + "_" + model_name 
+
+                n_total_workers += 1                # GPU inference worker
+                n_post_processing_workers += n_post_worker    # Post-processing worker
 
                 # Update start index for next chunk
                 if n_chunks > 1:
@@ -122,25 +127,18 @@ class ZeroShotDistributer(Distributer):
                 run_id += 1
 
         n_runs = len(runs)
+        n_total_workers += n_post_processing_workers
 
         logging.info(f"Running with multiprocessing on {self.n_gpus} GPUs.")
         n_parallel_processes = min(self.n_gpus, n_runs)
 
-        n_post_processing_workers = int(n_post_worker * n_parallel_processes)
-        n_total_workers = n_parallel_processes + n_post_processing_workers
+        n_post_processing_workers = n_post_worker * n_parallel_processes
 
         # Create results queues, max one per GPU
-        result_queues = []   
-        max_queue_size = 3                                      # Balance between flexibility and available GPU memory for inference (data stays on GPU for post-processing)
+        result_queues = {}      
         for index in range(n_parallel_processes):
-            results_queue = mp.Queue(maxsize=max_queue_size)    # Ensure that no GPU memory overflow occurs
-            result_queues.append(results_queue)
-
-        # Dedicated worker that continuously measures the lengths of the result queues
-        result_queues_sizes = mp.Manager().list([0] * n_parallel_processes)
-        largest_queue_index = mp.Value('i', -1)
-        size_updater = mp.Process(target=self.teacher.update_queue_sizes_worker, args=(result_queues, result_queues_sizes, largest_queue_index, max_queue_size))
-        size_updater.start()
+            results_queue = mp.Queue()
+            result_queues[index] = results_queue
 
         # Create queue with all planned runs
         task_queue = mp.Queue()
@@ -162,11 +160,12 @@ class ZeroShotDistributer(Distributer):
 
         # Create post-processing worker processes
         post_processing_processes = []
-        for i in range(n_post_processing_workers):
-            p = mp.Process(target=self.teacher.process_outputs_worker, args=(result_queues, result_queues_sizes, largest_queue_index, inference_finished))
-            post_processing_processes.append(p)
-            p.start()
-            logging.info(f"Started post-processing worker {index}")
+        for run_id, run_metadata in enumerate(runs):
+            for i in range(run_metadata["n_post_worker"]):
+                p = mp.Process(target=self.teacher.process_outputs_worker, args=(results_queue, model_progress_dict, models_ready_queue, inference_finished))
+                post_processing_processes.append(p)
+                p.start()
+                logging.info(f"Started post-processing worker {index}")
 
         # Create worker processes, max one per GPU
         inference_processes = []
@@ -175,14 +174,13 @@ class ZeroShotDistributer(Distributer):
         for index in range(n_parallel_processes):
             gpu_id = index
             cpu_cores_for_run = cpu_cores_per_process[gpu_id]
-            results_queue = result_queues[index]
             done_event = gpu_worker_done_events[index]
-            p = mp.Process(target=self.teacher.gpu_worker, args=(gpu_id, cpu_cores_for_run, task_queue, results_queue, done_event, post_processing_finished))
+            p = mp.Process(target=self.teacher.gpu_worker, args=(gpu_id, cpu_cores_for_run, task_queue, results_queue, model_progress_dict, done_event, post_processing_finished))
             inference_processes.append(p)
             p.start()
-            logging.info(f"Started inference worker {index} for GPU {gpu_id}")
+            logging.info(f"Started inference worker {index} for GPU {gpu_id}")            
 
-        logging.info(f"Started {len(post_processing_processes)} post-processing workers and {len(inference_processes)} GPU inference workers.")
+        logging.info(f"Started {len(eval_export_processes)} eval-and-export workers, {len(post_processing_processes)} post-processing workers and {len(inference_processes)} GPU inference workers.")
         
         # Wait for all inference tasks to complete
         while not all(worker_event.is_set() for worker_event in gpu_worker_done_events):
@@ -201,8 +199,10 @@ class ZeroShotDistributer(Distributer):
             p.join()
         logging.info("All inference workers have shut down.")
 
-        # Process updating queue sizes
-        size_updater.terminate()
+        # Wait for eval and export processes to finish
+        for p in eval_export_processes:
+            p.join()
+        logging.info("All eval-and-export workers have shut down.")
 
         # Close queues
         task_queue.close()
