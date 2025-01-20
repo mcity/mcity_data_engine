@@ -10,14 +10,20 @@ pip install -e .
 
 # Check if the first argument is "train", "slurm_train", or "test"
 if [ "$1" == "train" ]; then
-    # Train with 8 GPUs
-    ./tools/dist_train.sh projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py 1 path_to_exp
+    # Train with n GPUs
+    ./tools/dist_train.sh projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py 1 output
 elif [ "$1" == "slurm_train" ]; then
     # Train using slurm
-    ./tools/slurm_train.sh partition job_name projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py path_to_exp
+    ./tools/slurm_train.sh partition job_name projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py output
 elif [ "$1" == "test" ]; then
-    # Test with 8 GPUs and evaluate
-    ./tools/dist_test.sh projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py path_to_checkpoint 1 --eval bbox
+    # Test with n GPUs and evaluate
+    ./tools/dist_test.sh projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py output/latest.pth 1 --eval bbox --out output/test.pkl --cfg-options test_evaluator.classwise=True --eval-options classwise=True
+elif [ "$1" == "test-output" ]; then
+    # Test with n GPUs
+    ./tools/dist_test.sh projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py output/latest.pth 1 --format-only --options "jsonfile_prefix=./output/co_detr_test_results"
+elif [ "$1" == "interactive" ]; then
+    # Start an interactive shell
+    /bin/bash
 else
     echo "Invalid argument. Use 'train', 'slurm_train', or 'test'."
     exit 1

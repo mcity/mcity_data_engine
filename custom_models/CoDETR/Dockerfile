@@ -38,6 +38,5 @@ COPY entrypoint_compose.sh /usr/local/bin/entrypoint_compose.sh
 RUN chmod +x /usr/local/bin/entrypoint_run.sh
 RUN chmod +x /usr/local/bin/entrypoint_compose.sh
 
-
 # Set the entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint_run.sh"]
