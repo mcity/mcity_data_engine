@@ -2,13 +2,13 @@ import datetime
 import logging
 import os
 import queue
+import random
 import re
+import signal
 import time
 from difflib import get_close_matches
 from functools import partial
 from typing import List, Union
-import random
-import signal
 
 import fiftyone as fo
 import numpy as np
@@ -32,6 +32,7 @@ from transformers.utils.import_utils import (is_torch_available,
 from config.config import NUM_WORKERS, WORKFLOWS
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.logging import configure_logging
+
 
 # Handling timeouts
 class TimeoutException(Exception):
@@ -125,7 +126,6 @@ class ZeroShotInferenceCollateFn:
 
 class ZeroShotTeacher:
     def __init__(self, dataset_torch: torch.utils.data.Dataset, dataset_info, config, detections_path="./output/detections/", log_root="./logs/"):
-        # Can only store objects that are pickable for multiprocessing
         self.dataset_torch = dataset_torch
         self.dataset_info = dataset_info
         self.dataset_name = dataset_info["name"]
@@ -159,7 +159,6 @@ class ZeroShotTeacher:
             # Check if data already stored in V51 dataset
             if pred_key in dataset_schema:
                 logging.info(f"Model {model_name} predictions already stored in Voxel51 dataset.")
-                models_splits_dict[model_name] = value  # FIXME Remove, just for experiments
             # Check if data already stored on disk
             elif os.path.isdir(os.path.join(self.detections_root, model_name_key)):
                 try:
