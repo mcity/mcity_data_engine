@@ -44,18 +44,14 @@ def signal_handler(sig, frame):
         pass
     sys.exit(0)
 
-def workflow_aws_download(dataset_name):
+def workflow_aws_download():
+    bucket = WORKFLOWS["aws_download"]["bucket"]
+    prefix = WORKFLOWS["aws_download"]["prefix"]
+    download_path = WORKFLOWS["aws_download"]["download_path"]
     test_run = WORKFLOWS["aws_download"]["test_run"]
-    source = WORKFLOWS["aws_download"]["source"]
-    sample_rate = WORKFLOWS["aws_download"]["sample_rate_hz"]
-    start_date_str = WORKFLOWS["aws_download"]["start_date"]
-    end_date_str = WORKFLOWS["aws_download"]["end_date"]
-    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d")
-    end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d")
-    dataset_name = f"data_engine_rolling_{start_date_str}_to_{end_date_str}"
 
     wandb_run = wandb.init(
-        name=dataset_name,
+        name="Data_Rolling",
         sync_tensorboard=True,
         group="S3",
         job_type="download",
@@ -63,17 +59,14 @@ def workflow_aws_download(dataset_name):
     )
 
     aws_downloader = AwsDownloader(
-        name=dataset_name,
-        start_date=start_date,
-        end_date=end_date,
-        source=source,
-        sample_rate_hz=sample_rate,
+        bucket=bucket,
+        prefix=prefix,
+        download_path=download_path,
         test_run=test_run,
     )
 
-    dataset = aws_downloader.load_data()
-
-    wandb_run.finish(exit_code=0)
+    sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = aws_downloader.download_files()
+    dataset = aws_downloader.decode_data(sub_folder=sub_folder, files=files)
 
     return dataset, dataset_name
 
@@ -133,8 +126,7 @@ class WorkflowExecutor:
     def __init__(self, workflows: List[str], selected_dataset: str, dataset: fo.Dataset,  dataset_info: Dict, args):
         self.workflows = workflows
         self.selected_dataset = selected_dataset
-        #self.dataset = dataset
-        self.dataset = dataset.take(826_929, seed=51) #FIXME Remove, only testing
+        self.dataset = dataset
         self.dataset_info = dataset_info
         self.args = args
 
@@ -151,7 +143,7 @@ class WorkflowExecutor:
             wandb_run = None
             try:
                 if workflow == "aws_download":
-                    dataset, dataset_name = workflow_aws_download()
+                    dataset = workflow_aws_download()
 
                     # Select downloaded dataset for further workflows if configured
                     if WORKFLOWS["aws_download"]["selected_dataset_overwrite"] == True:
