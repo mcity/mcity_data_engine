@@ -53,11 +53,16 @@ def workflow_aws_download():
         download_path = WORKFLOWS["aws_download"]["download_path"]
         test_run = WORKFLOWS["aws_download"]["test_run"]
 
-        log_dir = "logs/download/s3"
+        # Logging
+        now = datetime.datetime.now()
+        datetime_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+        log_dir = f"logs/tensorboard/aws_{datetime_str}"
+
+        dataset_name = f"annarbor_rolling_{datetime_str}"
 
         wandb.tensorboard.patch(root_logdir=log_dir)
         wandb_run = wandb.init(
-            name="Data_Rolling",
+            name=dataset_name,
             sync_tensorboard=True,
             group="S3",
             job_type="download",
@@ -71,14 +76,16 @@ def workflow_aws_download():
             test_run=test_run,
         )
 
-        sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = aws_downloader.download_files()
-        dataset = aws_downloader.decode_data(sub_folder=sub_folder, files=files)
+        sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = aws_downloader.download_files(log_dir=log_dir)
+        dataset = aws_downloader.decode_data(sub_folder=sub_folder, files=files, log_dir=log_dir, dataset_name=dataset_name)
 
         wandb_run.finish(exit_code=0)
-    except:
-        wandb_run.finish(exit_code=1)
+    except Exception as e:
+        logging.error(f"AWS Download and Extraction failed: {e}")
+        if wandb_run:
+            wandb_run.finish(exit_code=1)
     
-    return dataset
+    return dataset, dataset_name
 
 def workflow_anomaly_detection():
     pass
@@ -153,7 +160,7 @@ class WorkflowExecutor:
             wandb_run = None
             try:
                 if workflow == "aws_download":
-                    dataset = workflow_aws_download()
+                    dataset, dataset_name = workflow_aws_download()
 
                     # Select downloaded dataset for further workflows if configured
                     if WORKFLOWS["aws_download"]["selected_dataset_overwrite"] == True:

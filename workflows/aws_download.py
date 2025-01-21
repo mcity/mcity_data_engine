@@ -187,9 +187,9 @@ class AwsDownloader:
                             output_folder_data, image_filename
                         )
 
-                        if os.path.exists(output_path):                    # FIXME Build criterium that also checks inclusion in samples.json
-                            logging.warning(f"File already exists: {output_path}")
-                            continue
+                        #if os.path.exists(output_path):                    # FIXME Build criterium that also checks inclusion in samples.json
+                        #    logging.warning(f"File already exists: {output_path}")
+                        #    continue
 
                         # Decode the base64 image data
                         image_data = base64.b64decode(image_base64)
@@ -234,10 +234,10 @@ class AwsDownloader:
 
     # External functions
 
-    def download_files(self, MAX_SIZE_TB=1.5):
+    def download_files(self, log_dir, MAX_SIZE_TB=1.5):
         files_to_be_downloaded, total_size_tb = self._list_files(self.bucket, self.prefix)
 
-        writer = SummaryWriter(log_dir="logs/download/s3")
+        writer = SummaryWriter(log_dir=log_dir)
 
         n_downloaded_files, n_skipped_files = 0,0
         if total_size_tb <= MAX_SIZE_TB:
@@ -309,7 +309,7 @@ class AwsDownloader:
         return sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS
 
     # Decode data with multiple workers
-    def decode_data(self, sub_folder, files, dataset_name = "Rolling", output_folder = "decoded"):
+    def decode_data(self, sub_folder, files, log_dir, dataset_name = "annarbor_rolling", output_folder = "decoded"):
         
         output_folder_root = os.path.join(self.download_path, sub_folder, output_folder)
         output_folder_data = os.path.join(output_folder_root, "data")
@@ -348,7 +348,7 @@ class AwsDownloader:
 
         # Start the data extraction workers
         for done_event in worker_done_events:
-            p = mp.Process(target=self.data_extraction_worker, args=(task_queue, result_queue, done_event, output_folder_data))
+            p = mp.Process(target=self.data_extraction_worker, args=(task_queue, result_queue, done_event, output_folder_data, log_dir))
             p.start()
             workers.append(p)
 
@@ -371,9 +371,9 @@ class AwsDownloader:
 
 
     # Worker functions
-    def data_extraction_worker(self, task_queue, result_queue, done_event, output_folder_data):
+    def data_extraction_worker(self, task_queue, result_queue, done_event, output_folder_data, log_dir):
         
-        writer = SummaryWriter(log_dir="logs/download/s3")
+        writer = SummaryWriter(log_dir=log_dir)
         logging.info("Data Extraction Worker started.")
         n_files_processed = 0
         while True:
@@ -388,12 +388,12 @@ class AwsDownloader:
                     result_queue.put(v51_samples)
                     #logging.info(f"Finished {len(v51_samples)} samples, {task_queue.qsize()} files remaining.")
                     
-                    time_end = time.time()
-                    duration = time_end - time_start
-                    samples_per_second = len(v51_samples)/duration
-                    writer.add_scalar("decode/samples_per_second", samples_per_second, n_files_processed)
+                time_end = time.time()
+                duration = time_end - time_start
+                samples_per_second = len(v51_samples)/duration
+                writer.add_scalar("decode/samples_per_second", samples_per_second, n_files_processed)
 
-                    n_files_processed += 1
+                n_files_processed += 1
             except Exception as e:
                 logging.error(f"Error occured during processing of file {os.path.basename(file_path)}: {e}")
                 continue
