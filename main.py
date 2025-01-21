@@ -50,6 +50,9 @@ def workflow_aws_download():
     download_path = WORKFLOWS["aws_download"]["download_path"]
     test_run = WORKFLOWS["aws_download"]["test_run"]
 
+    log_dir = "logs/download/s3"
+
+    wandb.tensorboard.patch(root_logdir=log_dir)
     wandb_run = wandb.init(
         name="Data_Rolling",
         sync_tensorboard=True,
@@ -68,6 +71,7 @@ def workflow_aws_download():
     sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = aws_downloader.download_files()
     dataset = aws_downloader.decode_data(sub_folder=sub_folder, files=files)
 
+    wandb.finish(exit_code=0)
     return dataset, dataset_name
 
 def workflow_anomaly_detection():

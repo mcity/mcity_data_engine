@@ -45,12 +45,6 @@ class AwsDownloader:
         self.download_path = download_path
         os.makedirs(download_path, exist_ok=True)
 
-        # Logging
-        self.writer = SummaryWriter(log_dir="logs/download/s3")
-
-    def __del__(self):
-        self.writer.close()
-
     # Internal functions
 
     def _list_files(self, bucket, prefix):
@@ -122,14 +116,11 @@ class AwsDownloader:
         with open(file_path, "w") as json_file:
             json.dump(v51_metadata, json_file)
 
-    def _process_file(self, filepath):
-        n_decoded, n_errors = 0, 0
+    def _process_file(self, file_path, output_folder_data):
         v51_samples = []
 
         # Prepare ISO check for time format
         iso8601_regex = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$")
-
-        time_start = time.time()
 
         with open(file_path, "r") as file:
             for line in file:                    
@@ -157,7 +148,6 @@ class AwsDownloader:
                             + "Z"
                         )
                         sensor_name = data.get("sensor_name")
-                        n_decoded += 1
 
                     elif (
                         "image" in data
@@ -180,9 +170,7 @@ class AwsDownloader:
                             )[:-3]
                             + "Z"
                         )
-                        n_decoded += 1
                     else:
-                        n_processing_errors += 1
                         print(f"Format cannot be processed: {data}")
                         continue
 
@@ -236,18 +224,11 @@ class AwsDownloader:
                         v51_samples.append(v51_sample)
 
                     else:
-                        n_processing_errors += 1
                         logging.error(f"There was an issue during file processing of {file_path}. Issues with image_base64: {image_base64 is None}, formatted_time: {formatted_time is None}, sensor_name: {sensor_name is None}")
                         continue
 
                 except json.JSONDecodeError as e:
-                    n_processing_errors += 1
                     logging.error(f"File {os.path.basename(file_path)} - Error decoding JSON: {e}")       
-
-        time_end = time.time()
-        duration = time_end - time_start
-        files_per_second = 1/duration
-        self.writer.add_scalar("decode/files_per_second", files_per_second)
 
         return v51_samples
 
@@ -255,6 +236,8 @@ class AwsDownloader:
 
     def download_files(self, MAX_SIZE_TB=1.5):
         files_to_be_downloaded, total_size_tb = self._list_files(self.bucket, self.prefix)
+
+        writer = SummaryWriter(log_dir="logs/download/s3")
 
         n_downloaded_files, n_skipped_files = 0,0
         if total_size_tb <= MAX_SIZE_TB:
@@ -270,7 +253,7 @@ class AwsDownloader:
                     duration = time_end - time_star
                     files_per_second = 1/duration
 
-                    self.writer.add_scalar("download/files_per_second", files_per_second, n_downloaded_files)
+                    writer.add_scalar("download/files_per_second", files_per_second, n_downloaded_files)
                 else:
                     logging.warning(f"Skipping {file}, already exists.")
                     n_skipped_files += 1
@@ -321,6 +304,8 @@ class AwsDownloader:
             sub_folder = None
             logging.error(f"No subfolder found in download directory {self.download_path}.")
 
+        writer.close()
+
         return sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS
 
     # Decode data with multiple workers
@@ -334,7 +319,6 @@ class AwsDownloader:
         self._set_v51_metadata(output_folder_root)
 
         # Extract file content
-        n_decoded, n_processing_errors = 0, 0
         json_file_path = os.path.join(output_folder_root, "samples.json")
         
         # Queue for multiprocessing results
@@ -343,7 +327,8 @@ class AwsDownloader:
 
         # Add files to the task queue
         for file_path in files:
-            task_queue.put(file_path)
+            absolute_file_path = os.path.join(self.download_path, sub_folder, file_path)
+            task_queue.put(absolute_file_path)
 
         logging.info(f"All files added to processing queue. Ready for multiprocessing.")
 
@@ -363,12 +348,14 @@ class AwsDownloader:
 
         # Start the data extraction workers
         for done_event in worker_done_events:
-            p = mp.Process(target=self.data_extraction_worker, args=(task_queue, result_queue, done_event))
+            p = mp.Process(target=self.data_extraction_worker, args=(task_queue, result_queue, done_event, output_folder_data))
             p.start()
             workers.append(p)
 
         for p in workers:
             p.join()
+
+        logging.info("All workers finished processing. Assembling Voxel 51 dataset.")
 
         # Load V51 dataset
         dataset = fo.Dataset(name=dataset_name)
@@ -384,26 +371,47 @@ class AwsDownloader:
 
 
     # Worker functions
-    def data_extraction_worker(self, task_queue, result_queue, done_event):
+    def data_extraction_worker(self, task_queue, result_queue, done_event, output_folder_data):
+        
+        writer = SummaryWriter(log_dir="logs/download/s3")
+        logging.info("Data Extraction Worker started.")
+        n_files_processed = 0
         while True:
-            file_path = task_queue.get()  # Get a file path from the task queue
-            if file_path is None:  # If queue is empty, break out
+            file_path = task_queue.get(timeout = 1)  # Get a file path from the task queue
+            if task_queue.empty() == True:  # If queue is empty, break out
+                logging.warning("Task queue empty.")
                 break
             try:
-                v51_samples = self._process_file(file_path)
-                result_queue.put(v51_samples)
-                logging.info(f"Finished {len(v51_samples)} samples, {len(task_queue)} files remaining.")
+                time_start = time.time()
+                v51_samples = self._process_file(file_path, output_folder_data)
+                if len(v51_samples) > 0:
+                    result_queue.put(v51_samples)
+                    #logging.info(f"Finished {len(v51_samples)} samples, {task_queue.qsize()} files remaining.")
+                    
+                    time_end = time.time()
+                    duration = time_end - time_start
+                    samples_per_second = len(v51_samples)/duration
+                    writer.add_scalar("decode/samples_per_second", samples_per_second, n_files_processed)
+
+                    n_files_processed += 1
             except Exception as e:
-                logging.error(f"Error occured during processing of file {os.path.basename(file_path)}")
+                logging.error(f"Error occured during processing of file {os.path.basename(file_path)}: {e}")
+                continue
 
         # Once all tasks are processed, set the done_event
+        writer.close()
         done_event.set()
+        logging.info("Data Extraction worker shuts down.")
 
     def result_json_worker(self,result_queue, json_file_path, worker_done_events):
         # Check if the samples.json file exists and load existing data if it does
         if os.path.exists(json_file_path):
-            with open(json_file_path, "r") as json_file:
-                v51_samples_dict = json.load(json_file)
+            try:
+                with open(json_file_path, "r") as json_file:
+                    v51_samples_dict = json.load(json_file)
+            except Exception as e:
+                logging.error(f"Error reading JSON file: {e}")
+
         else:
             v51_samples_dict = {"samples": []}
         
@@ -418,7 +426,7 @@ class AwsDownloader:
                 #Save updated JSON file
                 with open(json_file_path, 'w') as json_file:
                     json.dump(v51_samples_dict, json_file)
-                print(f"JSON now includes {len(v51_samples_dict['samples'])} samples")
+                #logging.info(f"JSON now includes {len(v51_samples_dict['samples'])} samples")
 
             # Check if any worker is done
             for event in list(worker_done_events):
