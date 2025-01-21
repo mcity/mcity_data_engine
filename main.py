@@ -45,34 +45,40 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 def workflow_aws_download():
-    bucket = WORKFLOWS["aws_download"]["bucket"]
-    prefix = WORKFLOWS["aws_download"]["prefix"]
-    download_path = WORKFLOWS["aws_download"]["download_path"]
-    test_run = WORKFLOWS["aws_download"]["test_run"]
+    wandb_run = None
+    dataset = None
+    try:
+        bucket = WORKFLOWS["aws_download"]["bucket"]
+        prefix = WORKFLOWS["aws_download"]["prefix"]
+        download_path = WORKFLOWS["aws_download"]["download_path"]
+        test_run = WORKFLOWS["aws_download"]["test_run"]
 
-    log_dir = "logs/download/s3"
+        log_dir = "logs/download/s3"
 
-    wandb.tensorboard.patch(root_logdir=log_dir)
-    wandb_run = wandb.init(
-        name="Data_Rolling",
-        sync_tensorboard=True,
-        group="S3",
-        job_type="download",
-        project="Data Engine Download",
-    )
+        wandb.tensorboard.patch(root_logdir=log_dir)
+        wandb_run = wandb.init(
+            name="Data_Rolling",
+            sync_tensorboard=True,
+            group="S3",
+            job_type="download",
+            project="Data Engine Download",
+        )
 
-    aws_downloader = AwsDownloader(
-        bucket=bucket,
-        prefix=prefix,
-        download_path=download_path,
-        test_run=test_run,
-    )
+        aws_downloader = AwsDownloader(
+            bucket=bucket,
+            prefix=prefix,
+            download_path=download_path,
+            test_run=test_run,
+        )
 
-    sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = aws_downloader.download_files()
-    dataset = aws_downloader.decode_data(sub_folder=sub_folder, files=files)
+        sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = aws_downloader.download_files()
+        dataset = aws_downloader.decode_data(sub_folder=sub_folder, files=files)
 
-    wandb.finish(exit_code=0)
-    return dataset, dataset_name
+        wandb_run.finish(exit_code=0)
+    except:
+        wandb_run.finish(exit_code=1)
+    
+    return dataset
 
 def workflow_anomaly_detection():
     pass
