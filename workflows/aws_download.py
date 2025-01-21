@@ -171,7 +171,7 @@ class AwsDownloader:
                             + "Z"
                         )
                     else:
-                        print(f"Format cannot be processed: {data}")
+                        logging.error(f"Format cannot be processed: {data}")
                         continue
 
                     if image_base64 and formatted_time:
@@ -187,9 +187,9 @@ class AwsDownloader:
                             output_folder_data, image_filename
                         )
 
-                        #if os.path.exists(output_path):                    # FIXME Build criterium that also checks inclusion in samples.json
-                            #print(f"File already exists: {output_path}")
-                        #    continue
+                        if os.path.exists(output_path):                    # FIXME Build criterium that also checks inclusion in samples.json
+                            logging.warning(f"File already exists: {output_path}")
+                            continue
 
                         # Decode the base64 image data
                         image_data = base64.b64decode(image_base64)
@@ -209,7 +209,7 @@ class AwsDownloader:
                             iso8601_regex.match(formatted_time)
                         )
                         if not iso8601_conform:
-                            print(f"Timestamp does not conform to ISO8601: {formatted_time}")
+                            logging.error(f"Timestamp does not conform to ISO8601: {formatted_time}")
 
                         # Save the decoded image data as a JPEG
                         with open(output_path, "wb") as image_file:
