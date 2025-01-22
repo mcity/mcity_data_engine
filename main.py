@@ -164,7 +164,13 @@ class WorkflowExecutor:
 
                     # Select downloaded dataset for further workflows if configured
                     if WORKFLOWS["aws_download"]["selected_dataset_overwrite"] == True:
-                        dataset, dataset_info = load_dataset(dataset_name)
+
+                        dataset_info = {
+                            "name": dataset_name,
+                            "v51_type": "FiftyOneDataset",
+                            "splits": []
+                        }
+
                         self.dataset = dataset
                         self.dataset_info = dataset_info
                         self.selected_dataset = dataset_name

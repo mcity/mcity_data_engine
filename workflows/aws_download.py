@@ -309,7 +309,7 @@ class AwsDownloader:
         return sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS
 
     # Decode data with multiple workers
-    def decode_data(self, sub_folder, files, log_dir, dataset_name = "annarbor_rolling", output_folder = "decoded"):
+    def decode_data(self, sub_folder, files, log_dir, dataset_name = "annarbor_rolling", output_folder = "decoded", dataset_persistance=True):
         
         output_folder_root = os.path.join(self.download_path, sub_folder, output_folder)
         output_folder_data = os.path.join(output_folder_root, "data")
@@ -330,10 +330,7 @@ class AwsDownloader:
             absolute_file_path = os.path.join(self.download_path, sub_folder, file_path)
             task_queue.put(absolute_file_path)
 
-        logging.info(f"All files added to processing queue. Ready for multiprocessing.")
-
-        # Collection of running processes
-        workers = []
+        logging.info(f"Added {len(files)} files to task queue. Ready for multiprocessing.")
 
         # Gather events for extraction workers
         worker_done_events = []
@@ -342,20 +339,27 @@ class AwsDownloader:
             worker_done_events.append(done_event)
 
         # Start the result worker
-        result_worker_process = mp.Process(target=self.result_json_worker, args=(result_queue, json_file_path, worker_done_events))
+        result_worker_process = mp.Process(target=self.result_json_worker, args=(result_queue, json_file_path, worker_done_events, log_dir))
         result_worker_process.start()
-        workers.append(result_worker_process)
 
         # Start the data extraction workers
+        workers = []
         for done_event in worker_done_events:
-            p = mp.Process(target=self.data_extraction_worker, args=(task_queue, result_queue, done_event, output_folder_data, log_dir))
+            p = mp.Process(target=self.data_extraction_worker, args=(task_queue, result_queue, done_event, output_folder_data))
             p.start()
             workers.append(p)
 
+        # Waiting for data extraction workers
         for p in workers:
             p.join()
+        logging.info("All data processing workers finished processing.")
 
-        logging.info("All workers finished processing. Assembling Voxel 51 dataset.")
+        # Waiting for data processing worker
+        result_worker_process.join()
+        logging.info("JSON worker finished processing.")
+
+        task_queue.close()
+        result_queue.close()
 
         # Load V51 dataset
         dataset = fo.Dataset(name=dataset_name)
@@ -366,72 +370,78 @@ class AwsDownloader:
         )
 
         dataset.compute_metadata(num_workers=NUM_WORKERS, progress=True)
+        dataset.persistent = dataset_persistance
 
         return dataset
 
 
     # Worker functions
-    def data_extraction_worker(self, task_queue, result_queue, done_event, output_folder_data, log_dir):
+    def data_extraction_worker(self, task_queue, result_queue, done_event, output_folder_data):
         
-        writer = SummaryWriter(log_dir=log_dir)
-        logging.info("Data Extraction Worker started.")
+        logging.info(f"Process ID: {os.getpid()}. Data extraction process started.")    
+
         n_files_processed = 0
         while True:
             file_path = task_queue.get(timeout = 1)  # Get a file path from the task queue
             if task_queue.empty() == True:  # If queue is empty, break out
-                logging.warning("Task queue empty.")
                 break
             try:
-                time_start = time.time()
                 v51_samples = self._process_file(file_path, output_folder_data)
                 if len(v51_samples) > 0:
                     result_queue.put(v51_samples)
-                    #logging.info(f"Finished {len(v51_samples)} samples, {task_queue.qsize()} files remaining.")
-                    
-                time_end = time.time()
-                duration = time_end - time_start
-                samples_per_second = len(v51_samples)/duration
-                writer.add_scalar("decode/samples_per_second", samples_per_second, n_files_processed)
+                    logging.info(f"Worker {os.getpid()} finished {len(v51_samples)} samples, {task_queue.qsize()} files remaining.")
+                    n_files_processed += 1
 
-                n_files_processed += 1
             except Exception as e:
                 logging.error(f"Error occured during processing of file {os.path.basename(file_path)}: {e}")
                 continue
 
         # Once all tasks are processed, set the done_event
-        writer.close()
         done_event.set()
-        logging.info("Data Extraction worker shuts down.")
+        logging.info(f"Data Extraction worker {os.getpid()} shutting down.")
+        return True
 
-    def result_json_worker(self,result_queue, json_file_path, worker_done_events):
+    def result_json_worker(self,result_queue, json_file_path, worker_done_events, log_dir):
         # Check if the samples.json file exists and load existing data if it does
-        if os.path.exists(json_file_path):
-            try:
-                with open(json_file_path, "r") as json_file:
-                    v51_samples_dict = json.load(json_file)
-            except Exception as e:
-                logging.error(f"Error reading JSON file: {e}")
+        logging.info(f"Process ID: {os.getpid()}. Results processing process started.")    
 
-        else:
-            v51_samples_dict = {"samples": []}
+        writer = SummaryWriter(log_dir=log_dir)
+        n_files_processed = 0
+        n_images_extracted = 0
+
+        #if os.path.exists(json_file_path):
+        #    try:
+        #        with open(json_file_path, "r") as json_file:
+        #            v51_samples_dict = json.load(json_file)
+        #    except Exception as e:
+        #        logging.error(f"Error reading JSON file: {e}")
+        #
+        #else:
+        v51_samples_dict = {"samples": []}
         
         # Update the file with incoming results as long as workers are running
-        while len(worker_done_events) > 0:
+        while len(worker_done_events) > 0 or not result_queue.empty():
             try:
-                v51_samples = result_queue.get(timeout=5)
+                v51_samples = result_queue.get(timeout=1)
                 v51_samples_dict["samples"].extend(v51_samples)
-            except:
-                continue
-            finally:
-                #Save updated JSON file
                 with open(json_file_path, 'w') as json_file:
                     json.dump(v51_samples_dict, json_file)
-                #logging.info(f"JSON now includes {len(v51_samples_dict['samples'])} samples")
+
+                #logging.info(f"JSON includes {len(v51_samples_dict['samples'])} samples. {result_queue.qsize()} files remaining.")
+                n_images_extracted += len(v51_samples)
+                writer.add_scalar("decode/samples", n_images_extracted, n_files_processed)
+                n_files_processed += 1
+
+            except Exception as e:
+                logging.error(f"JSON worker error: {e}")
+                continue
 
             # Check if any worker is done
             for event in list(worker_done_events):
                 if event.is_set():
                     worker_done_events.remove(event)
-
-    
-
+                    logging.info(f"JSON worker waiting for {len(worker_done_events)} data extraction workers to shut down.")
+        
+        writer.close()
+        logging.info(f"JSON worker {os.getpid()} shutting down.")
+        return True
