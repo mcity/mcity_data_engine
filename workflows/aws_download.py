@@ -334,7 +334,8 @@ class AwsDownloader:
 
         # Gather events for extraction workers
         worker_done_events = []
-        for _ in range(NUM_WORKERS):
+        n_data_workers = NUM_WORKERS - 2    # One core for the main process, one core for the JSON worker 
+        for _ in range(n_data_workers):
             done_event = mp.Event()
             worker_done_events.append(done_event)
 
