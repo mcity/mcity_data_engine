@@ -135,7 +135,6 @@ Custom models run in their own containers to avoid any conflicting requirements.
 cd custom_models/<model>
 docker build -t <dockerhub-account>/<image-name>:latest .
 docker run --gpus all -v /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch <dockerhub-account>/<image-name>:latest <optional argument>
-docker image tag <dockerhub-account>/<image-name>:latest <dockerhub-account>/<image-name>:latest
 docker login
 docker push <dockerhub-account>/<image-name>:latest
 ```
@@ -154,7 +153,7 @@ docker run --gpus all --workdir /launch --volume /<root>/mcity_data_engine/custo
 #### Co-DETR
 
 [Co-DETR](https://github.com/Sense-X/Co-DETR) is an object detection model and is leading the [COCO test-dev leaderboard](https://paperswithcode.com/sota/object-detection-on-coco) as of January 2025.
-Co-DETR is included as a submodule at [custom_models/CoDETR/Co-DETR](https://github.com/mcity/mcity_data_engine/tree/main/custom_models/CoDETR). A singularity image for CoDETR can be found at [dbogdollresearch/codetr](https://hub.docker.com/r/dbogdollresearch/codetr).
+Co-DETR is included as a submodule at [custom_models/CoDETR/Co-DETR](https://github.com/mcity/mcity_data_engine/tree/main/custom_models/CoDETR). A container image for CoDETR can be found at [dbogdollresearch/codetr](https://hub.docker.com/r/dbogdollresearch/codetr).
 
 It is necessary to also mount the dataset used for training and increase shared memory:
 
