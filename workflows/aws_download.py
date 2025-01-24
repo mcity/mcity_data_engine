@@ -241,7 +241,7 @@ class AwsDownloader:
 
         n_downloaded_files, n_skipped_files = 0,0
         if total_size_tb <= MAX_SIZE_TB:
-            for file in tqdm(files_to_be_downloaded, desc="Downloading files from AWS."):
+            for file in tqdm(files_to_be_downloaded, desc="Downloading files from AWS"):
                 time_start = time.time()
                 file_path = os.path.join(self.download_path, file)
 
