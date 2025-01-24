@@ -244,9 +244,13 @@ class AwsDownloader:
             for file in tqdm(files_to_be_downloaded, desc="Downloading files from AWS."):
                 time_start = time.time()
                 file_path = os.path.join(self.download_path, file)
+
+                # Ensure directory exists
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
                 if not os.path.exists(file_path):
                     if self.test_run == False:
-                        self.s3.download_file(self.bucket, file, file_path)  # FIXME Activate download
+                        self.s3.download_file(self.bucket, file, file_path)
                     n_downloaded_files += 1
 
                     time_end = time.time()
