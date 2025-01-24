@@ -7,6 +7,7 @@ import re
 import shutil
 import time
 
+from queue import Empty
 from tqdm import tqdm
 
 import torch.multiprocessing as mp
@@ -160,7 +161,7 @@ class AwsDownloader:
                         image_base64 = data.get("image")
 
                         # Get timestamps in UTC and Michigan time
-                        # FIXME Ensure that this conversion is correct, not clear in which time timestamps were written in
+                        # TODO Ensure that this conversion is correct, not clear in which time timestamps were written in
                         utc_time = datetime.datetime.utcfromtimestamp(timestamp)
                         michigan_tz = pytz.timezone("America/Detroit")
                         michigan_time = utc_time.astimezone(michigan_tz)
@@ -183,17 +184,8 @@ class AwsDownloader:
                         image_filename = (
                             f"{sensor_name}_{formatted_time}.jpg"
                         )
-                        output_path = os.path.join(
-                            output_folder_data, image_filename
-                        )
 
-                        #if os.path.exists(output_path):                    # FIXME Build criterium that also checks inclusion in samples.json
-                        #    logging.warning(f"File already exists: {output_path}")
-                        #    continue
 
-                        # Decode the base64 image data
-                        image_data = base64.b64decode(image_base64)
-                        
                         # Ensure correct timestamp format
                         milliseconds = formatted_time.split(".")[1][
                             :3
@@ -211,9 +203,17 @@ class AwsDownloader:
                         if not iso8601_conform:
                             logging.error(f"Timestamp does not conform to ISO8601: {formatted_time}")
 
-                        # Save the decoded image data as a JPEG
-                        with open(output_path, "wb") as image_file:
-                            image_file.write(image_data)
+                        # Store image to disk
+                        output_path = os.path.join(
+                            output_folder_data, image_filename
+                        )
+
+                        if os.path.exists(output_path):                    
+                            logging.debug(f"File already exists: {output_path}")
+                        else:
+                            image_data = base64.b64decode(image_base64)
+                            with open(output_path, "wb") as image_file:
+                                image_file.write(image_data)
 
                         # Prepare import with V51
                         v51_sample = {
@@ -250,7 +250,7 @@ class AwsDownloader:
                     n_downloaded_files += 1
 
                     time_end = time.time()
-                    duration = time_end - time_star
+                    duration = time_end - time_start
                     files_per_second = 1/duration
 
                     writer.add_scalar("download/files_per_second", files_per_second, n_downloaded_files)
@@ -265,7 +265,7 @@ class AwsDownloader:
         # Check if all files were downloaded properly
         DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = False, False
 
-        subfolders = [f.path for f in os.scandir(self.download_path) if f.is_dir()] # Each subfolder stands for a requested sample rates. Defaults to "1"
+        subfolders = [f.path for f in os.scandir(self.download_path) if f.is_dir()] # Each subfolder stands for a requested sample rate. Defaults to "1"
         if len(subfolders) > 0:
             sub_folder = os.path.basename(subfolders[0])
             if len(subfolders) > 1:
@@ -332,10 +332,10 @@ class AwsDownloader:
 
         logging.info(f"Added {len(files)} files to task queue. Ready for multiprocessing.")
 
-        # Gather events for extraction workers
+        # Gather events for extraction workers 
         worker_done_events = []
-        n_data_workers = NUM_WORKERS - 2    # One core for the main process, one core for the JSON worker 
-        for _ in range(n_data_workers):
+        n_extraction_workers = NUM_WORKERS
+        for _ in range(n_extraction_workers):
             done_event = mp.Event()
             worker_done_events.append(done_event)
 
@@ -344,9 +344,10 @@ class AwsDownloader:
         result_worker_process.start()
 
         # Start the data extraction workers
+        n_files_per_worker = int(len(files) / n_extraction_workers)
         workers = []
         for done_event in worker_done_events:
-            p = mp.Process(target=self.data_extraction_worker, args=(task_queue, result_queue, done_event, output_folder_data))
+            p = mp.Process(target=self.data_extraction_worker, args=(task_queue, result_queue, done_event, output_folder_data, n_files_per_worker))
             p.start()
             workers.append(p)
 
@@ -377,25 +378,29 @@ class AwsDownloader:
 
 
     # Worker functions
-    def data_extraction_worker(self, task_queue, result_queue, done_event, output_folder_data):
+    def data_extraction_worker(self, task_queue, result_queue, done_event, output_folder_data, n_files_per_worker):
         
         logging.info(f"Process ID: {os.getpid()}. Data extraction process started.")    
 
         n_files_processed = 0
+        n_samples_processed = 0
         while True:
-            file_path = task_queue.get(timeout = 1)  # Get a file path from the task queue
             if task_queue.empty() == True:  # If queue is empty, break out
                 break
-            try:
-                v51_samples = self._process_file(file_path, output_folder_data)
-                if len(v51_samples) > 0:
-                    result_queue.put(v51_samples)
-                    logging.info(f"Worker {os.getpid()} finished {len(v51_samples)} samples, {task_queue.qsize()} files remaining.")
-                    n_files_processed += 1
+            else:
+                try:
+                    file_path = task_queue.get(timeout = 0.1)  # Get a file path from the task queue
+                    v51_samples = self._process_file(file_path, output_folder_data)
+                    if len(v51_samples) > 0:
+                        result_queue.put(v51_samples)
+                        if n_files_processed % 100 == 0:
+                            logging.info(f"Worker {os.getpid()} finished {n_samples_processed} samples. {n_files_processed} / {n_files_per_worker} files done.")
+                        n_files_processed += 1
+                        n_samples_processed += len(v51_samples)
 
-            except Exception as e:
-                logging.error(f"Error occured during processing of file {os.path.basename(file_path)}: {e}")
-                continue
+                except Exception as e:
+                    logging.error(f"Error occured during processing of file {os.path.basename(file_path)}: {e}")
+                    continue
 
         # Once all tasks are processed, set the done_event
         done_event.set()
@@ -410,28 +415,25 @@ class AwsDownloader:
         n_files_processed = 0
         n_images_extracted = 0
 
-        #if os.path.exists(json_file_path):
-        #    try:
-        #        with open(json_file_path, "r") as json_file:
-        #            v51_samples_dict = json.load(json_file)
-        #    except Exception as e:
-        #        logging.error(f"Error reading JSON file: {e}")
-        #
-        #else:
         v51_samples_dict = {"samples": []}
-        
+
         # Update the file with incoming results as long as workers are running
         while len(worker_done_events) > 0 or not result_queue.empty():
             try:
                 v51_samples = result_queue.get(timeout=1)
                 v51_samples_dict["samples"].extend(v51_samples)
-                with open(json_file_path, 'w') as json_file:
-                    json.dump(v51_samples_dict, json_file)
 
-                #logging.info(f"JSON includes {len(v51_samples_dict['samples'])} samples. {result_queue.qsize()} files remaining.")
                 n_images_extracted += len(v51_samples)
                 writer.add_scalar("decode/samples", n_images_extracted, n_files_processed)
                 n_files_processed += 1
+
+                # Log every 100,000 processed samples
+                if n_files_processed % 1_000 == 0:
+                    logging.info(f"{n_images_extracted} samples added to dict. Items in queue: {result_queue.qsize()}. Active workers: {len(worker_done_events)}")
+
+            except Empty:
+                # Empty queue is expected sometimes
+                pass
 
             except Exception as e:
                 logging.error(f"JSON worker error: {e}")
@@ -441,8 +443,12 @@ class AwsDownloader:
             for event in list(worker_done_events):
                 if event.is_set():
                     worker_done_events.remove(event)
-                    logging.info(f"JSON worker waiting for {len(worker_done_events)} data extraction workers to shut down.")
-        
+
+        # Store data to JSON
+        logging.info(f"Storing data to samples.json")
+        with open(json_file_path, 'w') as json_file:
+            json.dump(v51_samples_dict, json_file)
+
         writer.close()
         logging.info(f"JSON worker {os.getpid()} shutting down.")
         return True
