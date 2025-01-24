@@ -394,7 +394,7 @@ class AwsDownloader:
                     if len(v51_samples) > 0:
                         result_queue.put(v51_samples)
                         if n_files_processed % 100 == 0:
-                            logging.info(f"Worker {os.getpid()} finished {n_samples_processed} samples. {n_files_processed} / {n_files_per_worker} files done.")
+                            logging.info(f"Worker {os.getpid()} finished {n_samples_processed} samples. {n_files_processed} / ~{n_files_per_worker} files done.")
                         n_files_processed += 1
                         n_samples_processed += len(v51_samples)
 
