@@ -1,6 +1,7 @@
 FROM pytorch/pytorch:1.11.0-cuda11.3-cudnn8-devel
 
 # Co-DETR: python=3.7.11,pytorch=1.11.0,cuda=11.3
+# H100 GPU requires CUDA 11.8+
 
 # Set the working directory to the mounted git repository
 WORKDIR /launch
