@@ -20,11 +20,11 @@ from config.config import (SELECTED_DATASET, SELECTED_WORKFLOW, V51_ADDRESS,
                            V51_PORT, WORKFLOWS)
 from utils.data_loader import FiftyOneTorchDatasetCOCO
 # Called with globals()
-from utils.dataset_loader import (load_dataset_info, load_fisheye_8k,
-                                  load_mars_multiagent,
+from utils.dataset_loader import (load_annarbor_rolling, load_dataset_info,
+                                  load_fisheye_8k, load_mars_multiagent,
                                   load_mars_multitraversal,
                                   load_mcity_fisheye_3_months,
-                                  load_mcity_fisheye_2000, load_annarbor_rolling)
+                                  load_mcity_fisheye_2000)
 from utils.logging import configure_logging
 from utils.mp_distribution import ZeroShotDistributer
 from utils.wandb_helper import launch_to_queue_terminal
@@ -32,7 +32,8 @@ from workflows.ano_dec import Anodec
 from workflows.aws_download import AwsDownloader
 from workflows.brain import Brain
 from workflows.ensemble_exploration import EnsembleExploration
-from workflows.teacher import Teacher, ZeroShotTeacher
+from workflows.teacher import (TeacherCustomCoDETR, TeacherHuggingFace,
+                               ZeroShotTeacher)
 
 
 def signal_handler(sig, frame):
@@ -268,63 +269,72 @@ class WorkflowExecutor:
                         wandb_run.finish(exit_code=0)
 
                 elif workflow == "train_teacher":
-                    teacher_models = WORKFLOWS["train_teacher"]["hf_models_objectdetection"]
-                    wandb_project = "Data Engine Teacher"
-                    config_file_path = "wandb_runs/teacher_config.json"
-                    with open(config_file_path, "r") as file:
-                        config = json.load(file)
+                    selected_model_source = WORKFLOWS["train_teacher"]["model_source"]
 
-                    # Train teacher models
-                    for MODEL_NAME in (pbar := tqdm(teacher_models, desc="Teacher Models")):
-                        wandb_run = None
-                        try:
-                            pbar.set_description("Training/Loading Teacher model " + MODEL_NAME)
-                            config["overrides"]["run_config"]["model_name"] = MODEL_NAME
-                            config["overrides"]["run_config"]["v51_dataset_name"] = self.selected_dataset
-                            if self.args.queue == None:
+                    if selected_model_source == "hf_models_objectdetection":
+                        teacher_models = WORKFLOWS["train_teacher"]["hf_models_objectdetection"]
+                        wandb_project = "Data Engine Teacher"
+                        config_file_path = "wandb_runs/teacher_config.json"
+                        with open(config_file_path, "r") as file:
+                            config = json.load(file)
 
-                                wandb_run = wandb.init(
-                                    name=MODEL_NAME,
-                                    allow_val_change=True,
-                                    sync_tensorboard=True,
-                                    group="Teacher",
-                                    job_type="train",
-                                    config=config,
-                                    project=wandb_project,
-                                )
-                                wandb_config = wandb.config["overrides"]["run_config"]
+                        # Train teacher models
+                        for MODEL_NAME in (pbar := tqdm(teacher_models, desc="Teacher Models")):
+                            wandb_run = None
+                            try:
+                                pbar.set_description("Training/Loading Teacher model " + MODEL_NAME)
+                                config["overrides"]["run_config"]["model_name"] = MODEL_NAME
+                                config["overrides"]["run_config"]["v51_dataset_name"] = self.selected_dataset
+                                if self.args.queue == None:
 
-                                wandb_run.tags += (
-                                    wandb_config["v51_dataset_name"],
-                                    "local",
-                                )
-                                teacher = Teacher(
-                                    dataset=self.dataset,
-                                    config=wandb_config,
-                                )
+                                    wandb_run = wandb.init(
+                                        name=MODEL_NAME,
+                                        allow_val_change=True,
+                                        sync_tensorboard=True,
+                                        group="Teacher",
+                                        job_type="train",
+                                        config=config,
+                                        project=wandb_project,
+                                    )
+                                    wandb_config = wandb.config["overrides"]["run_config"]
 
-                                teacher.train()
-                                wandb_run.finish(exit_code=0)
+                                    wandb_run.tags += (
+                                        wandb_config["v51_dataset_name"],
+                                        "local",
+                                    )
+                                    teacher = TeacherHuggingFace(
+                                        dataset=self.dataset,
+                                        config=wandb_config,
+                                    )
 
-                            elif self.args.queue != None:
-                                # Update config file
-                                with open(config_file_path, "w") as file:
-                                    json.dump(config, file, indent=4)
+                                    teacher.train()
+                                    wandb_run.finish(exit_code=0)
 
-                                wandb_entry_point = config["overrides"]["entry_point"]
-                                # Add job to queue
-                                launch_to_queue_terminal(
-                                    name=MODEL_NAME,
-                                    project=wandb_project,
-                                    config_file=config_file_path,
-                                    entry_point=wandb_entry_point,
-                                    queue=self.args.queue,
-                                )
-                        except Exception as e:
-                            logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
-                            if wandb_run:
-                                wandb_run.finish(exit_code=1)
-                            continue
+                                elif self.args.queue != None:
+                                    # Update config file
+                                    with open(config_file_path, "w") as file:
+                                        json.dump(config, file, indent=4)
+
+                                    wandb_entry_point = config["overrides"]["entry_point"]
+                                    # Add job to queue
+                                    launch_to_queue_terminal(
+                                        name=MODEL_NAME,
+                                        project=wandb_project,
+                                        config_file=config_file_path,
+                                        entry_point=wandb_entry_point,
+                                        queue=self.args.queue,
+                                    )
+                            except Exception as e:
+                                logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
+                                if wandb_run:
+                                    wandb_run.finish(exit_code=1)
+                                continue
+                    elif selected_model_source == "custom_codetr":
+                        teacher = TeacherCustomCoDETR()
+
+                    else:
+                        logging.error(f"Selected model source {selected_model_source} is not supported.")
+
 
                 elif workflow == "zero_shot_teacher":
                     workflow_zero_shot_teacher(self.dataset, self.dataset_info)
