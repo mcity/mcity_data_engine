@@ -5,6 +5,7 @@ import os
 import queue
 import random
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -787,7 +788,7 @@ class TeacherCustomCoDETR:
         else:
             logging.info(f"Folder {export_dir} already exists, skipping data export.")
 
-    def update_config_file(self, dataset_name, config_file):
+    def update_config_file(self, dataset_name, config_file, max_epochs=12):
         config_path = os.path.join(self.root_codetr, config_file)
 
         # Get classes from exported data
@@ -812,6 +813,9 @@ class TeacherCustomCoDETR:
         # Update all instances of num_classes
         content = re.sub(r'num_classes=\d+', f'num_classes={num_classes}', content)
 
+        # Update all instances of max_epochs
+        content = re.sub(r'max_epochs=\d+', f'max_epochs={max_epochs}', content)
+
         with open(config_path, 'w') as file:
             file.write(content)
 
@@ -824,13 +828,24 @@ class TeacherCustomCoDETR:
         volume_data = os.path.join(self.export_dir_root, self.dataset_name)
         train_result = self._run_container(volume_data=volume_data, param_function=param_function, param_config=param_config, param_n_gpus=param_n_gpus, container_tool=container_tool)
 
-        # Check if model file exists
-        model_path = "custom_models/CoDETR/Co-DETR/output/latest.pth"
-        if os.path.exists(model_path):
-            logging.info("CoDETR was trained successfully.")
+        # Find the best_bbox checkpoint file
+        output_folder_codetr = os.path.join(self.root_codetr, "output")
+        checkpoint_files = [f for f in os.listdir(output_folder_codetr) if "best_bbox" in f and f.endswith(".pth")]
+        if not checkpoint_files:
+            logging.error("CoDETR was not trained, model pth file missing. No checkpoint file with 'best_bbox' found.")
         else:
-            logging.error("CoDETR was not trained, model pth file missing.")
+            if len(checkpoint_files) > 1:
+                logging.warning(f"Found {len(checkpoint_files)} checkpoint files. Selecting {checkpoint_files[0]}.")
+            checkpoint = checkpoint_files[0]
+            checkpoint_path = os.path.join(output_folder_codetr, checkpoint)
 
+            logging.info("CoDETR was trained successfully.")
+
+            # Move model file
+            param_config_clean = os.path.splitext(os.path.basename(param_config))[0]
+            output_dir = os.path.join("output", "models", "teacher", "codetr", self.dataset_name, param_config_clean)
+            os.makedirs(output_dir, exist_ok=True)
+            shutil.copy(checkpoint_path, output_dir)
     def run_inference(self, volume_data, param_config, param_n_gpus, container_tool, param_function="inference"):
         inference_result = self._run_container(volume_data=volume_data, param_function=param_function, param_config=param_config, param_n_gpus=param_n_gpus, container_tool=container_tool)
 
