@@ -8,23 +8,30 @@ chmod +x tools/dist_test.sh
 # Install the package in editable mode
 pip install -e .
 
+# Default config and number of GPUs
+CONFIG_FILE=${2:-projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py}
+NUM_GPUS=${3:-1}
+
 # Check if the first argument is "train", "slurm_train", or "test"
 if [ "$1" == "train" ]; then
     # Train with n GPUs
-    ./tools/dist_train.sh projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py 1 output
+    ./tools/dist_train.sh $CONFIG_FILE $NUM_GPUS output
 elif [ "$1" == "slurm_train" ]; then
     # Train using slurm
-    ./tools/slurm_train.sh partition job_name projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py output
+    ./tools/slurm_train.sh partition job_name $CONFIG_FILE output
 elif [ "$1" == "test" ]; then
     # Test with n GPUs and evaluate
-    ./tools/dist_test.sh projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py output/latest.pth 1 --eval bbox --out output/test.pkl --cfg-options test_evaluator.classwise=True --eval-options classwise=True
+    ./tools/dist_test.sh $CONFIG_FILE output/latest.pth $NUM_GPUS --eval bbox --out output/test.pkl --cfg-options test_evaluator.classwise=True --eval-options classwise=True
 elif [ "$1" == "test-output" ]; then
     # Test with n GPUs
-    ./tools/dist_test.sh projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py output/latest.pth 1 --format-only --options "jsonfile_prefix=./output/co_detr_test_results"
+    ./tools/dist_test.sh $CONFIG_FILE output/latest.pth $NUM_GPUS --format-only --options "jsonfile_prefix=./output/co_detr_test_results"
+elif [ "$1" == "inference" ]; then
+    # Run inference
+    python demo/run_inference.py --config_file $CONFIG_FILE
 elif [ "$1" == "interactive" ]; then
     # Start an interactive shell
     /bin/bash
 else
-    echo "Invalid argument. Use 'train', 'slurm_train', or 'test'."
+    echo "Invalid argument. Use 'train', 'slurm_train', 'test', 'test-output', 'inference', or 'interactive'."
     exit 1
 fi
