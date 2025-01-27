@@ -330,7 +330,17 @@ class WorkflowExecutor:
                                     wandb_run.finish(exit_code=1)
                                 continue
                     elif selected_model_source == "custom_codetr":
-                        teacher = TeacherCustomCoDETR()
+                        # Export dataset into the format Co-DETR expects
+                        export_dir = WORKFLOWS["train_teacher"]["custom_codetr"]["export_dataset_root"]
+                        container_tool = WORKFLOWS["train_teacher"]["custom_codetr"]["container_tool"]
+                        param_n_gpus = WORKFLOWS["train_teacher"]["custom_codetr"]["n_gpus"]
+                        teacher = TeacherCustomCoDETR(self.dataset, self.selected_dataset, self.dataset_info["v51_splits"], export_dir)
+                        teacher.convert_data()
+
+                        codetr_configs = WORKFLOWS["train_teacher"]["custom_codetr"]["configs"]
+                        for config in codetr_configs:
+                            teacher.update_config_file(dataset_name=self.selected_dataset, config_file=config)
+                            teacher.train(config, param_n_gpus, container_tool)
 
                     else:
                         logging.error(f"Selected model source {selected_model_source} is not supported.")

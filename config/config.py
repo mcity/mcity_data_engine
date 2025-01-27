@@ -1,10 +1,10 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["zero_shot_teacher", "ensemble_exploration"]
+SELECTED_WORKFLOW = ["train_teacher"]
 
 # Choose from config/datasets.yaml
-SELECTED_DATASET = "annarbor_rolling_24h_0.5Hz"
+SELECTED_DATASET = "mcity_fisheye_2000"
 
 PERSISTENT = True  # If V51 database is stored
 
@@ -91,8 +91,11 @@ WORKFLOWS = {
         "custom_codetr": {
             "train_model": True,    # Set false if model file should be loaded without training
             "export_dataset_root": "/media/dbogdoll/Datasets/codetr_data/",
-            "config": "projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
-            "n_gpus": 1,
+            "configs": [
+                "projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py",
+                "projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py"
+                ],
+            "n_gpus": "1",
             "container_tool": "docker"
         },
         "ultralytics": {}

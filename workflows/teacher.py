@@ -1,4 +1,5 @@
 import datetime
+import json
 import logging
 import os
 import queue
@@ -756,6 +757,7 @@ class TeacherHuggingFace:
 
 class TeacherCustomCoDETR:
     def __init__(self, dataset, dataset_name, splits, export_dir_root):
+        self.root_codetr = "./custom_models/CoDETR/Co-DETR"
         self.dataset = dataset
         self.dataset_name = dataset_name
         self.splits = splits
@@ -766,21 +768,61 @@ class TeacherCustomCoDETR:
 
         self.export_dir_root = export_dir_root
 
-    def convert_data(self, target_dir):
+    def convert_data(self):
 
         export_dir = os.path.join(self.export_dir_root, self.dataset_name, "coco")
-        splits = ["train", "val"]   # Expects train and val tags in FiftyOne dataset
-        for split in splits:
-            split_view = self.dataset.match_tags(split)
-            split_view.export(export_dir=export_dir,
-                dataset_type=fo.types.COCODetectionDataset,
-                data_path=os.path.join(target_dir, f"{split}2017"),
-                labels_path=os.path.join(target_dir, "annotations", f"instances_{split}2017.json"),
-                label_field="ground_truth",
-        )
 
-    def train(self, volume_codetr, volume_data, param_config, param_n_gpus, container_tool, param_function="train"):
-        train_result = self._run_container(volume_codetr, volume_data, param_function, param_config, param_n_gpus, container_tool)
+        # Check if folder already exists
+        if not os.path.exists(export_dir):
+            logging.info(f"Exporting data to {export_dir}")
+            splits = ["train", "val"]   # Expects train and val tags in FiftyOne dataset
+            for split in splits:
+                split_view = self.dataset.match_tags(split)
+                split_view.export(
+                    dataset_type=fo.types.COCODetectionDataset,
+                    data_path=os.path.join(export_dir, f"{split}2017"),
+                    labels_path=os.path.join(export_dir, "annotations", f"instances_{split}2017.json"),
+                    label_field="ground_truth",
+            )
+        else:
+            logging.info(f"Folder {export_dir} already exists, skipping data export.")
+
+    def update_config_file(self, dataset_name, config_file):
+        config_path = os.path.join(self.root_codetr, config_file)
+
+        # Get classes from exported data
+        annotations_json = os.path.join(self.export_dir_root, dataset_name, "coco/annotations/instances_train2017.json")
+        # Read the JSON file
+        with open(annotations_json, 'r') as file:
+            data = json.load(file)
+
+        # Extract the value associated with the key "categories"
+        categories = data.get('categories')
+        class_names = tuple(category['name'] for category in categories)
+        num_classes = len(class_names)
+
+        # Update configuration file
+        # This assumes that 'classes = '('a','b',...)' are already defined and will be overwritten.
+        with open(config_path, 'r') as file:
+            content = file.read()
+
+        # Update the classes tuple
+        content = re.sub(r'classes = \([^\)]+\)', f'classes = {class_names}', content)
+
+        # Update all instances of num_classes
+        content = re.sub(r'num_classes=\d+', f'num_classes={num_classes}', content)
+
+        with open(config_path, 'w') as file:
+            file.write(content)
+
+        logging.info(f"Updated {config_path} with classes={class_names} and num_classes={num_classes}")
+
+
+    def train(self, param_config, param_n_gpus, container_tool, param_function="train"):
+        logging.info(f"Launching training for Co-DETR config {param_config}.")
+
+        volume_data = os.path.join(self.export_dir_root, self.dataset_name)
+        train_result = self._run_container(volume_data=volume_data, param_function=param_function, param_config=param_config, param_n_gpus=param_n_gpus, container_tool=container_tool)
 
         # Check if model file exists
         model_path = "custom_models/CoDETR/Co-DETR/output/latest.pth"
@@ -789,28 +831,29 @@ class TeacherCustomCoDETR:
         else:
             logging.error("CoDETR was not trained, model pth file missing.")
 
-    def run_inference(self, volume_codetr, volume_data, param_config, param_n_gpus, container_tool, param_function="inference"):
-        inference_result = self._run_container(volume_codetr, volume_data, param_function, param_config, param_n_gpus, container_tool)
+    def run_inference(self, volume_data, param_config, param_n_gpus, container_tool, param_function="inference"):
+        inference_result = self._run_container(volume_data=volume_data, param_function=param_function, param_config=param_config, param_n_gpus=param_n_gpus, container_tool=container_tool)
 
-    def _run_container(self, volume_data, param_function, param_config, volume_codetr="custom_models/CoDETR/Co-DETR", param_n_gpus="1", image="dbogdollresearch/codetr", workdir = "/launch", container_tool="docker"):
+    def _run_container(self, volume_data, param_function, param_config, param_n_gpus="1", image="dbogdollresearch/codetr", workdir = "/launch", container_tool="docker"):
         try:
             # Check if using Docker or Singularity and define the appropriate command
             if container_tool == 'docker':
                 command = [
                     "docker", "run", "--gpus", "all", "--workdir", workdir,
-                    "--volume", f"{volume_codetr}:{workdir}", "--volume", f"{volume_data}:{workdir}/data",
+                    "--volume", f"{self.root_codetr}:{workdir}", "--volume", f"{volume_data}:{workdir}/data",
                     "--shm-size=8g", image, param_function, param_config, param_n_gpus
                 ]
             elif container_tool == 'singularity':
                 command = [
                     "singularity", "run", "--nv", "--pwd", workdir,
-                    "--bind", f"{volume_codetr}:{workdir}", "--bind", f"{volume_data}:{workdir}/data",
+                    "--bind", f"{self.root_codetr}:{workdir}", "--bind", f"{volume_data}:{workdir}/data",
                     f"docker://{image}", param_function, param_config, param_n_gpus
                 ]
             else:
                 raise ValueError(f"Invalid container tool specified: {container_tool}. Choose 'docker' or 'singularity'.")
 
             # Start the process and stream outputs to the console
+            logging.info(f"Launching terminal command {command}")
             with subprocess.Popen(command, stdout=sys.stdout, stderr=sys.stderr, text=True) as proc:
                 proc.wait()  # Wait for the process to complete
             return True
