@@ -67,6 +67,7 @@ WORKFLOWS = {
         ],
     },
     "train_teacher": {
+        "model_source": "custom_codetr",    # Pick from one of the options below (hf_models_objectdetection, custom_codetr, ultralytics)
         "hf_models_objectdetection": [
             "microsoft/conditional-detr-resnet-50",
             "Omnifact/conditional-detr-resnet-101-dc5",
@@ -87,6 +88,14 @@ WORKFLOWS = {
             "jozhang97/deta-resnet-50-24-epochs",
             "hustvl/yolos-base",
         ],
+        "custom_codetr": {
+            "train_model": True,    # Set false if model file should be loaded without training
+            "export_dataset_root": "/media/dbogdoll/Datasets/codetr_data/",
+            "config": "projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
+            "n_gpus": 1,
+            "container_tool": "docker"
+        },
+        "ultralytics": {}
     },
     "zero_shot_teacher": {
         "n_post_processing_worker_per_inference_worker": 2, 
