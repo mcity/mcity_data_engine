@@ -5,6 +5,8 @@ import queue
 import random
 import re
 import signal
+import subprocess
+import sys
 import time
 from difflib import get_close_matches
 from functools import partial
@@ -632,7 +634,7 @@ class ZeroShotTeacher:
         )
         return True
 
-class Teacher:
+class TeacherHuggingFace:
     def __init__(self, dataset, config=None, detections_path="./output/detections/"):
         self.dataset = dataset
         self.config = config
@@ -674,7 +676,7 @@ class Teacher:
         pt_to_hf_converter = TorchToHFDatasetCOCO(pytorch_dataset)
         hf_dataset = pt_to_hf_converter.convert()
 
-        image_processor = AutoProcessor.from_pretrained(    # # TODO consider use_fast=True https://github.com/huggingface/transformers/pull/34354
+        image_processor = AutoProcessor.from_pretrained(    # TODO consider use_fast=True https://github.com/huggingface/transformers/pull/34354
             self.model_name,
             do_resize=False,
             do_pad=False,  # Assumes all images have the same size
@@ -730,7 +732,7 @@ class Teacher:
             save_total_limit=2,
             remove_unused_columns=False,
             eval_do_concat_batches=False,
-            save_safetensors=False,  # TODO Might have caused error for facebook/deformable-detr-detic
+            save_safetensors=False,
             push_to_hub=False,
         )
 
@@ -751,3 +753,67 @@ class Teacher:
         )
 
         trainer.train()
+
+class TeacherCustomCoDETR:
+    def __init__(self, dataset, dataset_name, splits, export_dir_root):
+        self.dataset = dataset
+        self.dataset_name = dataset_name
+        self.splits = splits
+
+        # Expects train and val tags in FiftyOne dataset
+        if splits != ["train", "val"]:
+            logging.error("Co-DETR training requires a train and val split.")
+
+        self.export_dir_root = export_dir_root
+
+    def convert_data(self, target_dir):
+
+        export_dir = os.path.join(self.export_dir_root, self.dataset_name, "coco")
+        splits = ["train", "val"]   # Expects train and val tags in FiftyOne dataset
+        for split in splits:
+            split_view = self.dataset.match_tags(split)
+            split_view.export(export_dir=export_dir,
+                dataset_type=fo.types.COCODetectionDataset,
+                data_path=os.path.join(target_dir, f"{split}2017"),
+                labels_path=os.path.join(target_dir, "annotations", f"instances_{split}2017.json"),
+                label_field="ground_truth",
+        )
+
+    def train(self, volume_codetr, volume_data, param_config, param_n_gpus, container_tool, param_function="train"):
+        train_result = self._run_container(volume_codetr, volume_data, param_function, param_config, param_n_gpus, container_tool)
+
+        # Check if model file exists
+        model_path = "custom_models/CoDETR/Co-DETR/output/latest.pth"
+        if os.path.exists(model_path):
+            logging.info("CoDETR was trained successfully.")
+        else:
+            logging.error("CoDETR was not trained, model pth file missing.")
+
+    def run_inference(self, volume_codetr, volume_data, param_config, param_n_gpus, container_tool, param_function="inference"):
+        inference_result = self._run_container(volume_codetr, volume_data, param_function, param_config, param_n_gpus, container_tool)
+
+    def _run_container(self, volume_data, param_function, param_config, volume_codetr="custom_models/CoDETR/Co-DETR", param_n_gpus="1", image="dbogdollresearch/codetr", workdir = "/launch", container_tool="docker"):
+        try:
+            # Check if using Docker or Singularity and define the appropriate command
+            if container_tool == 'docker':
+                command = [
+                    "docker", "run", "--gpus", "all", "--workdir", workdir,
+                    "--volume", f"{volume_codetr}:{workdir}", "--volume", f"{volume_data}:{workdir}/data",
+                    "--shm-size=8g", image, param_function, param_config, param_n_gpus
+                ]
+            elif container_tool == 'singularity':
+                command = [
+                    "singularity", "run", "--nv", "--pwd", workdir,
+                    "--bind", f"{volume_codetr}:{workdir}", "--bind", f"{volume_data}:{workdir}/data",
+                    f"docker://{image}", param_function, param_config, param_n_gpus
+                ]
+            else:
+                raise ValueError(f"Invalid container tool specified: {container_tool}. Choose 'docker' or 'singularity'.")
+
+            # Start the process and stream outputs to the console
+            with subprocess.Popen(command, stdout=sys.stdout, stderr=sys.stderr, text=True) as proc:
+                proc.wait()  # Wait for the process to complete
+            return True
+        except Exception as e:
+            logging.error(f"Error during Co-DETR container run: {e}")
+            return False
