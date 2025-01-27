@@ -4,6 +4,7 @@ import os
 import re
 
 import fiftyone as fo
+from fiftyone.utils.huggingface import load_from_hub
 import yaml
 from nuscenes.nuscenes import NuScenes
 
@@ -272,9 +273,7 @@ def load_fisheye_8k(dataset_info):
         - The dataset will be tagged with the split names and additional metadata will be added to each sample.
     """
     dataset_name = dataset_info["name"]
-    dataset_dir = dataset_info["local_path"]
-    dataset_type = getattr(fo.types, dataset_info["v51_type"])
-    dataset_splits = dataset_info["v51_splits"]  # Use all available splits
+    hf_dataset_name = dataset_info["hf_dataset_name"]
 
     if PERSISTENT == False:
         try:
@@ -286,57 +285,11 @@ def load_fisheye_8k(dataset_info):
         dataset = fo.load_dataset(dataset_name)
         logging.info("Existing dataset " + dataset_name + " was loaded.")
     else:
-        dataset = fo.Dataset(dataset_name)
-        for split in dataset_splits:
-            dataset.add_dir(
-                data_path=os.path.join(dataset_dir, split, "images"),
-                labels_path=os.path.join(dataset_dir, split, f"{split}.json"),
-                dataset_type=dataset_type,
-                tags=split,
-            )
-
+        dataset = load_from_hub(hf_dataset_name)
         dataset.compute_metadata(num_workers=NUM_WORKERS)
-
-        for sample in dataset.iter_samples(progress=True, autosave=True):  # https://docs.voxel51.com/api/fiftyone.core.sample.html
-            metadata = _process_fisheye_8k_filename(sample["filepath"])
-            sample["location"] = metadata["location"]
-            sample["time_of_day"] = metadata["time_of_day"]
 
         dataset.persistent = PERSISTENT  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
     return dataset
-
-def _process_fisheye_8k_filename(filename):
-    """
-    Process a fisheye 8K filename to extract metadata.
-
-    This function extracts the location and time of day from a given filename.
-    The filename is expected to follow the format: cameraX_T_YYY.png, where:
-    - X is the camera number.
-    - T is the time of day indicator (A for afternoon, E for evening, N for night, M for morning).
-    - YYY is an arbitrary sequence of digits.
-
-    Args:
-        filename (str): The filename to process.
-
-    Returns:
-        dict: A dictionary containing the following keys:
-            - 'filename' (str): The basename of the input filename.
-            - 'location' (str): The location derived from the camera number (e.g., 'camera4' becomes 'cam4').
-            - 'time_of_day' (str or None): The time of day derived from the time of day indicator, or None if the indicator is not recognized.
-    """
-
-    time_of_day_map = {"A": "afternoon", "E": "evening", "N": "night", "M": "morning"}
-
-    filename = os.path.basename(filename)
-    parts = filename.split("_")
-
-    location = parts[0].replace("camera", "cam")
-    time_of_day = time_of_day_map.get(parts[1], None)
-
-    results = {"filename": filename, "location": location, "time_of_day": time_of_day}
-
-    return results
-
 
 def load_mars_multiagent(dataset_info):
     hugging_face_id = "ai4ce/MARS/Multiagent_53scene"

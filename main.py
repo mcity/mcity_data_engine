@@ -44,37 +44,47 @@ def signal_handler(sig, frame):
         pass
     sys.exit(0)
 
-def workflow_aws_download(dataset_name):
-    test_run = WORKFLOWS["aws_download"]["test_run"]
-    source = WORKFLOWS["aws_download"]["source"]
-    sample_rate = WORKFLOWS["aws_download"]["sample_rate_hz"]
-    start_date_str = WORKFLOWS["aws_download"]["start_date"]
-    end_date_str = WORKFLOWS["aws_download"]["end_date"]
-    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d")
-    end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d")
-    dataset_name = f"data_engine_rolling_{start_date_str}_to_{end_date_str}"
+def workflow_aws_download():
+    wandb_run = None
+    dataset = None
+    try:
+        bucket = WORKFLOWS["aws_download"]["bucket"]
+        prefix = WORKFLOWS["aws_download"]["prefix"]
+        download_path = WORKFLOWS["aws_download"]["download_path"]
+        test_run = WORKFLOWS["aws_download"]["test_run"]
 
-    wandb_run = wandb.init(
-        name=dataset_name,
-        sync_tensorboard=True,
-        group="S3",
-        job_type="download",
-        project="Data Engine Download",
-    )
+        # Logging
+        now = datetime.datetime.now()
+        datetime_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+        log_dir = f"logs/tensorboard/aws_{datetime_str}"
 
-    aws_downloader = AwsDownloader(
-        name=dataset_name,
-        start_date=start_date,
-        end_date=end_date,
-        source=source,
-        sample_rate_hz=sample_rate,
-        test_run=test_run,
-    )
+        dataset_name = f"annarbor_rolling_{datetime_str}"
 
-    dataset = aws_downloader.load_data()
+        wandb.tensorboard.patch(root_logdir=log_dir)
+        wandb_run = wandb.init(
+            name=dataset_name,
+            sync_tensorboard=True,
+            group="S3",
+            job_type="download",
+            project="Data Engine Download",
+        )
 
-    wandb_run.finish(exit_code=0)
+        aws_downloader = AwsDownloader(
+            bucket=bucket,
+            prefix=prefix,
+            download_path=download_path,
+            test_run=test_run,
+        )
 
+        sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = aws_downloader.download_files(log_dir=log_dir)
+        dataset = aws_downloader.decode_data(sub_folder=sub_folder, files=files, log_dir=log_dir, dataset_name=dataset_name)
+
+        wandb_run.finish(exit_code=0)
+    except Exception as e:
+        logging.error(f"AWS Download and Extraction failed: {e}")
+        if wandb_run:
+            wandb_run.finish(exit_code=1)
+    
     return dataset, dataset_name
 
 def workflow_anomaly_detection():
@@ -133,8 +143,7 @@ class WorkflowExecutor:
     def __init__(self, workflows: List[str], selected_dataset: str, dataset: fo.Dataset,  dataset_info: Dict, args):
         self.workflows = workflows
         self.selected_dataset = selected_dataset
-        #self.dataset = dataset
-        self.dataset = dataset.take(826_929, seed=51) #FIXME Remove, only testing
+        self.dataset = dataset
         self.dataset_info = dataset_info
         self.args = args
 
@@ -155,7 +164,13 @@ class WorkflowExecutor:
 
                     # Select downloaded dataset for further workflows if configured
                     if WORKFLOWS["aws_download"]["selected_dataset_overwrite"] == True:
-                        dataset, dataset_info = load_dataset(dataset_name)
+
+                        dataset_info = {
+                            "name": dataset_name,
+                            "v51_type": "FiftyOneDataset",
+                            "splits": []
+                        }
+
                         self.dataset = dataset
                         self.dataset_info = dataset_info
                         self.selected_dataset = dataset_name
