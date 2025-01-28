@@ -16,8 +16,8 @@ import torch.multiprocessing as mp
 import wandb
 from tqdm import tqdm
 
-from config.config import (SELECTED_DATASET, SELECTED_WORKFLOW, V51_ADDRESS,
-                           V51_PORT, WORKFLOWS)
+from config.config import (GLOBAL_SEED, SELECTED_DATASET, SELECTED_WORKFLOW,
+                           V51_ADDRESS, V51_PORT, WORKFLOWS)
 from utils.data_loader import FiftyOneTorchDatasetCOCO
 # Called with globals()
 from utils.dataset_loader import (load_annarbor_rolling, load_dataset_info,
@@ -330,7 +330,17 @@ class WorkflowExecutor:
                                     wandb_run.finish(exit_code=1)
                                 continue
                     elif selected_model_source == "custom_codetr":
-                        teacher = TeacherCustomCoDETR()
+                        # Export dataset into the format Co-DETR expects
+                        export_dir = WORKFLOWS["train_teacher"]["custom_codetr"]["export_dataset_root"]
+                        container_tool = WORKFLOWS["train_teacher"]["custom_codetr"]["container_tool"]
+                        param_n_gpus = WORKFLOWS["train_teacher"]["custom_codetr"]["n_gpus"]
+                        teacher = TeacherCustomCoDETR(self.dataset, self.selected_dataset, self.dataset_info["v51_splits"], export_dir)
+                        teacher.convert_data()
+
+                        codetr_configs = WORKFLOWS["train_teacher"]["custom_codetr"]["configs"]
+                        for config in codetr_configs:
+                            teacher.update_config_file(dataset_name=self.selected_dataset, config_file=config)
+                            teacher.train(config, param_n_gpus, container_tool)
 
                     else:
                         logging.error(f"Selected model source {selected_model_source} is not supported.")
@@ -377,14 +387,21 @@ class WorkflowExecutor:
         return True
 
 def load_dataset(selected_dataset: str) -> fo.Dataset:
-    dataset_info = load_dataset_info(selected_dataset)
+    dataset_info = load_dataset_info(selected_dataset["name"])
 
     if dataset_info:
         loader_function = dataset_info.get("loader_fct")
         dataset = globals()[loader_function](dataset_info)
+        n_samples_original = len(dataset)
+        n_samples_requested = selected_dataset["n_samples"]
+
+        if n_samples_requested is not None and n_samples_requested <= n_samples_original:
+            dataset_reduced_view = dataset.take(n_samples_requested, seed = GLOBAL_SEED)    # Returns a view rather than a full dataset, might lead to issues for some operations that require a fiftyone dataset
+            logging.info(f"Dataset size was reduced from {n_samples_original} to {n_samples_requested} samples.")
+            return dataset_reduced_view, dataset_info
     else:
         logging.error(
-            str(selected_dataset)
+            str(selected_dataset["name"])
             + " is not a valid dataset name. Check supported datasets in datasets.yaml."
         )
 
@@ -403,7 +420,7 @@ def main(args):
 
     # Execute workflows
     dataset, dataset_info = load_dataset(SELECTED_DATASET)
-    executor = WorkflowExecutor(SELECTED_WORKFLOW, SELECTED_DATASET, dataset, dataset_info, args)
+    executor = WorkflowExecutor(SELECTED_WORKFLOW, SELECTED_DATASET["name"], dataset, dataset_info, args)
     executor.execute()
 
     # Launch V51 session
