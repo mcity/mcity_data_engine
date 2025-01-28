@@ -27,6 +27,7 @@ WORKFLOWS = {
             "clip-vit-base32-torch",
             "open-clip-torch",
             "dinov2-vitl14-torch",
+            "dinov2-vits14-reg-torch",
             "mobilenet-v2-imagenet-torch",
             "resnet152-imagenet-torch",
             "vgg19-imagenet-torch",
