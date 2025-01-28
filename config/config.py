@@ -1,10 +1,14 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["train_teacher"]
+SELECTED_WORKFLOW = ["brain_selection"]
 
 # Choose from config/datasets.yaml
-SELECTED_DATASET = "mcity_fisheye_2000"
+SELECTED_DATASET = {
+    "name": "mcity_fisheye_2000",
+    "n_samples": 100   # 'None' (full dataset) or 'int' (subset of the dataset)
+}
+
 
 PERSISTENT = True  # If V51 database is stored
 
