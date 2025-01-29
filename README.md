@@ -124,47 +124,6 @@ wandb launch --uri "git@github.com:mcity/mcity_data_engine.git" --job-name <name
 
 Locally, you will need to clean up old docker images once in a while. Run ```docker image prune --all --filter until=48h``` to delete docker images older than 48 hours.
 
-### Huggingface
-
-For object detection, the data engine supports Hugging Face (HF) models of the types [AutoModelForObjectDetection](https://huggingface.co/docs/transformers/en/model_doc/auto#transformers.AutoModelForObjectDetection) and [AutoModelForZeroShotObjectDetection](https://huggingface.co/docs/transformers/en/model_doc/auto#transformers.AutoModelForZeroShotObjectDetection). At this point, [multi-GPU training is not working](https://github.com/huggingface/transformers/pull/33561) for the object detection pipeline, but multi-GPU inference is implemented.
-
-### Custom models
-
-Custom models run in their own containers to avoid any conflicting requirements. To build a dockerfile, mount the repository, test it, and push it do Dockerhub, run the following commands:
-```
-cd custom_models/<model>
-docker build -t <dockerhub-account>/<image-name>:latest .
-docker run --gpus all -v /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch <dockerhub-account>/<image-name>:latest <optional argument>
-docker login
-docker push <dockerhub-account>/<image-name>:latest
-```
-
-To run such a container with [Singularity](https://github.com/sylabs/singularity/blob/main/INSTALL.md) (readily available on UofM cluster), run the following command:
-```
-singularity run --nv --pwd /launch --bind /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch docker://<dockerhub-account>/<image-name>:latest <optional argument>
-```
-
-To run it with [Docker](https://docs.docker.com/engine/install/ubuntu/) instead, run the following command:
-
-```
-docker run --gpus all --workdir /launch --volume /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch <dockerhub-account>/<image-name>:latest <optional argument>
-```
-
-#### Co-DETR
-
-[Co-DETR](https://github.com/Sense-X/Co-DETR) is an object detection model and is leading the [COCO test-dev leaderboard](https://paperswithcode.com/sota/object-detection-on-coco) as of January 2025.
-Co-DETR is included as a submodule at [custom_models/CoDETR/Co-DETR](https://github.com/mcity/mcity_data_engine/tree/main/custom_models/CoDETR). A container image for CoDETR can be found at [dbogdollresearch/codetr](https://hub.docker.com/r/dbogdollresearch/codetr).
-
-It is necessary to also mount the dataset used for training and increase shared memory:
-
-```
-docker run --gpus all --workdir /launch \
-  --volume /<root>/mcity_data_engine/custom_models/CoDETR/Co-DETR:/launch \
-  --volume /<root_datasets>/codetr_data/data:/launch/data \
-  --shm-size=8g \
-  dbogdollresearch/codetr:latest train
-```
-
 ## Contributors
 
 Special thanks to these amazing people for contributing to the Mcity Data Engine! 🙌
