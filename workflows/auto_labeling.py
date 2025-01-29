@@ -21,11 +21,12 @@ import psutil
 import torch
 import torch.multiprocessing as mp
 import wandb
-from accelerate.test_utils.testing import get_backend
+from datasets import Split
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms.functional import to_pil_image
+from tqdm import tqdm
 from transformers import (
     AutoConfig,
     AutoModelForObjectDetection,
@@ -35,16 +36,11 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+from transformers.utils.generic import is_torch_device
+from transformers.utils.import_utils import is_torch_available, requires_backends
 
-from config.config import (
-    GLOBAL_SEED,
-    HF_DO_UPLOAD,
-    HF_ROOT,
-    NUM_WORKERS,
-    WANDB_ACTIVE,
-    WORKFLOWS,
-)
-from datasets import Split
+from config.config import NUM_WORKERS, WORKFLOWS
+from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.logging import configure_logging
 
 
