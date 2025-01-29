@@ -341,7 +341,6 @@ class WorkflowExecutor:
                         for config in codetr_configs:
                             teacher.update_config_file(dataset_name=self.selected_dataset, config_file=config)
                             teacher.train(config, param_n_gpus, container_tool)
-
                     else:
                         logging.error(f"Selected model source {selected_model_source} is not supported.")
 

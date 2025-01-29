@@ -823,46 +823,64 @@ class TeacherCustomCoDETR:
 
 
     def train(self, param_config, param_n_gpus, container_tool, param_function="train"):
-        logging.info(f"Launching training for Co-DETR config {param_config}.")
 
-        volume_data = os.path.join(self.export_dir_root, self.dataset_name)
-        train_result = self._run_container(volume_data=volume_data, param_function=param_function, param_config=param_config, param_n_gpus=param_n_gpus, container_tool=container_tool)
-
-        # Find the best_bbox checkpoint file
+        # Check if model already exists
         output_folder_codetr = os.path.join(self.root_codetr, "output")
-        checkpoint_files = [f for f in os.listdir(output_folder_codetr) if "best_bbox" in f and f.endswith(".pth")]
-        if not checkpoint_files:
-            logging.error("CoDETR was not trained, model pth file missing. No checkpoint file with 'best_bbox' found.")
+        param_config_name = os.path.splitext(os.path.basename(param_config))[0]
+        best_models_dir = os.path.join(output_folder_codetr, "best")
+        # Best model files follow the naming scheme "config_dataset.pth"
+        pth_model_files = (
+            [f for f in os.listdir(best_models_dir) if f.endswith(".pth")]
+            if os.path.exists(best_models_dir) and os.path.isdir(best_models_dir)
+            else []
+        )
+
+        # Best model files are stored in the format "config_dataset.pth"
+        matching_files = [f for f in pth_model_files if f.startswith(param_config_name) and self.dataset_name in f and f.endswith(".pth")]
+        if len(matching_files) > 0:
+            logging.info(f"Model {param_config_name} already trained on dataset {self.dataset_name}. Skipping training.")
+            if len(matching_files) > 1:
+                logging.warning(f"Multiple weights found: {matching_files}")
         else:
-            if len(checkpoint_files) > 1:
-                logging.warning(f"Found {len(checkpoint_files)} checkpoint files. Selecting {checkpoint_files[0]}.")
-            checkpoint = checkpoint_files[0]
-            checkpoint_path = os.path.join(output_folder_codetr, checkpoint)
+            logging.info(f"Launching training for Co-DETR config {param_config} and dataset {self.dataset_name}.")
+            volume_data = os.path.join(self.export_dir_root, self.dataset_name)
 
-            logging.info("CoDETR was trained successfully.")
+            # Train model, store checkpoints in 'output_folder_codetr'
+            train_result = self._run_container(volume_data=volume_data, param_function=param_function, param_config=param_config, param_n_gpus=param_n_gpus, container_tool=container_tool)
 
-            # Move model file
-            param_config_clean = os.path.splitext(os.path.basename(param_config))[0]
-            output_dir = os.path.join("output", "models", "teacher", "codetr", self.dataset_name, param_config_clean)
-            os.makedirs(output_dir, exist_ok=True)
-            shutil.copy(checkpoint_path, output_dir)
-    def run_inference(self, volume_data, param_config, param_n_gpus, container_tool, param_function="inference"):
+            # Find the best_bbox checkpoint file
+            checkpoint_files = [f for f in os.listdir(output_folder_codetr) if "best_bbox" in f and f.endswith(".pth")]
+            if not checkpoint_files:
+                logging.error("CoDETR was not trained, model pth file missing. No checkpoint file with 'best_bbox' found.")
+            else:
+                if len(checkpoint_files) > 1:
+                    logging.warning(f"Found {len(checkpoint_files)} checkpoint files. Selecting {checkpoint_files[0]}.")
+                checkpoint = checkpoint_files[0]
+                checkpoint_path = os.path.join(output_folder_codetr, checkpoint)
+                logging.info("CoDETR was trained successfully.")
+
+                # Move best model file and clear output folder
+                self._run_container(volume_data=volume_data, param_function="clear-output", param_config=param_config, param_dataset_name=self.dataset_name, container_tool=container_tool, )
+
+    def run_inference(self, param_config, param_n_gpus, container_tool, param_function="inference"):
+        logging.info(f"Launching inference for Co-DETR config {param_config}.")
+        volume_data = os.path.join(self.export_dir_root, self.dataset_name)
         inference_result = self._run_container(volume_data=volume_data, param_function=param_function, param_config=param_config, param_n_gpus=param_n_gpus, container_tool=container_tool)
 
-    def _run_container(self, volume_data, param_function, param_config, param_n_gpus="1", image="dbogdollresearch/codetr", workdir = "/launch", container_tool="docker"):
+    def _run_container(self, volume_data, param_function, param_config, param_n_gpus="1", param_dataset_name="default_dataset", image="dbogdollresearch/codetr", workdir = "/launch", container_tool="docker"):
         try:
             # Check if using Docker or Singularity and define the appropriate command
             if container_tool == 'docker':
                 command = [
                     "docker", "run", "--gpus", "all", "--workdir", workdir,
                     "--volume", f"{self.root_codetr}:{workdir}", "--volume", f"{volume_data}:{workdir}/data",
-                    "--shm-size=8g", image, param_function, param_config, param_n_gpus
+                    "--shm-size=8g", image, param_function, param_config, param_n_gpus, param_dataset_name
                 ]
             elif container_tool == 'singularity':
                 command = [
                     "singularity", "run", "--nv", "--pwd", workdir,
                     "--bind", f"{self.root_codetr}:{workdir}", "--bind", f"{volume_data}:{workdir}/data",
-                    f"docker://{image}", param_function, param_config, param_n_gpus
+                    f"docker://{image}", param_function, param_config, param_n_gpus, param_dataset_name
                 ]
             else:
                 raise ValueError(f"Invalid container tool specified: {container_tool}. Choose 'docker' or 'singularity'.")
