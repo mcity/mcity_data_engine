@@ -8,7 +8,7 @@ import yaml
 from fiftyone.utils.huggingface import load_from_hub
 from nuscenes.nuscenes import NuScenes
 
-from config.config import NUM_WORKERS, PERSISTENT
+from config.config import GLOBAL_SEED, NUM_WORKERS, PERSISTENT
 
 
 def _align_splits(dataset):
@@ -28,6 +28,35 @@ def _align_splits(dataset):
         if old_tag in splits:
             dataset.rename_tag(old_tag, new_tag)
             splits = [tag if tag != old_tag else new_tag for tag in splits]
+
+    # If only val or only test, create val and test splits
+    if "val" in splits and "test" not in splits:
+        view_val_samples = dataset.match_tags("val")
+        n_val_orig = len(view_val_samples)
+        view_test_samples = view_val_samples.take(n_val_orig/2, seed = GLOBAL_SEED)
+        view_test_samples.untag_samples("val")
+        view_test_samples.tag_samples("test")
+
+        view_val_samples = dataset.match_tags("val")
+        n_val_new = len(view_val_samples)
+        view_test_samples = dataset.match_tags("test")
+        n_test_new = len(view_test_samples)
+
+        logging.warning(f"Dataset had no 'test' split. Split {n_val_orig} 'val' into {n_val_new} 'val' and {n_test_new} 'test'.")
+
+    elif "test" in splits and "val" not in splits:
+        view_test_samples = dataset.match_tags("test")
+        n_test_orig = len(view_test_samples)
+        view_val_samples = view_test_samples.take(n_test_orig/2, seed = GLOBAL_SEED)
+        view_val_samples.untag_samples("test")
+        view_val_samples.tag_samples("val")
+
+        view_val_samples = dataset.match_tags("val")
+        n_val_new = len(view_val_samples)
+        view_test_samples = dataset.match_tags("test")
+        n_test_new = len(view_test_samples)
+
+        logging.warning(f"Dataset had no 'val' split. Split {n_test_orig} 'test' into {n_val_new} 'val' and {n_test_new} 'test'.")
 
     # If only val and no test, rename val to test
     if "val" in splits and "test" not in splits:
