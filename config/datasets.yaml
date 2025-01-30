@@ -13,7 +13,6 @@ datasets:
   - name: Voxel51/fisheye8k
     loader_fct: load_fisheye_8k
     hf_dataset_name: Voxel51/fisheye8k
-    v51_splits: ["train", "test"]
   - name: mcity_fisheye_ano_ped
     loader_fct: load_mcity_fisheye_2000
     local_path: /media/dbogdoll/Datasets/midadvrb_ano_ped/

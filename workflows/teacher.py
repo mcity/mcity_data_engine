@@ -763,16 +763,8 @@ class TeacherCustomCoDETR:
         self.dataset_name = dataset_name
         self.splits = splits
 
-        # Expects train and val tags in FiftyOne dataset
-        if "train" in splits:
-            # Requires val split
-            if "val" not in splits:
-                # Use test split as val split if available
-                if "test" in splits:
-                    splits = ["train", "test"]
-
-        if "train" not in splits or ("val" not in splits and "test" not in splits):
-            logging.error("Co-DETR training requires a train and val/test split.")
+        if "train" not in splits or "test" not in splits:
+            logging.error("Co-DETR training requires a train and test split.")
 
         self.export_dir_root = export_dir_root
 
@@ -786,7 +778,7 @@ class TeacherCustomCoDETR:
             splits = ["train", "val"]   # Expects train and val tags in FiftyOne dataset
             for split in splits:
                 split_view = self.dataset.match_tags(split)
-                # Follow Co-DETR expectations and use 'val' name
+                # Utilize expected 'val' split for export
                 if split == "test":
                     split = "val"
                 split_view.export(

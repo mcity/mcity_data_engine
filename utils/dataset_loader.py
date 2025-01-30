@@ -4,12 +4,79 @@ import os
 import re
 
 import fiftyone as fo
-from fiftyone.utils.huggingface import load_from_hub
 import yaml
+from fiftyone.utils.huggingface import load_from_hub
 from nuscenes.nuscenes import NuScenes
 
 from config.config import NUM_WORKERS, PERSISTENT
 
+
+def _align_splits(dataset):
+    # Get dataset tags related to splits
+    SUPPORTED_SPLITS = ["train", "training", "val", "validation", "test", "testing"]
+    tags = dataset.distinct("tags")
+    splits = [tag for tag in tags if tag in SUPPORTED_SPLITS]
+
+    # Rename splits if necessary
+    rename_mapping = {
+        "training": "train",
+        "validation": "val",
+        "testing": "test"
+    }
+
+    for old_tag, new_tag in rename_mapping.items():
+        if old_tag in splits:
+            dataset.rename_tag(old_tag, new_tag)
+            splits = [tag if tag != old_tag else new_tag for tag in splits]
+
+    # If only val and no test, rename val to test
+    if "val" in splits and "test" not in splits:
+        dataset.rename_tag("val", "test")
+        splits = [tag if tag != "val" else "test" for tag in splits]
+
+    # If train exists, val/test should also exist. If val/test exists, train should also exist
+    if ("train" in splits and "test" not in splits and "val" not in splits) or \
+       (("test" in splits or "val" in splits) and "train" not in splits):
+        logging.warning(f"Inconsistent splits {splits}: 'train' should exist if 'val' or 'test' exists, and vice versa.")
+
+    # Logging of available splits
+    tags = dataset.distinct("tags")
+    ACCEPTED_SPLITS = ["train", "val", "test"]
+    splits = [tag for tag in tags if tag in ACCEPTED_SPLITS]
+    logging.info(f"Available splits: {splits}")
+
+    return splits
+
+def _align_ground_truth(dataset, gt_field = "ground_truth"):
+
+    dataset_fields = dataset.get_field_schema()
+    if gt_field not in dataset_fields:
+        FIFTYONE_DEFAULT_FIELDS = ["id", "filepath", "tags", "metadata", "created_at", "last_modified_at"]
+        non_default_fields = {k: v for k, v in dataset_fields.items() if k not in FIFTYONE_DEFAULT_FIELDS}
+        label_fields = {k: v for k, v in non_default_fields.items() if isinstance(v, fo.EmbeddedDocumentField) and issubclass(v.document_type, fo.core.labels.Label)}
+        if len(label_fields) == 1:
+            gt_label_old = next(iter(label_fields))
+            dataset.rename_sample_field(gt_label_old, gt_field)
+            logging.warning(f"Label field '{gt_label_old}' renamed to '{gt_field}' for training.")
+        elif len(label_fields) > 1:
+            logging.warning(f"The dataset has {len(label_fields)} fields with detections: {label_fields}. Rename one to {gt_field} with the command 'dataset.rename_sample_field(<field>, {gt_field})' to use it for training.")
+
+
+def _post_process_dataset(dataset):
+    # Set persistance
+    # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
+    dataset.persistent = PERSISTENT
+
+    # Compute metadata
+    dataset.compute_metadata(num_workers=NUM_WORKERS)
+
+    # Align split names
+    splits = _align_splits(dataset)
+
+    # Align ground truth field
+    _align_ground_truth(dataset)
+
+    return dataset
 
 def load_dataset_info(dataset_name, config_path="./config/datasets.yaml"):
     """
@@ -39,12 +106,6 @@ def load_annarbor_rolling(dataset_info):
     dataset_dir = dataset_info["local_path"]
     dataset_type = getattr(fo.types, dataset_info["v51_type"])
 
-    if PERSISTENT == False:
-        try:
-            fo.delete_dataset(dataset_info["name"])
-        except:
-            pass
-
     if dataset_name in fo.list_datasets():
         dataset = fo.load_dataset(dataset_name)
         logging.info("Existing dataset " + dataset_name + " was loaded.")
@@ -54,9 +115,8 @@ def load_annarbor_rolling(dataset_info):
             dataset_dir=dataset_dir,
             dataset_type=dataset_type,
         )
-        dataset.compute_metadata(num_workers=NUM_WORKERS)
-        dataset.persistent = PERSISTENT
-    return dataset
+
+    return _post_process_dataset(dataset)
 
 def load_mcity_fisheye_2000(dataset_info):
     """
@@ -67,7 +127,6 @@ def load_mcity_fisheye_2000(dataset_info):
             - "name" (str): The name of the dataset.
             - "local_path" (str): The local path to the dataset directory.
             - "v51_type" (str): The type of the dataset, corresponding to a type in `fo.types`.
-            - "v51_splits" (list): A list of dataset splits to be loaded.
 
     Returns:
         fo.Dataset: The loaded dataset object.
@@ -79,13 +138,7 @@ def load_mcity_fisheye_2000(dataset_info):
     dataset_name = dataset_info["name"]
     dataset_dir = dataset_info["local_path"]
     dataset_type = getattr(fo.types, dataset_info["v51_type"])
-    dataset_splits = dataset_info["v51_splits"]  # Use all available splits
-
-    if PERSISTENT == False:
-        try:
-            fo.delete_dataset(dataset_info["name"])
-        except:
-            pass
+    dataset_splits = dataset_info["v51_splits"]
 
     if dataset_name in fo.list_datasets():
         dataset = fo.load_dataset(dataset_name)
@@ -99,17 +152,15 @@ def load_mcity_fisheye_2000(dataset_info):
                 split=split,
                 tags=split,
             )
-        dataset.compute_metadata(num_workers=NUM_WORKERS)
 
-        # Add dataset specific metedata based on filename
+        # Add dataset specific metadata based on filename
         for sample in dataset.iter_samples(progress=True, autosave=True):
             metadata = _process_mcity_fisheye_filename(sample["filepath"])
             sample["location"] = metadata["location"]
             sample["name"] = metadata["name"]
             sample["timestamp"] = metadata["timestamp"]
 
-        dataset.persistent = PERSISTENT  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
-    return dataset
+    return _post_process_dataset(dataset)
 
 
 def _process_mcity_fisheye_filename(filename):
@@ -222,12 +273,6 @@ def load_mcity_fisheye_3_months(dataset_info):
     dataset_type = getattr(fo.types, dataset_info["v51_type"])
     dataset_splits = dataset_info["v51_splits"]  # Use all available splits
 
-    if PERSISTENT == False:
-        try:
-            fo.delete_dataset(dataset_info["name"])
-        except:
-            pass
-
     if dataset_name in fo.list_datasets():
         dataset = fo.load_dataset(dataset_name)
         logging.info("Existing dataset " + dataset_name + " was loaded.")
@@ -240,7 +285,6 @@ def load_mcity_fisheye_3_months(dataset_info):
                 split=split,
                 tags=split,
             )
-        dataset.compute_metadata(num_workers=NUM_WORKERS)
 
         # Add dataset specific metedata based on filename
         for sample in dataset.iter_samples(progress=True, autosave=True):
@@ -249,8 +293,7 @@ def load_mcity_fisheye_3_months(dataset_info):
             sample["name"] = metadata["name"]
             sample["timestamp"] = metadata["timestamp"]
 
-        dataset.persistent = PERSISTENT  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
-    return dataset
+    return _post_process_dataset(dataset)
 
 
 def load_fisheye_8k(dataset_info):
@@ -275,27 +318,27 @@ def load_fisheye_8k(dataset_info):
     dataset_name = dataset_info["name"]
     hf_dataset_name = dataset_info["hf_dataset_name"]
 
-    if PERSISTENT == False:
-        try:
-            fo.delete_dataset(dataset_info["name"])
-        except:
-            pass
-
     if dataset_name in fo.list_datasets():
         dataset = fo.load_dataset(dataset_name)
         logging.info("Existing dataset " + dataset_name + " was loaded.")
     else:
         dataset = load_from_hub(hf_dataset_name)
-        dataset.compute_metadata(num_workers=NUM_WORKERS)
 
-        dataset.persistent = PERSISTENT  # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
-    return dataset
+    return _post_process_dataset(dataset)
 
 def load_mars_multiagent(dataset_info):
     hugging_face_id = "ai4ce/MARS/Multiagent_53scene"
+
+    dataset = None # TODO Implement loading
+
+    return _post_process_dataset(dataset)
 
 
 def load_mars_multitraversal(dataset_info):
     location = 10
     data_root = "./datasets/MARS/Multitraversal_2023_10_04-2024_03_08"
     nusc = NuScenes(version="v1.0", dataroot=f"data_root/{location}", verbose=True)
+
+    dataset = None # TODO Implement loading
+
+    return _post_process_dataset(dataset)
