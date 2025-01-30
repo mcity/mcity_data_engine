@@ -34,6 +34,7 @@ from workflows.brain import Brain
 from workflows.ensemble_exploration import EnsembleExploration
 from workflows.teacher import (TeacherCustomCoDETR, TeacherHuggingFace,
                                ZeroShotTeacher)
+from workflows.teacher_mask import MaskTeacher
 
 
 def signal_handler(sig, frame):
@@ -135,6 +136,12 @@ def workflow_zero_shot_teacher(dataset, dataset_info):
         distributor.distribute_and_run()
     else:
         logging.info("All teacher models already have predictions stored in the dataset.")
+
+def workflow_mask_teacher(dataset, dataset_info):
+    try:
+        pass
+    except Exception as e:
+        logging.error(f"Mask Teacher failed: {e}")
 
 def workflow_ensemble_exploration():
     pass
@@ -347,6 +354,9 @@ class WorkflowExecutor:
 
                 elif workflow == "zero_shot_teacher":
                     workflow_zero_shot_teacher(self.dataset, self.dataset_info)
+
+                elif workflow == "mask_teacher":
+                    workflow_mask_teacher(self.dataset, self.dataset_info)
 
                 elif workflow == "ensemble_exploration":
                     wandb_project = "Data Engine Ensemble Exploration"

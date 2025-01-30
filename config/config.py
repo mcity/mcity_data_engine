@@ -1,10 +1,10 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["train_teacher"]
+SELECTED_WORKFLOW = ["mask_teacher"]
 
 # Choose from config/datasets.yaml
-SELECTED_DATASET = "mcity_fisheye_2000"
+SELECTED_DATASET = "Voxel51/fisheye8k"
 
 PERSISTENT = True  # If V51 database is stored
 
@@ -118,37 +118,38 @@ WORKFLOWS = {
             #"google/owlv2-large-patch14": {"batch_size": 8, "n_dataset_chunks": 8},                   # RTX 4090: 2 ;  H 100: 8
             "google/owlv2-large-patch14-ensemble": {"batch_size": 12, "n_dataset_chunks": 8},          # RTX 4090: 2 ;  H 100: 8
             #"google/owlv2-large-patch14-finetuned": {"batch_size": 2, "n_dataset_chunks": },          # RTX 4090: 2 ;  H 100: ?
+        },
+        "detection_threshold": 0.2,
+        "object_classes": [
+            "skater",
+            "child",
+            "bicycle",
+            "bicyclist",
+            "cyclist",
+            "bike",
+            "rider",
+            "motorcycle",
+            "motorcyclist",
+            "pedestrian",
+            "person",
+            "walker",
+            "jogger",
+            "runner",
+            "skateboarder",
+            "scooter",
+            "vehicle",
+            "car",
+            "bus",
+            "truck",
+            "taxi",
+            "van",
+            "pickup truck",
+            "trailer",
+            "emergency vehicle",
+            "delivery driver"
+        ],
     },
-    "detection_threshold": 0.2,
-    "object_classes": [
-        "skater",
-        "child",
-        "bicycle",
-        "bicyclist",
-        "cyclist",
-        "bike",
-        "rider",
-        "motorcycle",
-        "motorcyclist",
-        "pedestrian",
-        "person",
-        "walker",
-        "jogger",
-        "runner",
-        "skateboarder",
-        "scooter",
-        "vehicle",
-        "car",
-        "bus",
-        "truck",
-        "taxi",
-        "van",
-        "pickup truck",
-        "trailer",
-        "emergency vehicle",
-        "delivery driver"
-    ],
-    },
+    "mask_teacher": {},
     "ensemble_exploration": {},
 }
 

@@ -8,7 +8,6 @@ from main import workflow_brain_selection
 from utils.dataset_loader import load_dataset_info
 
 
-# Test might be too slow for GitHub Actions CI
 @pytest.fixture
 def dataset_v51():
     """Fixture to load a FiftyOne dataset from the hub."""
