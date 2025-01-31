@@ -149,7 +149,24 @@ WORKFLOWS = {
             "delivery driver"
         ],
     },
-    "mask_teacher": {},
+    "mask_teacher": {
+        "semantic_segmentation": {
+            "sam2": {
+                "prompt_field": "detections",   # Field for bounding boxes in Fisheye8k dataset
+                "models": [
+                    "segment-anything-2-hiera-tiny-image-torch",
+                    "segment-anything-2-hiera-small-image-torch",
+                    "segment-anything-2-hiera-base-plus-image-torch",
+                    "segment-anything-2-hiera-large-image-torch",
+                    "segment-anything-2.1-hiera-tiny-image-torch",
+                    "segment-anything-2.1-hiera-small-image-torch",
+                    "segment-anything-2.1-hiera-base-plus-image-torch",
+                    "segment-anything-2.1-hiera-large-image-torch",
+                ]
+            },
+        },
+        "depth_estimation": {}
+    },
     "ensemble_exploration": {},
 }
 
