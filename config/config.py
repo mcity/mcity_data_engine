@@ -1,11 +1,11 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["brain_selection"]
+SELECTED_WORKFLOW = ["auto_labeling"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "mcity_fisheye_2000",
+    "name": "Voxel51/fisheye8k",
     "n_samples": None   # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
@@ -71,27 +71,28 @@ WORKFLOWS = {
             # "PRO",
         ],
     },
-    "train_teacher": {
-        "model_source": "custom_codetr",    # Pick from one of the options below (hf_models_objectdetection, custom_codetr, ultralytics)
+    "auto_labeling": {
+        "mode": "inference",    # "train" or "inference"
+        "model_source": "hf_models_objectdetection",    # Pick from one of the options below (hf_models_objectdetection, custom_codetr, ultralytics)
         "hf_models_objectdetection": [
             "microsoft/conditional-detr-resnet-50",
-            "Omnifact/conditional-detr-resnet-101-dc5",
-            "facebook/detr-resnet-50",
-            "facebook/detr-resnet-50-dc5",
-            "facebook/detr-resnet-101",
-            "facebook/detr-resnet-101-dc5",
-            "facebook/deformable-detr-detic",
-            "facebook/deformable-detr-box-supervised",
-            "SenseTime/deformable-detr",
-            "SenseTime/deformable-detr-with-box-refine-two-stage",
-            "SenseTime/deformable-detr-with-box-refine",
-            "PekingU/rtdetr_r50vd",
-            "PekingU/rtdetr_r50vd_coco_o365",
-            "jozhang97/deta-swin-large",
-            "jozhang97/deta-swin-large-o365",
-            "jozhang97/deta-resnet-50",
-            "jozhang97/deta-resnet-50-24-epochs",
-            "hustvl/yolos-base",
+            #"Omnifact/conditional-detr-resnet-101-dc5",
+            #"facebook/detr-resnet-50",
+            #"facebook/detr-resnet-50-dc5",
+            #"facebook/detr-resnet-101",
+            #"facebook/detr-resnet-101-dc5",
+            #"facebook/deformable-detr-detic",
+            #"facebook/deformable-detr-box-supervised",
+            #"SenseTime/deformable-detr",
+            #"SenseTime/deformable-detr-with-box-refine-two-stage",
+            #"SenseTime/deformable-detr-with-box-refine",
+            #"PekingU/rtdetr_r50vd",
+            #"PekingU/rtdetr_r50vd_coco_o365",
+            #"jozhang97/deta-swin-large",
+            #"jozhang97/deta-swin-large-o365",
+            #"jozhang97/deta-resnet-50",
+            #"jozhang97/deta-resnet-50-24-epochs",
+            #"hustvl/yolos-base",
         ],
         "custom_codetr": {
             "train_model": True,    # Set false if model file should be loaded without training
