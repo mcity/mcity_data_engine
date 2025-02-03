@@ -766,8 +766,64 @@ class TeacherHuggingFace:
         metrics = trainer.evaluate(eval_dataset=hf_dataset[Split.TEST])
 
     def inference(self):
-        # https://huggingface.co/docs/transformers/tasks/object_detection
-        pass
+        device = "cuda:0"
+        folder_path_model="/home/dbogdoll/mcity_data_engine/output/models/teacher/microsoft/conditional-detr-resnet-50/checkpoint-37016"
+
+        image_processor = AutoProcessor.from_pretrained(
+            folder_path_model,
+            do_resize=False,
+            do_pad=True,
+            use_fast=True,
+            do_convert_annotations=False,  # expects YOLO (center_x, center_y, width, height) between [0,1]
+        )
+
+        model = AutoModelForObjectDetection.from_pretrained(
+                folder_path_model,
+                id2label=self.id2label,
+                label2id=self.label2id,
+                ignore_mismatched_sizes=True,
+            )
+        model = model.to(device)
+
+        model_name = "huggingface_detr_test"
+        pred_key = re.sub(r"[\W-]+", "_", "pred_" + model_name)
+
+        with torch.no_grad():
+            for sample in self.dataset.iter_samples(progress=True, autosave=True):
+                image_width = sample.metadata.width
+                image_height = sample.metadata.height
+                img_filepath = sample.filepath
+
+                image = Image.open(img_filepath)
+                inputs = image_processor(images=[image], return_tensors="pt")
+                outputs = model(**inputs.to(device))
+                target_sizes = torch.tensor([[image.size[1], image.size[0]]])
+                results = image_processor.post_process_object_detection(outputs, threshold=0.3, target_sizes=target_sizes)[0]
+
+                detections = []
+                for score, label, box in zip(results["scores"], results["labels"], results["boxes"]):
+                    # Bbox is in absolute coordinates x, y, x2, y2
+                    box = box.tolist()
+                    text_label = model.config.id2label[label.item()]
+
+                    # Voxel51 requires relative coordinates between 0 and 1
+                    top_left_x = box[0] / image_width
+                    top_left_y = box[1] / image_height
+                    box_width = (box[2] - box[0]) / image_width
+                    box_height = (box[3] - box[1]) / image_height
+                    detection = fo.Detection(
+                        label=text_label,
+                        bounding_box=[
+                            top_left_x,
+                            top_left_y,
+                            box_width,
+                            box_height,
+                        ],
+                        confidence=score.item())
+                    detections.append(detection)
+
+                sample[pred_key] = fo.Detections(detections=detections)
+                sample.save()
 
 class TeacherCustomCoDETR:
     def __init__(self, dataset, dataset_name, splits, export_dir_root):
