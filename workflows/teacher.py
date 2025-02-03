@@ -677,11 +677,13 @@ class TeacherHuggingFace:
         pytorch_dataset = FiftyOneTorchDatasetCOCO(self.dataset)
         pt_to_hf_converter = TorchToHFDatasetCOCO(pytorch_dataset)
         hf_dataset = pt_to_hf_converter.convert()
+        logging.info("Preparing training with Hugging Face.")
 
-        image_processor = AutoProcessor.from_pretrained(    # TODO consider use_fast=True https://github.com/huggingface/transformers/pull/34354
+        image_processor = AutoProcessor.from_pretrained(
             self.model_name,
             do_resize=False,
-            do_pad=False,  # Assumes all images have the same size
+            do_pad=True,
+            use_fast=True,
             do_convert_annotations=False,  # expects YOLO (center_x, center_y, width, height) between [0,1]
         )
 
