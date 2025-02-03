@@ -272,6 +272,7 @@ class WorkflowExecutor:
                     selected_model_source = WORKFLOWS["train_teacher"]["model_source"]
 
                     if selected_model_source == "hf_models_objectdetection":
+                        logging.info("Teacher training with Hugging Face")
                         teacher_models = WORKFLOWS["train_teacher"]["hf_models_objectdetection"]
                         wandb_project = "Data Engine Teacher"
                         config_file_path = "wandb_runs/teacher_config.json"
