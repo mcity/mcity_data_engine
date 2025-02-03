@@ -703,6 +703,9 @@ class TeacherHuggingFace:
         hf_dataset[Split.VALIDATION] = hf_dataset[Split.VALIDATION].with_transform(
             validation_transform_batch
         )
+        hf_dataset[Split.TEST] = hf_dataset[Split.TEST].with_transform(
+            validation_transform_batch
+        )
 
         if type(hf_model_config) in AutoModelForObjectDetection._model_mapping:
             model = AutoModelForObjectDetection.from_pretrained(
@@ -759,6 +762,12 @@ class TeacherHuggingFace:
 
         logging.info(f"Starting training of model {self.model_name}.")
         trainer.train()
+
+        metrics = trainer.evaluate(eval_dataset=hf_dataset[Split.TEST])
+
+    def inference(self):
+        # https://huggingface.co/docs/transformers/tasks/object_detection
+        pass
 
 class TeacherCustomCoDETR:
     def __init__(self, dataset, dataset_name, splits, export_dir_root):
