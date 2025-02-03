@@ -11,6 +11,42 @@ from nuscenes.nuscenes import NuScenes
 from config.config import GLOBAL_SEED, NUM_WORKERS, PERSISTENT
 
 
+def _separate_split(dataset, current_split, new_split, split_ratio=2):
+    """
+    Separates a portion of samples from the current split in the dataset and assigns them to a new split.
+
+    Args:
+        dataset: The dataset object containing the samples.
+        current_split (str): The tag representing the current split from which samples will be separated.
+        new_split (str): The tag representing the new split to which samples will be assigned.
+        split_ratio (int, optional): The ratio by which the current split will be divided. Default is 2.
+
+    Returns:
+        tuple: A tuple containing the number of samples remaining in the current split and the number of samples in the new split.
+    """
+    # Select samples for split change
+    view_current_split = dataset.match_tags(current_split)
+    n_samples_current_split = len(view_current_split)
+    view_new_split = view_current_split.take(int(n_samples_current_split/split_ratio), seed = GLOBAL_SEED)
+    temp_test_tag = f"temp_{new_split}"
+    view_new_split.tag_samples(temp_test_tag)
+
+    # Select data with temporary split
+    # Necessary as tag-based views change if tags get removed
+    view_new_split_temp = dataset.match_tags(temp_test_tag)
+    view_new_split_temp.untag_samples(current_split)
+    view_new_split_temp.tag_samples(new_split)
+
+    # Cleanup dataset
+    dataset.untag_samples(temp_test_tag)
+
+    view_current_split_changed = dataset.match_tags(current_split)
+    n_samples_current_split_changed = len(view_current_split_changed)
+    view_new_split = dataset.match_tags(new_split)
+    n_samples_new_split = len(view_new_split)
+
+    return n_samples_current_split, n_samples_current_split_changed, n_samples_new_split
+
 def _align_splits(dataset):
     # Get dataset tags related to splits
     SUPPORTED_SPLITS = ["train", "training", "val", "validation", "test", "testing"]
@@ -31,32 +67,12 @@ def _align_splits(dataset):
 
     # If only val or only test, create val and test splits
     if "val" in splits and "test" not in splits:
-        view_val_samples = dataset.match_tags("val")
-        n_val_orig = len(view_val_samples)
-        view_test_samples = view_val_samples.take(n_val_orig/2, seed = GLOBAL_SEED)
-        view_test_samples.untag_samples("val")
-        view_test_samples.tag_samples("test")
-
-        view_val_samples = dataset.match_tags("val")
-        n_val_new = len(view_val_samples)
-        view_test_samples = dataset.match_tags("test")
-        n_test_new = len(view_test_samples)
-
-        logging.warning(f"Dataset had no 'test' split. Split {n_val_orig} 'val' into {n_val_new} 'val' and {n_test_new} 'test'.")
+        n_samples_current_split, n_samples_current_split_changed, n_samples_new_split = _separate_split(dataset, current_split="val", new_split="test")
+        logging.warning(f"Dataset had no 'test' split. Split {n_samples_current_split} 'val' into {n_samples_current_split_changed} 'val' and {n_samples_new_split} 'test'.")
 
     elif "test" in splits and "val" not in splits:
-        view_test_samples = dataset.match_tags("test")
-        n_test_orig = len(view_test_samples)
-        view_val_samples = view_test_samples.take(n_test_orig/2, seed = GLOBAL_SEED)
-        view_val_samples.untag_samples("test")
-        view_val_samples.tag_samples("val")
-
-        view_val_samples = dataset.match_tags("val")
-        n_val_new = len(view_val_samples)
-        view_test_samples = dataset.match_tags("test")
-        n_test_new = len(view_test_samples)
-
-        logging.warning(f"Dataset had no 'val' split. Split {n_test_orig} 'test' into {n_val_new} 'val' and {n_test_new} 'test'.")
+        n_samples_current_split, n_samples_current_split_changed, n_samples_new_split = _separate_split(dataset, current_split="test", new_split="val")
+        logging.warning(f"Dataset had no 'val' split. Split {n_samples_current_split} 'test' into {n_samples_current_split_changed} 'val' and {n_samples_new_split} 'test'.")
 
     # If only val and no test, rename val to test
     if "val" in splits and "test" not in splits:
