@@ -111,7 +111,7 @@ def workflow_brain_selection(dataset, dataset_info, MODEL_NAME):
 
     return v51_keys
 
-def workflow_train_teacher():
+def workflow_auto_labeling():
     pass
 
 def workflow_zero_shot_teacher(dataset, dataset_info):
@@ -268,12 +268,13 @@ class WorkflowExecutor:
 
                         wandb_run.finish(exit_code=0)
 
-                elif workflow == "train_teacher":
-                    selected_model_source = WORKFLOWS["train_teacher"]["model_source"]
+                elif workflow == "auto_labeling":
+                    logging.info("Teacher training with Hugging Face")
+                    mode = WORKFLOWS["auto_labeling"]["mode"]
+                    selected_model_source = WORKFLOWS["auto_labeling"]["model_source"]
 
                     if selected_model_source == "hf_models_objectdetection":
-                        logging.info("Teacher training with Hugging Face")
-                        teacher_models = WORKFLOWS["train_teacher"]["hf_models_objectdetection"]
+                        teacher_models = WORKFLOWS["auto_labeling"]["hf_models_objectdetection"]
                         wandb_project = "Data Engine Teacher"
                         config_file_path = "wandb_runs/teacher_config.json"
                         with open(config_file_path, "r") as file:
@@ -308,7 +309,12 @@ class WorkflowExecutor:
                                         config=wandb_config,
                                     )
 
-                                    teacher.train()
+                                    if mode == "train":
+                                        teacher.train()
+                                    elif mode == "inference":
+                                        teacher.inference()
+                                    else:
+                                        logging.error(f"Mode {mode} is not supported.")
                                     wandb_run.finish(exit_code=0)
 
                                 elif self.args.queue != None:
@@ -332,20 +338,19 @@ class WorkflowExecutor:
                                 continue
                     elif selected_model_source == "custom_codetr":
                         # Export dataset into the format Co-DETR expects
-                        export_dir = WORKFLOWS["train_teacher"]["custom_codetr"]["export_dataset_root"]
-                        container_tool = WORKFLOWS["train_teacher"]["custom_codetr"]["container_tool"]
-                        param_n_gpus = WORKFLOWS["train_teacher"]["custom_codetr"]["n_gpus"]
+                        export_dir = WORKFLOWS["auto_labeling"]["custom_codetr"]["export_dataset_root"]
+                        container_tool = WORKFLOWS["auto_labeling"]["custom_codetr"]["container_tool"]
+                        param_n_gpus = WORKFLOWS["auto_labeling"]["custom_codetr"]["n_gpus"]
                         teacher = TeacherCustomCoDETR(self.dataset, self.selected_dataset, self.dataset_info["v51_splits"], export_dir)
                         teacher.convert_data()
 
-                        codetr_configs = WORKFLOWS["train_teacher"]["custom_codetr"]["configs"]
+                        codetr_configs = WORKFLOWS["auto_labeling"]["custom_codetr"]["configs"]
                         for config in codetr_configs:
                             teacher.update_config_file(dataset_name=self.selected_dataset, config_file=config)
                             teacher.train(config, param_n_gpus, container_tool)
 
                     else:
                         logging.error(f"Selected model source {selected_model_source} is not supported.")
-
 
                 elif workflow == "zero_shot_teacher":
                     workflow_zero_shot_teacher(self.dataset, self.dataset_info)
