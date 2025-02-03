@@ -152,7 +152,7 @@ WORKFLOWS = {
     "mask_teacher": {
         "semantic_segmentation": {
             "sam2": {
-                "prompt_field": "detections",   # Field for bounding boxes in Fisheye8k dataset
+                "prompt_field": None,  # None or Voxel51 field with bbox detections
                 "models": [
                     "segment-anything-2-hiera-tiny-image-torch",
                     "segment-anything-2-hiera-small-image-torch",
