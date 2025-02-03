@@ -723,13 +723,14 @@ class TeacherHuggingFace:
             num_train_epochs=self.config["epochs"],
             fp16=False,
             per_device_train_batch_size=self.config["batch_size"],
-            auto_find_batch_size=True,  # Automates the lowering process if CUDA OOM
-            dataloader_num_workers=NUM_WORKERS,
+            auto_find_batch_size=True,
+            dataloader_num_workers=min(self.config["num_workers"],NUM_WORKERS),
             learning_rate=self.config["learning_rate"],
             lr_scheduler_type="cosine",
             weight_decay=self.config["weight_decay"],
             max_grad_norm=self.config["max_grad_norm"],
             metric_for_best_model="eval_loss",  # eval_map,
+            greater_is_better=False,
             load_best_model_at_end=True,
             eval_strategy="epoch",
             save_strategy="epoch",
@@ -756,6 +757,7 @@ class TeacherHuggingFace:
             # compute_metrics=eval_compute_metrics_fn, # TODO Write eval function
         )
 
+        logging.info(f"Starting training of model {self.model_name}.")
         trainer.train()
 
 class TeacherCustomCoDETR:
