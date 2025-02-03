@@ -73,7 +73,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         try:
             ground_truths = fiftyone_dataset.values(gt_field)
         except:
-            logging.info("Voxel51 dataset has no field named 'ground_truth'")
+            logging.info(f"Voxel51 dataset has no field named '{gt_field}'")
             ground_truths = None
         tags = fiftyone_dataset.values("tags")
 
@@ -87,7 +87,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
             if ground_truths and ground_truths[i]:  # Check if the ground truth exists for the sample
                 self.labels[sample_id] = ground_truths[i].detections
             if tags[i]:  # Check if the tags exist for the sample
-                self.splits[sample_id] = tags[i][0]  # Assume first tag is split
+                self.splits[sample_id] = tags[i][0]  # FIXME Assume first tag is split
 
     def __getitem__(self, idx):
         img_path = self.img_paths[idx]
@@ -136,115 +136,6 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
     def get_splits(self):
         return set(self.splits.values())
 
-
-class FiftyOneTorchDatasetCOCOFilepaths(torch.utils.data.Dataset):
-    """
-    A PyTorch Dataset class for loading data from a FiftyOne dataset with COCO-style annotations.
-
-    Args:
-        fiftyone_dataset (fiftyone.core.dataset.Dataset): The FiftyOne dataset to load.
-        transforms (callable, optional): A function/transform to apply to the images.
-        gt_field (str, optional): The name of the ground truth field in the FiftyOne dataset. Defaults to "ground_truth".
-
-    Attributes:
-        transforms (callable): The function/transform to apply to the images.
-        dataset_name (str): The name of the FiftyOne dataset.
-        classes (list): The list of class names in the FiftyOne dataset.
-        labels_map_rev (dict): A dictionary mapping class names to their corresponding indices.
-        dataset_length (int): The number of samples in the FiftyOne dataset.
-        ids_bytes (np.ndarray): An array of sample IDs in bytes format.
-        filepaths_bytes (np.ndarray): An array of filepaths in bytes format.
-        splits_bytes (np.ndarray): An array of split tags in bytes format.
-
-    Methods:
-        __getitem__(idx):
-            Retrieves the image and filepath at the specified index.
-
-            Args:
-                idx (int): The index of the sample to retrieve.
-
-            Returns:
-                tuple: A tuple containing the transformed image and its filepath.
-
-        __getitems__(indices):
-            Retrieves multiple items based on a list of indices.
-
-            Args:
-                indices (list): A list of indices of the samples to retrieve.
-
-            Returns:
-                list: A list of tuples, each containing a transformed image and its filepath.
-
-        __len__():
-            Returns the number of samples in the dataset.
-
-            Returns:
-                int: The number of samples in the dataset.
-
-        get_dataset_name():
-            Returns the name of the dataset.
-
-            Returns:
-                str: The name of the dataset.
-
-        get_classes():
-            Returns the list of class names in the dataset.
-
-            Returns:
-                list: The list of class names in the dataset.
-
-        get_splits():
-            Returns the set of unique split tags in the dataset.
-
-            Returns:
-                set: A set of unique split tags in the dataset.
-    """
-
-    def __init__(self, fiftyone_dataset, transforms=None, gt_field="ground_truth"):
-        self.transforms = transforms
-        self.dataset_name = fiftyone_dataset.name
-        self.classes = fiftyone_dataset.default_classes
-        self.labels_map_rev = {c: i for i, c in enumerate(self.classes)}
-        self.dataset_length = len(fiftyone_dataset)
-
-        ids = []
-        filepaths = []
-        splits = []
-        for sample in tqdm(fiftyone_dataset, desc="Processing Voxel51 dataset"):
-            ids.append(sample.id)
-            filepaths.append(sample.filepath)
-            splits.append(sample.tags[0])  # Assume split is first tag
-
-        # Store all data in np.arrays() to allow data_loaders with num_workers > 0
-        self.ids_bytes = np.array(ids).astype(np.bytes_)
-        self.filepaths_bytes = np.array(filepaths).astype(np.bytes_)
-        self.splits_bytes = np.array(splits).astype(np.bytes_)
-
-    def __getitem__(self, idx):
-        filepath_bytes = self.filepaths_bytes[idx]
-        filepath = filepath_bytes.decode("utf-8")
-        img = decode_image(filepath, mode="RGB")
-        if self.transforms:
-            img = self.transforms(img)
-        return img, filepath
-
-    def __getitems__(self, indices):
-        return [self.__getitem__(idx) for idx in indices]
-
-    def __len__(self):
-        return self.dataset_length
-
-    def get_dataset_name(self):
-        return self.dataset_name
-
-    def get_classes(self):
-        return self.classes
-
-    def get_splits(self):
-        splits = [split.decode("utf-8") for split in self.splits_bytes]
-        return set(splits)
-
-
 class TorchToHFDatasetCOCO:
     """
     A class to convert a PyTorch dataset to a Hugging Face dataset in COCO format.
@@ -274,15 +165,18 @@ class TorchToHFDatasetCOCO:
         self.torch_dataset = torch_dataset
 
     def convert(self):
-        splits = self.torch_dataset.get_splits()
-        hf_dataset = {
-            self.split_mapping[split]: Dataset.from_generator(
-                gen_factory(self.torch_dataset, split),
-                split=self.split_mapping[split],
-            )
-            for split in splits
-        }
-        return hf_dataset
+        try:
+            splits = self.torch_dataset.get_splits()
+            hf_dataset = {
+                self.split_mapping[split]: Dataset.from_generator(
+                    gen_factory(self.torch_dataset, split),
+                    split=self.split_mapping[split],
+                )
+                for split in splits
+            }
+            return hf_dataset
+        except Exception as e:
+            logging.error(f"Error in dataset conversion from Torch to Hugging Face: {e}")
 
 
 def gen_factory(torch_dataset, split_name):
