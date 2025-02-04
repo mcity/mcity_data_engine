@@ -29,8 +29,9 @@ from utils.logging import configure_logging
 from utils.mp_distribution import ZeroShotDistributer
 from utils.wandb_helper import launch_to_queue_terminal
 from workflows.ano_dec import Anodec
-from workflows.auto_labeling import (TeacherCustomCoDETR, TeacherHuggingFace,
-                                     ZeroShotTeacher)
+from workflows.auto_labeling import (CustomCoDETRObjectDetection,
+                                     HuggingFaceObjectDetection,
+                                     ZeroShotObjectDetection)
 from workflows.aws_download import AwsDownloader
 from workflows.brain import Brain
 from workflows.ensemble_exploration import EnsembleExploration
@@ -114,27 +115,27 @@ def workflow_brain_selection(dataset, dataset_info, MODEL_NAME):
 def workflow_auto_labeling():
     pass
 
-def workflow_zero_shot_teacher(dataset, dataset_info):
+def workflow_zero_shot_object_detection(dataset, dataset_info):
     # Set multiprocessing mode for CUDA multiprocessing
     try:
         mp.set_start_method("spawn")
     except:
         pass
-    # Zero-shot object detector teacher models from Huggingface
+    # Zero-shot object detector models from Huggingface
     # Optimized for parallel multi-GPU inference, also supports single GPU
-    config = WORKFLOWS["zero_shot_teacher"]
+    config = WORKFLOWS["auto_labeling_zero_shot"]
     dataset_torch = FiftyOneTorchDatasetCOCO(dataset)
-    teacher = ZeroShotTeacher(dataset_torch=dataset_torch, dataset_info=dataset_info, config=config)
+    detector = ZeroShotObjectDetection(dataset_torch=dataset_torch, dataset_info=dataset_info, config=config)
 
     # Check if model detections are already stored in V51 dataset or on disk
-    # TODO Think about config. Teacher already has it in init before it is processed, but does not use the hf_models. Could be more elegant.
-    models_splits_dict = teacher.exclude_stored_predictions(dataset_v51=dataset, config=config)
+    # TODO Think about config. Detector already has it in init before it is processed, but does not use the hf_models. Could be more elegant.
+    models_splits_dict = detector.exclude_stored_predictions(dataset_v51=dataset, config=config)
     if len(models_splits_dict) > 0:
         config["hf_models_zeroshot_objectdetection"] = models_splits_dict
-        distributor = ZeroShotDistributer(config=config, n_samples=len(dataset_torch), dataset_info=dataset_info, teacher=teacher)
+        distributor = ZeroShotDistributer(config=config, n_samples=len(dataset_torch), dataset_info=dataset_info, detector=detector)
         distributor.distribute_and_run()
     else:
-        logging.info("All teacher models already have predictions stored in the dataset.")
+        logging.info("All zero shot models already have predictions stored in the dataset.")
 
 def workflow_ensemble_exploration():
     pass
@@ -269,22 +270,22 @@ class WorkflowExecutor:
                         wandb_run.finish(exit_code=0)
 
                 elif workflow == "auto_labeling":
-                    logging.info("Teacher training with Hugging Face")
+                    logging.info("Model training with Hugging Face")
                     mode = WORKFLOWS["auto_labeling"]["mode"]
                     selected_model_source = WORKFLOWS["auto_labeling"]["model_source"]
 
                     if selected_model_source == "hf_models_objectdetection":
-                        teacher_models = WORKFLOWS["auto_labeling"]["hf_models_objectdetection"]
-                        wandb_project = "Data Engine Teacher"
-                        config_file_path = "wandb_runs/teacher_config.json"
+                        hf_models = WORKFLOWS["auto_labeling"]["hf_models_objectdetection"]
+                        wandb_project = "Data Engine Auto Labeling"
+                        config_file_path = "wandb_runs/auto_label_config.json"
                         with open(config_file_path, "r") as file:
                             config = json.load(file)
 
-                        # Train teacher models
-                        for MODEL_NAME in (pbar := tqdm(teacher_models, desc="Teacher Models")):
+                        # Train models
+                        for MODEL_NAME in (pbar := tqdm(hf_models, desc="Auto Labeling Models")):
                             wandb_run = None
                             try:
-                                pbar.set_description("Training/Loading Teacher model " + MODEL_NAME)
+                                pbar.set_description("Training model " + MODEL_NAME)
                                 config["overrides"]["run_config"]["model_name"] = MODEL_NAME
                                 config["overrides"]["run_config"]["v51_dataset_name"] = self.selected_dataset
                                 if self.args.queue == None:
@@ -293,7 +294,7 @@ class WorkflowExecutor:
                                         name=MODEL_NAME,
                                         allow_val_change=True,
                                         sync_tensorboard=True,
-                                        group="Teacher",
+                                        group="Auto Labeling HF",
                                         job_type="train",
                                         config=config,
                                         project=wandb_project,
@@ -304,15 +305,15 @@ class WorkflowExecutor:
                                         wandb_config["v51_dataset_name"],
                                         "local",
                                     )
-                                    teacher = TeacherHuggingFace(
+                                    detector = HuggingFaceObjectDetection(
                                         dataset=self.dataset,
                                         config=wandb_config,
                                     )
 
                                     if mode == "train":
-                                        teacher.train()
+                                        detector.train()
                                     elif mode == "inference":
-                                        teacher.inference()
+                                        detector.inference()
                                     else:
                                         logging.error(f"Mode {mode} is not supported.")
                                     wandb_run.finish(exit_code=0)
@@ -341,18 +342,19 @@ class WorkflowExecutor:
                         export_dir = WORKFLOWS["auto_labeling"]["custom_codetr"]["export_dataset_root"]
                         container_tool = WORKFLOWS["auto_labeling"]["custom_codetr"]["container_tool"]
                         param_n_gpus = WORKFLOWS["auto_labeling"]["custom_codetr"]["n_gpus"]
-                        teacher = TeacherCustomCoDETR(self.dataset, self.selected_dataset, self.dataset_info["v51_splits"], export_dir)
-                        teacher.convert_data()
+                        detector = CustomCoDETRObjectDetection(self.dataset, self.selected_dataset, self.dataset_info["v51_splits"], export_dir)
+                        detector.convert_data()
 
                         codetr_configs = WORKFLOWS["auto_labeling"]["custom_codetr"]["configs"]
                         for config in codetr_configs:
-                            teacher.update_config_file(dataset_name=self.selected_dataset, config_file=config)
-                            teacher.train(config, param_n_gpus, container_tool)
+                            detector.update_config_file(dataset_name=self.selected_dataset, config_file=config)
+                            detector.train(config, param_n_gpus, container_tool)
+
                     else:
                         logging.error(f"Selected model source {selected_model_source} is not supported.")
 
-                elif workflow == "zero_shot_teacher":
-                    workflow_zero_shot_teacher(self.dataset, self.dataset_info)
+                elif workflow == "auto_labeling_zero_shot":
+                    workflow_zero_shot_object_detection(self.dataset, self.dataset_info)
 
                 elif workflow == "ensemble_exploration":
                     wandb_project = "Data Engine Ensemble Exploration"

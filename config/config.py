@@ -72,7 +72,7 @@ WORKFLOWS = {
         ],
     },
     "auto_labeling": {
-        "mode": "inference",    # "train" or "inference"
+        "mode": "train",    # "train" or "inference"
         "model_source": "hf_models_objectdetection",    # Pick from one of the options below (hf_models_objectdetection, custom_codetr, ultralytics)
         "hf_models_objectdetection": [
             "microsoft/conditional-detr-resnet-50",
@@ -106,8 +106,8 @@ WORKFLOWS = {
         },
         "ultralytics": {}
     },
-    "zero_shot_teacher": {
-        "n_post_processing_worker_per_inference_worker": 2, 
+    "auto_labeling_zero_shot": {
+        "n_post_processing_worker_per_inference_worker": 2,
         "n_worker_dataloader": 3,
         "prefetch_factor_dataloader": 2,
         "hf_models_zeroshot_objectdetection": {

@@ -111,7 +111,7 @@ class ZeroShotInferenceCollateFn:
             # Adjustments for final batch
             n_images = len(images)
             if n_images < self.batch_size:
-                self.batch_classes = ZeroShotTeacher._get_batch_classes(self.hf_model_config_name, self.object_classes, n_images)
+                self.batch_classes = ZeroShotObjectDetection._get_batch_classes(self.hf_model_config_name, self.object_classes, n_images)
 
             # Apply PIL transformation for specific models
             if self.hf_model_config_name == "OmDetTurboConfig":
@@ -128,7 +128,7 @@ class ZeroShotInferenceCollateFn:
         except Exception as e:
             logging.error(f"Error in collate function of DataLoader: {e}")
 
-class ZeroShotTeacher:
+class ZeroShotObjectDetection:
     def __init__(self, dataset_torch: torch.utils.data.Dataset, dataset_info, config, detections_path="./output/detections/", log_root="./logs/"):
         self.dataset_torch = dataset_torch
         self.dataset_info = dataset_info
@@ -136,7 +136,7 @@ class ZeroShotTeacher:
         self.object_classes = config["object_classes"]
         self.detection_threshold = config["detection_threshold"]
         self.detections_root = os.path.join(detections_path, self.dataset_name)
-        self.tensorboard_root = os.path.join(log_root, "tensorboard/teacher_zeroshot")
+        self.tensorboard_root = os.path.join(log_root, "tensorboard/zeroshot_object_detection")
 
         logging.info(f"Zero-shot models will look for {self.object_classes}")
 
@@ -205,7 +205,7 @@ class ZeroShotTeacher:
         wandb.init(
             name=f"queue_size_monitor_{os.getpid()}",
             job_type="inference",
-            project="Zero Shot Teacher",
+            project="Zero Shot Object Detection",
         )
         writer = SummaryWriter(log_dir=log_directory)
 
@@ -255,7 +255,7 @@ class ZeroShotTeacher:
         wandb.init(
             name=f"post_process_{os.getpid()}",
             job_type="inference",
-            project="Zero Shot Teacher",
+            project="Zero Shot Object Detection",
         )
         writer = SummaryWriter(log_dir=log_directory)
         n_processed_images = 0
@@ -398,7 +398,7 @@ class ZeroShotTeacher:
             hf_model_config_name = type(hf_model_config).__name__
             logging.info(f"Loaded model type {hf_model_config_name}")
 
-            batch_classes = ZeroShotTeacher._get_batch_classes(hf_model_config_name=hf_model_config_name, object_classes=object_classes, batch_size=batch_size)
+            batch_classes = ZeroShotObjectDetection._get_batch_classes(hf_model_config_name=hf_model_config_name, object_classes=object_classes, batch_size=batch_size)
 
             # Dataloader
             logging.info("Generating dataloader")
@@ -411,8 +411,8 @@ class ZeroShotTeacher:
                 dataset = Subset(dataset, range(chunk_index_start, chunk_index_end))
 
             zero_shot_inference_preprocessing = ZeroShotInferenceCollateFn(hf_model_config_name=hf_model_config_name, hf_processor=processor, object_classes=object_classes, batch_size=batch_size, batch_classes=batch_classes)
-            num_workers = WORKFLOWS["zero_shot_teacher"]["n_worker_dataloader"]
-            prefetch_factor = WORKFLOWS["zero_shot_teacher"]["prefetch_factor_dataloader"]
+            num_workers = WORKFLOWS["auto_labeling_zero_shot"]["n_worker_dataloader"]
+            prefetch_factor = WORKFLOWS["auto_labeling_zero_shot"]["prefetch_factor_dataloader"]
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, persistent_workers=persistent_workers, pin_memory=True, prefetch_factor=prefetch_factor, collate_fn=zero_shot_inference_preprocessing)
 
             dataloader_length = len(dataloader)
@@ -426,7 +426,7 @@ class ZeroShotTeacher:
             wandb.init(
                 name=f"{model_name}_{device}",
                 job_type="inference",
-                project="Zero Shot Teacher",
+                project="Zero Shot Object Detection",
                 config=metadata,
             )
             writer = SummaryWriter(log_dir=log_directory)
@@ -636,7 +636,7 @@ class ZeroShotTeacher:
         )
         return True
 
-class TeacherHuggingFace:
+class HuggingFaceObjectDetection:
     def __init__(self, dataset, config=None, detections_path="./output/detections/"):
         self.dataset = dataset
         self.config = config
@@ -722,7 +722,7 @@ class TeacherHuggingFace:
 
         training_args = TrainingArguments(
             run_name=self.model_name,
-            output_dir="output/models/teacher/" + self.model_name,
+            output_dir="output/models/object_detection_hf/" + self.model_name,
             num_train_epochs=self.config["epochs"],
             fp16=True,
             per_device_train_batch_size=self.config["batch_size"],
@@ -768,7 +768,7 @@ class TeacherHuggingFace:
 
     def inference(self):
         device = "cuda:0"
-        folder_path_model="/home/dbogdoll/mcity_data_engine/output/models/teacher/microsoft/conditional-detr-resnet-50/checkpoint-26440"
+        folder_path_model="/home/dbogdoll/mcity_data_engine/output/models/object_detection_hf/microsoft/conditional-detr-resnet-50/checkpoint-26440"
 
         image_processor = AutoProcessor.from_pretrained(
             folder_path_model,
@@ -826,7 +826,7 @@ class TeacherHuggingFace:
                 sample[pred_key] = fo.Detections(detections=detections)
                 sample.save()
 
-class TeacherCustomCoDETR:
+class CustomCoDETRObjectDetection:
     def __init__(self, dataset, dataset_name, splits, export_dir_root):
         self.root_codetr = "./custom_models/CoDETR/Co-DETR"
         self.dataset = dataset
@@ -935,9 +935,9 @@ class TeacherCustomCoDETR:
                 self._run_container(volume_data=volume_data, param_function="clear-output", param_config=param_config, param_dataset_name=self.dataset_name, container_tool=container_tool, )
 
     def run_inference(self, param_config, param_n_gpus, container_tool, param_function="inference"):
-        logging.info(f"Launching inference for Co-DETR config {param_config}.")
-        volume_data = os.path.join(self.export_dir_root, self.dataset_name)
-        inference_result = self._run_container(volume_data=volume_data, param_function=param_function, param_config=param_config, param_n_gpus=param_n_gpus, container_tool=container_tool)
+            logging.info(f"Launching inference for Co-DETR config {param_config}.")
+            volume_data = os.path.join(self.export_dir_root, self.dataset_name)
+            inference_result = self._run_container(volume_data=volume_data, param_function=param_function, param_config=param_config, param_n_gpus=param_n_gpus, container_tool=container_tool)
 
     def _run_container(self, volume_data, param_function, param_config, param_n_gpus="1", param_dataset_name="default_dataset", image="dbogdollresearch/codetr", workdir = "/launch", container_tool="docker"):
         try:

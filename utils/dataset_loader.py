@@ -28,18 +28,10 @@ def _separate_split(dataset, current_split, new_split, split_ratio=2):
     view_current_split = dataset.match_tags(current_split)
     n_samples_current_split = len(view_current_split)
     view_new_split = view_current_split.take(int(n_samples_current_split/split_ratio), seed = GLOBAL_SEED)
-    temp_test_tag = f"temp_{new_split}"
-    view_new_split.tag_samples(temp_test_tag)
+    view_new_split.tag_samples(new_split)
+    view_new_split.untag_samples(current_split)
 
-    # Select data with temporary split
-    # Necessary as tag-based views change if tags get removed
-    view_new_split_temp = dataset.match_tags(temp_test_tag)
-    view_new_split_temp.untag_samples(current_split)
-    view_new_split_temp.tag_samples(new_split)
-
-    # Cleanup dataset
-    dataset.untag_samples(temp_test_tag)
-
+    # Get number of samples in each split
     view_current_split_changed = dataset.match_tags(current_split)
     n_samples_current_split_changed = len(view_current_split_changed)
     view_new_split = dataset.match_tags(new_split)

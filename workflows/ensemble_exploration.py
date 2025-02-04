@@ -81,7 +81,7 @@ class EnsembleExploration:
         # Get V51 fields that store detection results
         self.v51_detection_fields = []
         dataset_schema = self.dataset.get_field_schema()
-        pred_prefix = "pred_"  # Assume teacher workflow was used for detections
+        pred_prefix = "pred_"  # Assume object detection workflow was used for detections
         for field in dataset_schema:
             if pred_prefix in field:
                 self.v51_detection_fields.append(field)
@@ -105,7 +105,7 @@ class EnsembleExploration:
                 f"Number of detection models used ({len(self.v51_detection_fields)}) is less than the agreement threshold ({self.agreement_threshold}). No agreements will be possible."
             )
             logging.warning(
-                "Detections can be generated with the workflow `zero_shot_teacher`"
+                "Detections can be generated with the workflow `auto_labeling_zero_shot`"
             )
 
         # Get filtered V51 view for faster processing
@@ -160,7 +160,7 @@ class EnsembleExploration:
             None
         """
 
-        writer = SummaryWriter(log_dir="logs/tensorboard/teacher_zeroshot")
+        writer = SummaryWriter(log_dir="logs/tensorboard/ensemble_exploration")
 
         # Get detections from V51 with efficient "values" method
         samples_detections = []  # List of lists of list [model][sample][detections]
