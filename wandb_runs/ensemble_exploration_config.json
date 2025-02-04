@@ -2,7 +2,7 @@
     "overrides": {
         "entry_point": [
             "python",
-            "wandb_runs/teacher_zero_shot_run.py"
+            "wandb_runs/auto_label_zero_shot_run.py"
         ],
         "run_config": {
             "agreement_threshold": 3,

@@ -2,16 +2,13 @@ import logging
 
 import wandb
 
-from utils.dataset_loader import (
-    load_dataset_info,
-    load_fisheye_8k,
-    load_mars_multiagent,
-    load_mars_multitraversal,
-    load_mcity_fisheye_3_months,
-    load_mcity_fisheye_2000,
-)
+from utils.dataset_loader import (load_dataset_info, load_fisheye_8k,
+                                  load_mars_multiagent,
+                                  load_mars_multitraversal,
+                                  load_mcity_fisheye_3_months,
+                                  load_mcity_fisheye_2000)
 from utils.logging import configure_logging
-from workflows.teacher import Teacher
+from workflows.auto_labeling import HuggingFaceObjectDetection
 
 
 def main():
@@ -20,7 +17,7 @@ def main():
     run = wandb.init(
         allow_val_change=True,
         sync_tensorboard=True,
-        group="Teacher",
+        group="Hugging Face Object Detection",
         job_type="train",
     )
     config = wandb.config
@@ -38,11 +35,11 @@ def main():
         )
 
     # Train with Huggingface Trainer
-    teacher = Teacher(
+    detector = HuggingFaceObjectDetection(
         dataset=dataset,
         config=config,
     )
-    teacher.train()
+    detector.train()
 
 
 if __name__ == "__main__":

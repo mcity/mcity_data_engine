@@ -30,7 +30,7 @@ class Brain:
         self.brains = dataset.list_brain_runs()
         self.dataset_name = dataset_info["name"]
         self.v51_model_zoo = foz.list_zoo_models()
-        self.writer = SummaryWriter(log_dir="logs/tensorboard/teacher_zeroshot")
+        self.writer = SummaryWriter(log_dir="logs/tensorboard/brain")
 
         # Model
         if model_name not in self.v51_model_zoo:
