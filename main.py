@@ -85,7 +85,7 @@ def workflow_aws_download():
         logging.error(f"AWS Download and Extraction failed: {e}")
         if wandb_run:
             wandb_run.finish(exit_code=1)
-    
+
     return dataset, dataset_name
 
 def workflow_anomaly_detection():
@@ -125,7 +125,7 @@ def workflow_zero_shot_teacher(dataset, dataset_info):
     config = WORKFLOWS["zero_shot_teacher"]
     dataset_torch = FiftyOneTorchDatasetCOCO(dataset)
     teacher = ZeroShotTeacher(dataset_torch=dataset_torch, dataset_info=dataset_info, config=config)
-    
+
     # Check if model detections are already stored in V51 dataset or on disk
     # TODO Think about config. Teacher already has it in init before it is processed, but does not use the hf_models. Could be more elegant.
     models_splits_dict = teacher.exclude_stored_predictions(dataset_v51=dataset, config=config)
