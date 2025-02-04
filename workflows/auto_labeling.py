@@ -111,7 +111,7 @@ class ZeroShotInferenceCollateFn:
             # Adjustments for final batch
             n_images = len(images)
             if n_images < self.batch_size:
-                self.batch_classes = ZeroShotTeacher._get_batch_classes(self.hf_model_config_name, self.object_classes, n_images)                
+                self.batch_classes = ZeroShotTeacher._get_batch_classes(self.hf_model_config_name, self.object_classes, n_images)
 
             # Apply PIL transformation for specific models
             if self.hf_model_config_name == "OmDetTurboConfig":
@@ -151,7 +151,7 @@ class ZeroShotTeacher:
             batch_classes = object_classes * batch_size
         else:
             logging.error(f"Invalid model name: {hf_model_config_name}")
-        
+
         return batch_classes
 
     def exclude_stored_predictions(self, dataset_v51: fo.Dataset, config):
@@ -188,7 +188,7 @@ class ZeroShotTeacher:
                     )
                 finally:
                     fo.delete_dataset("temp_dataset")
-            # Assign model to be run             
+            # Assign model to be run
             else:
                 models_splits_dict[model_name] = value
 
@@ -214,7 +214,7 @@ class ZeroShotTeacher:
         while True:
             for i, queue in enumerate(queues):
                 queue_sizes[i] = queue.qsize()
-                writer.add_scalar(f'queue_size/items/{i}', queue_sizes[i], step)  
+                writer.add_scalar(f'queue_size/items/{i}', queue_sizes[i], step)
 
             step += 1
 
@@ -229,10 +229,10 @@ class ZeroShotTeacher:
             if total_size > 0:
                 # Normalize the queue sizes by the max_queue_size
                 normalized_sizes = [size / max_queue_size for size in queue_sizes]
-                
+
                 # Calculate probabilities based on normalized sizes
                 probabilities = [size / sum(normalized_sizes) for size in normalized_sizes]
-                
+
                 # Use random.choices with weights (probabilities)
                 chosen_queue_index = random.choices(range(len(queues)), weights=probabilities, k=1)[0]
 
@@ -244,7 +244,7 @@ class ZeroShotTeacher:
 
     def process_outputs_worker(self, result_queues, result_queues_sizes, largest_queue_index, inference_finished, queue_warning_threshold=5):
         configure_logging()
-        logging.info(f"Process ID: {os.getpid()}. Results processing process started")    
+        logging.info(f"Process ID: {os.getpid()}. Results processing process started")
         dataset_v51 = fo.load_dataset(self.dataset_name)
         processing_successful = None
 
@@ -260,7 +260,7 @@ class ZeroShotTeacher:
         writer = SummaryWriter(log_dir=log_directory)
         n_processed_images = 0
 
-        logging.info(f"Post-Processor {os.getpid()} starting loop.")    
+        logging.info(f"Post-Processor {os.getpid()} starting loop.")
 
         while True:
             results_queue = result_queues[largest_queue_index.value]
@@ -280,7 +280,7 @@ class ZeroShotTeacher:
 
                     result = results_queue.get_nowait()
                     #result = results_queue.get(block=True, timeout=0.5)
-                    
+
                     processing_successful = self.process_outputs(dataset_v51, result, self.object_classes)
 
                     # Performance logging
@@ -290,20 +290,20 @@ class ZeroShotTeacher:
                     batches_per_second = 1 / duration
                     frames_per_second = batches_per_second * n_images
                     n_processed_images += n_images
-                    writer.add_scalar(f'post_processing/frames_per_second', frames_per_second, n_processed_images)  
+                    writer.add_scalar(f'post_processing/frames_per_second', frames_per_second, n_processed_images)
 
                     del result   # Explicit removal from device
 
                 except Exception as e:
                     continue
-                
+
             else:
                 continue
-        
+
         writer.close()
         wandb.finish(exit_code=0)
         return processing_successful    # Return last processing status
-    
+
     def gpu_worker(self, gpu_id, cpu_cores, task_queue, results_queue, done_event, post_processing_finished, set_cpu_affinity=False):
         dataset_v51 = fo.load_dataset(self.dataset_name)    # NOTE Only for the case of sequential processing
         configure_logging()
@@ -314,11 +314,11 @@ class ZeroShotTeacher:
         logging.info(f"Available CPU cores: {psutil.Process().cpu_affinity()}")
         max_n_cpus = len(cpu_cores)
         torch.set_num_threads(max_n_cpus)
-        
+
         # Set GPU
         logging.info(f"GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)}")
-        device = torch.device(f"cuda:{gpu_id}")        
-        
+        device = torch.device(f"cuda:{gpu_id}")
+
         run_successful = None
         with torch.cuda.device(gpu_id):
             while True:
@@ -342,7 +342,7 @@ class ZeroShotTeacher:
 
     def eval_and_export_worker(self, models_ready_queue, n_models):
         configure_logging()
-        logging.info(f"Process ID: {os.getpid()}. Eval-and-export process started")  
+        logging.info(f"Process ID: {os.getpid()}. Eval-and-export process started")
 
         dataset = fo.load_dataset(self.dataset_name)
         run_successful = None
@@ -385,8 +385,8 @@ class ZeroShotTeacher:
             dataset_name = metadata["dataset_name"]
             is_subset = metadata["is_subset"]
             batch_size = metadata["batch_size"]
-            
-            logging.info(f"Process ID: {os.getpid()}, Run ID: {run_id}, Device: {device}, Model: {model_name}")        
+
+            logging.info(f"Process ID: {os.getpid()}, Run ID: {run_id}, Device: {device}, Model: {model_name}")
 
             # Load the model
             logging.info(f"Loading model {model_name}")
@@ -397,7 +397,7 @@ class ZeroShotTeacher:
             hf_model_config = AutoConfig.from_pretrained(model_name)
             hf_model_config_name = type(hf_model_config).__name__
             logging.info(f"Loaded model type {hf_model_config_name}")
-            
+
             batch_classes = ZeroShotTeacher._get_batch_classes(hf_model_config_name=hf_model_config_name, object_classes=object_classes, batch_size=batch_size)
 
             # Dataloader
@@ -409,7 +409,7 @@ class ZeroShotTeacher:
                 logging.info(f"Subset start index: {chunk_index_start}")
                 logging.info(f"Subset stop index: {chunk_index_end}")
                 dataset = Subset(dataset, range(chunk_index_start, chunk_index_end))
-            
+
             zero_shot_inference_preprocessing = ZeroShotInferenceCollateFn(hf_model_config_name=hf_model_config_name, hf_processor=processor, object_classes=object_classes, batch_size=batch_size, batch_classes=batch_classes)
             num_workers = WORKFLOWS["zero_shot_teacher"]["n_worker_dataloader"]
             prefetch_factor = WORKFLOWS["zero_shot_teacher"]["prefetch_factor_dataloader"]
@@ -466,8 +466,8 @@ class ZeroShotTeacher:
                     frames_per_second = batches_per_second * n_images
                     n_processed_images += n_images
                     logging.debug(f"{os.getpid()}: Number of processes images: {n_processed_images}")
-                    writer.add_scalar(f'inference/frames_per_second', frames_per_second, n_processed_images)    
-            
+                    writer.add_scalar(f'inference/frames_per_second', frames_per_second, n_processed_images)
+
                 except TimeoutException:
                     logging.warning(f"Dataloader loop got stuck. Continuing with next batch.")
                     continue
@@ -477,7 +477,7 @@ class ZeroShotTeacher:
 
             # Flawless execution
             wandb.finish(exit_code=0)
-        
+
         except Exception as e:
             run_successful = False
             wandb.finish(exit_code=1)
@@ -489,7 +489,7 @@ class ZeroShotTeacher:
             if writer:
                 writer.close()
             return run_successful
-    
+
     def process_outputs(self, dataset_v51, result, object_classes, detection_threshold=0.2):
         try:
             inputs = result["inputs"]
@@ -566,7 +566,7 @@ class ZeroShotTeacher:
                             else:
                                 logging.warning(f"Skipped detection with {hf_model_config_name} due to unclear output: {label}")
                                 processing_successful = False
-                                
+
 
                     elif hf_model_config_name in [
                         "Owlv2Config",

@@ -29,11 +29,11 @@ from utils.logging import configure_logging
 from utils.mp_distribution import ZeroShotDistributer
 from utils.wandb_helper import launch_to_queue_terminal
 from workflows.ano_dec import Anodec
+from workflows.auto_labeling import (TeacherCustomCoDETR, TeacherHuggingFace,
+                                     ZeroShotTeacher)
 from workflows.aws_download import AwsDownloader
 from workflows.brain import Brain
 from workflows.ensemble_exploration import EnsembleExploration
-from workflows.teacher import (TeacherCustomCoDETR, TeacherHuggingFace,
-                               ZeroShotTeacher)
 
 
 def signal_handler(sig, frame):
