@@ -7,5 +7,7 @@
     }
     },
     "git.autofetch": true,
-    "editor.minimap.enabled": false
+    "editor.minimap.enabled": false,
+    "files.trimFinalNewlines": true,
+    "files.trimTrailingWhitespace": true
   }
