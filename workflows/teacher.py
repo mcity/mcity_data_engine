@@ -33,7 +33,7 @@ from transformers.utils.generic import is_torch_device
 from transformers.utils.import_utils import (is_torch_available,
                                              requires_backends)
 
-from config.config import NUM_WORKERS, WORKFLOWS
+from config.config import GLOBAL_SEED, NUM_WORKERS, WORKFLOWS
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.logging import configure_logging
 
@@ -724,7 +724,7 @@ class TeacherHuggingFace:
             run_name=self.model_name,
             output_dir="output/models/teacher/" + self.model_name,
             num_train_epochs=self.config["epochs"],
-            fp16=False,
+            fp16=True,
             per_device_train_batch_size=self.config["batch_size"],
             auto_find_batch_size=True,
             dataloader_num_workers=min(self.config["num_workers"],NUM_WORKERS),
@@ -736,12 +736,13 @@ class TeacherHuggingFace:
             greater_is_better=False,
             load_best_model_at_end=True,
             eval_strategy="epoch",
-            save_strategy="epoch",
-            save_total_limit=2,
+            save_strategy="best",
+            save_total_limit=1, # Possible that two checkpoints are saved: the last one and the best one (if they are different)
             remove_unused_columns=False,
             eval_do_concat_batches=False,
             save_safetensors=False,
             push_to_hub=False,
+            data_seed=GLOBAL_SEED
         )
 
         early_stopping_callback = EarlyStoppingCallback(
@@ -767,7 +768,7 @@ class TeacherHuggingFace:
 
     def inference(self):
         device = "cuda:0"
-        folder_path_model="/home/dbogdoll/mcity_data_engine/output/models/teacher/microsoft/conditional-detr-resnet-50/checkpoint-37016"
+        folder_path_model="/home/dbogdoll/mcity_data_engine/output/models/teacher/microsoft/conditional-detr-resnet-50/checkpoint-26440"
 
         image_processor = AutoProcessor.from_pretrained(
             folder_path_model,
