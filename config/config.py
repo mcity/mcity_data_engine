@@ -93,6 +93,13 @@ WORKFLOWS = {
             #"jozhang97/deta-resnet-50",
             #"jozhang97/deta-resnet-50-24-epochs",
             #"hustvl/yolos-base",
+            #"IDEA-Research/dab-detr-resnet-50",    # TODO DAB-DETR needs to be tested
+            #"IDEA-Research/dab-detr-resnet-50-pat3",
+            #"IDEA-Research/dab-detr-resnet-50-dc5",
+            #"IDEA-Research/dab-detr-resnet-50-dc5-fixxy",
+            #"IDEA-Research/dab-detr-resnet-50-dc5-pat3",
+
+
         ],
         "custom_codetr": {
             "train_model": True,    # Set false if model file should be loaded without training
