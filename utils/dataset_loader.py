@@ -15,7 +15,7 @@ from config.config import ACCEPTED_SPLITS, GLOBAL_SEED, NUM_WORKERS, PERSISTENT
 def get_split(v51_sample: Union[fo.core.sample.Sample, List[str]]) -> str:
 
     if isinstance(v51_sample, fo.core.sample.Sample):
-        sample_tags = v51_sample.tags()
+        sample_tags = v51_sample.tags
     elif isinstance(v51_sample, list):
         sample_tags = v51_sample
     else:
