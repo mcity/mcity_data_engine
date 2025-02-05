@@ -3,12 +3,13 @@
 import logging
 
 import fiftyone.utils.coco as fouc
-import numpy as np
 import torch
 from datasets import Dataset, Split
 from torch.multiprocessing import Manager
 from torchvision.io import decode_image
 from tqdm import tqdm
+
+from utils.dataset_loader import get_split
 
 
 class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
@@ -78,22 +79,28 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         tags = fiftyone_dataset.values("tags")
 
         # Process all samples with values() in place of the loop
-        for i, sample_id in tqdm(enumerate(ids), total=len(ids), desc="Generating torch dataset from Voxel51 dataset"):
+        for i, sample_id in tqdm(
+            enumerate(ids),
+            total=len(ids),
+            desc="Generating torch dataset from Voxel51 dataset",
+        ):
             self.img_paths.append(img_paths[i])
             self.ids.append(sample_id)  # Store the sample ID
             self.metadata.append(metadata[i])
 
             # Extract labels and splits for each sample
-            if ground_truths and ground_truths[i]:  # Check if the ground truth exists for the sample
+            if (
+                ground_truths and ground_truths[i]
+            ):  # Check if the ground truth exists for the sample
                 self.labels[sample_id] = ground_truths[i].detections
             if tags[i]:  # Check if the tags exist for the sample
-                self.splits[sample_id] = tags[i][0]  # FIXME Assume first tag is split
+                self.splits[sample_id] = get_split(tags[i])
 
     def __getitem__(self, idx):
         img_path = self.img_paths[idx]
         img_id = self.ids[idx]
         metadata = self.metadata[idx]
-        detections = self.labels.get(idx, [])
+        detections = self.labels.get(img_id, [])
         img = decode_image(img_path, mode="RGB")
         boxes = []
         labels = []
@@ -107,8 +114,8 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
                 metadata,
                 category_id=category_id,
             )
-            x, y, w, h = coco_obj.bbox
-            boxes.append([x, y, w, h])
+            x_min, y_min, w, h = coco_obj.bbox  # Relative coordinates between [0, 1]
+            boxes.append([x_min, y_min, w, h])
             labels.append(coco_obj.category_id)
             area.append(coco_obj.area)
             iscrowd.append(coco_obj.iscrowd)
@@ -118,7 +125,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
             "category_id": torch.as_tensor(labels, dtype=torch.int64),
             "image_id": img_id,
             "area": torch.as_tensor(area, dtype=torch.float32),
-            "iscrowd": torch.as_tensor(iscrowd, dtype=torch.int64)
+            "iscrowd": torch.as_tensor(iscrowd, dtype=torch.int64),
         }
         if self.transforms:
             img = self.transforms(img)
@@ -135,6 +142,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
 
     def get_splits(self):
         return set(self.splits.values())
+
 
 class TorchToHFDatasetCOCO:
     """
@@ -176,7 +184,9 @@ class TorchToHFDatasetCOCO:
             }
             return hf_dataset
         except Exception as e:
-            logging.error(f"Error in dataset conversion from Torch to Hugging Face: {e}")
+            logging.error(
+                f"Error in dataset conversion from Torch to Hugging Face: {e}"
+            )
 
 
 def gen_factory(torch_dataset, split_name):

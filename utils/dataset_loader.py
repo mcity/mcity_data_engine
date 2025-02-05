@@ -2,13 +2,37 @@ import datetime
 import logging
 import os
 import re
+from typing import List, Union
 
 import fiftyone as fo
 import yaml
 from fiftyone.utils.huggingface import load_from_hub
 from nuscenes.nuscenes import NuScenes
 
-from config.config import GLOBAL_SEED, NUM_WORKERS, PERSISTENT
+from config.config import ACCEPTED_SPLITS, GLOBAL_SEED, NUM_WORKERS, PERSISTENT
+
+
+def get_split(v51_sample: Union[fo.core.sample.Sample, List[str]]) -> str:
+
+    if isinstance(v51_sample, fo.core.sample.Sample):
+        sample_tags = v51_sample.tags()
+    elif isinstance(v51_sample, list):
+        sample_tags = v51_sample
+    else:
+        logging.error(
+            f"Type {isinstance(v51_sample)} is not supported for split retrieval."
+        )
+
+    found_splits = [split for split in ACCEPTED_SPLITS if split in sample_tags]
+
+    if len(found_splits) == 0:
+        logging.error(f"No split found in sample tags: '{sample_tags}'")
+        return None
+    elif len(found_splits) > 1:
+        logging.error(f"Multiple splits found in sample tags: '{found_splits}'")
+        return None
+    else:
+        return found_splits[0]
 
 
 def _separate_split(dataset, current_split, new_split, split_ratio=2):
@@ -27,7 +51,9 @@ def _separate_split(dataset, current_split, new_split, split_ratio=2):
     # Select samples for split change
     view_current_split = dataset.match_tags(current_split)
     n_samples_current_split = len(view_current_split)
-    view_new_split = view_current_split.take(int(n_samples_current_split/split_ratio), seed = GLOBAL_SEED)
+    view_new_split = view_current_split.take(
+        int(n_samples_current_split / split_ratio), seed=GLOBAL_SEED
+    )
     view_new_split.tag_samples(new_split)
     view_new_split.untag_samples(current_split)
 
@@ -39,6 +65,7 @@ def _separate_split(dataset, current_split, new_split, split_ratio=2):
 
     return n_samples_current_split, n_samples_current_split_changed, n_samples_new_split
 
+
 def _align_splits(dataset):
     # Get dataset tags related to splits
     SUPPORTED_SPLITS = ["train", "training", "val", "validation", "test", "testing"]
@@ -46,11 +73,7 @@ def _align_splits(dataset):
     splits = [tag for tag in tags if tag in SUPPORTED_SPLITS]
 
     # Rename splits if necessary
-    rename_mapping = {
-        "training": "train",
-        "validation": "val",
-        "testing": "test"
-    }
+    rename_mapping = {"training": "train", "validation": "val", "testing": "test"}
 
     for old_tag, new_tag in rename_mapping.items():
         if old_tag in splits:
@@ -59,12 +82,24 @@ def _align_splits(dataset):
 
     # If only val or only test, create val and test splits
     if "val" in splits and "test" not in splits:
-        n_samples_current_split, n_samples_current_split_changed, n_samples_new_split = _separate_split(dataset, current_split="val", new_split="test")
-        logging.warning(f"Dataset had no 'test' split. Split {n_samples_current_split} 'val' into {n_samples_current_split_changed} 'val' and {n_samples_new_split} 'test'.")
+        (
+            n_samples_current_split,
+            n_samples_current_split_changed,
+            n_samples_new_split,
+        ) = _separate_split(dataset, current_split="val", new_split="test")
+        logging.warning(
+            f"Dataset had no 'test' split. Split {n_samples_current_split} 'val' into {n_samples_current_split_changed} 'val' and {n_samples_new_split} 'test'."
+        )
 
     elif "test" in splits and "val" not in splits:
-        n_samples_current_split, n_samples_current_split_changed, n_samples_new_split = _separate_split(dataset, current_split="test", new_split="val")
-        logging.warning(f"Dataset had no 'val' split. Split {n_samples_current_split} 'test' into {n_samples_current_split_changed} 'val' and {n_samples_new_split} 'test'.")
+        (
+            n_samples_current_split,
+            n_samples_current_split_changed,
+            n_samples_new_split,
+        ) = _separate_split(dataset, current_split="test", new_split="val")
+        logging.warning(
+            f"Dataset had no 'val' split. Split {n_samples_current_split} 'test' into {n_samples_current_split_changed} 'val' and {n_samples_new_split} 'test'."
+        )
 
     # If only val and no test, rename val to test
     if "val" in splits and "test" not in splits:
@@ -72,31 +107,52 @@ def _align_splits(dataset):
         splits = [tag if tag != "val" else "test" for tag in splits]
 
     # If train exists, val/test should also exist. If val/test exists, train should also exist
-    if ("train" in splits and "test" not in splits and "val" not in splits) or \
-       (("test" in splits or "val" in splits) and "train" not in splits):
-        logging.warning(f"Inconsistent splits {splits}: 'train' should exist if 'val' or 'test' exists, and vice versa.")
+    if ("train" in splits and "test" not in splits and "val" not in splits) or (
+        ("test" in splits or "val" in splits) and "train" not in splits
+    ):
+        logging.warning(
+            f"Inconsistent splits {splits}: 'train' should exist if 'val' or 'test' exists, and vice versa."
+        )
 
     # Logging of available splits
     tags = dataset.distinct("tags")
-    ACCEPTED_SPLITS = ["train", "val", "test"]
     splits = [tag for tag in tags if tag in ACCEPTED_SPLITS]
     logging.info(f"Available splits: {splits}")
 
     return splits
 
-def _align_ground_truth(dataset, gt_field = "ground_truth"):
+
+def _align_ground_truth(dataset, gt_field="ground_truth"):
 
     dataset_fields = dataset.get_field_schema()
     if gt_field not in dataset_fields:
-        FIFTYONE_DEFAULT_FIELDS = ["id", "filepath", "tags", "metadata", "created_at", "last_modified_at"]
-        non_default_fields = {k: v for k, v in dataset_fields.items() if k not in FIFTYONE_DEFAULT_FIELDS}
-        label_fields = {k: v for k, v in non_default_fields.items() if isinstance(v, fo.EmbeddedDocumentField) and issubclass(v.document_type, fo.core.labels.Label)}
+        FIFTYONE_DEFAULT_FIELDS = [
+            "id",
+            "filepath",
+            "tags",
+            "metadata",
+            "created_at",
+            "last_modified_at",
+        ]
+        non_default_fields = {
+            k: v for k, v in dataset_fields.items() if k not in FIFTYONE_DEFAULT_FIELDS
+        }
+        label_fields = {
+            k: v
+            for k, v in non_default_fields.items()
+            if isinstance(v, fo.EmbeddedDocumentField)
+            and issubclass(v.document_type, fo.core.labels.Label)
+        }
         if len(label_fields) == 1:
             gt_label_old = next(iter(label_fields))
             dataset.rename_sample_field(gt_label_old, gt_field)
-            logging.warning(f"Label field '{gt_label_old}' renamed to '{gt_field}' for training.")
+            logging.warning(
+                f"Label field '{gt_label_old}' renamed to '{gt_field}' for training."
+            )
         elif len(label_fields) > 1:
-            logging.warning(f"The dataset has {len(label_fields)} fields with detections: {label_fields}. Rename one to {gt_field} with the command 'dataset.rename_sample_field(<field>, {gt_field})' to use it for training.")
+            logging.warning(
+                f"The dataset has {len(label_fields)} fields with detections: {label_fields}. Rename one to {gt_field} with the command 'dataset.rename_sample_field(<field>, {gt_field})' to use it for training."
+            )
 
 
 def _post_process_dataset(dataset):
@@ -114,6 +170,7 @@ def _post_process_dataset(dataset):
     _align_ground_truth(dataset)
 
     return dataset
+
 
 def load_dataset_info(dataset_name, config_path="./config/datasets.yaml"):
     """
@@ -138,6 +195,7 @@ def load_dataset_info(dataset_name, config_path="./config/datasets.yaml"):
     else:
         return None
 
+
 def load_annarbor_rolling(dataset_info):
     dataset_name = dataset_info["name"]
     dataset_dir = dataset_info["local_path"]
@@ -154,6 +212,7 @@ def load_annarbor_rolling(dataset_info):
         )
 
     return _post_process_dataset(dataset)
+
 
 def load_mcity_fisheye_2000(dataset_info):
     """
@@ -363,10 +422,11 @@ def load_fisheye_8k(dataset_info):
 
     return _post_process_dataset(dataset)
 
+
 def load_mars_multiagent(dataset_info):
     hugging_face_id = "ai4ce/MARS/Multiagent_53scene"
 
-    dataset = None # TODO Implement loading
+    dataset = None  # TODO Implement loading
 
     return _post_process_dataset(dataset)
 
@@ -376,6 +436,6 @@ def load_mars_multitraversal(dataset_info):
     data_root = "./datasets/MARS/Multitraversal_2023_10_04-2024_03_08"
     nusc = NuScenes(version="v1.0", dataroot=f"data_root/{location}", verbose=True)
 
-    dataset = None # TODO Implement loading
+    dataset = None  # TODO Implement loading
 
     return _post_process_dataset(dataset)
