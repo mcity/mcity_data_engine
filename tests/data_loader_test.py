@@ -3,13 +3,15 @@ import random
 import fiftyone as fo
 import pytest
 import torch
-from datasets import DatasetDict
+from datasets import Dataset
 from fiftyone.utils.huggingface import load_from_hub
 from torch.utils.data import DataLoader
 
 from config.config import ACCEPTED_SPLITS
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.dataset_loader import get_split
+
+fisheye8k_gt_field = "detections"
 
 
 @pytest.fixture
@@ -29,6 +31,34 @@ def dataset_v51():
     return dataset
 
 
+@pytest.fixture
+def dataset_v51_no_splits_no_detections():
+    """Fixture to load a FiftyOne dataset from the hub."""
+    dataset_name_hub = "Voxel51/fisheye8k"
+    dataset_name = "fisheye8k_pytest_raw"
+    try:
+        dataset = load_from_hub(
+            repo_id=dataset_name_hub, max_samples=100, name=dataset_name
+        )
+        # Remove all tags
+        for sample in dataset:
+            sample.tags = []
+
+        # Remove detection field
+        dataset.delete_sample_field(fisheye8k_gt_field)
+    except:
+        dataset = fo.load_dataset(dataset_name)
+    return dataset
+
+
+def test_conversions_on_raw_dataset(dataset_v51_no_splits_no_detections):
+    torch_dataset = FiftyOneTorchDatasetCOCO(
+        dataset_v51_no_splits_no_detections, gt_field=None
+    )
+    hf_dataset_converter = TorchToHFDatasetCOCO(torch_dataset)
+    hf_dataset = hf_dataset_converter.convert()
+
+
 def test_dataset_v51(dataset_v51):
     assert dataset_v51 is not None
 
@@ -37,7 +67,7 @@ def test_dataset_v51(dataset_v51):
 @pytest.fixture
 def torch_dataset(dataset_v51):
     """Fixture to create a FiftyOneTorchDatasetCOCO instance."""
-    return FiftyOneTorchDatasetCOCO(dataset_v51)
+    return FiftyOneTorchDatasetCOCO(dataset_v51, gt_field=fisheye8k_gt_field)
 
 
 def test_torch_dataset_length(torch_dataset):
@@ -142,9 +172,6 @@ def converter_torch_hf(torch_dataset):
 def test_hf_dataset_conversion(converter_torch_hf):
     """Test converting the torch dataset to HF dataset."""
     hf_dataset = converter_torch_hf.convert()
-    # Verify return type
-    assert isinstance(hf_dataset, DatasetDict), "Conversion should return a DatasetDict"
-
     # Get splits from dataset
     splits = set(hf_dataset.keys())
 
@@ -156,6 +183,12 @@ def test_hf_dataset_conversion(converter_torch_hf):
     assert splits.issubset(
         ACCEPTED_SPLITS
     ), f"Invalid splits found. All splits must be one of {ACCEPTED_SPLITS}"
+
+    # Only test instance type for valid splits
+    for split in splits:
+        assert isinstance(
+            hf_dataset[split], Dataset
+        ), f"{split} split should be a Dataset"
 
 
 def test_hf_dataset_sample(converter_torch_hf):
@@ -272,9 +305,7 @@ def test_detection_preservation(dataset_v51, torch_dataset, converter_torch_hf):
 
     # Get a sample from FiftyOne dataset
     v51_sample = dataset_v51.first()
-    v51_detections = v51_sample[
-        "detections"
-    ].detections  # "detections" as used in the Fisheye8K dataset
+    v51_detections = v51_sample[fisheye8k_gt_field].detections
     v51_det_count = len(v51_detections)
 
     # Get corresponding torch sample
