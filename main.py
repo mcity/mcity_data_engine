@@ -8,7 +8,7 @@ import time
 import warnings
 from typing import Dict, List
 
-IGNORE_FUTURE_WARNINGS=True
+IGNORE_FUTURE_WARNINGS = True
 if IGNORE_FUTURE_WARNINGS:
     warnings.simplefilter("ignore", category=FutureWarning)
 import fiftyone as fo
@@ -16,22 +16,35 @@ import torch.multiprocessing as mp
 import wandb
 from tqdm import tqdm
 
-from config.config import (GLOBAL_SEED, SELECTED_DATASET, SELECTED_WORKFLOW,
-                           V51_ADDRESS, V51_PORT, WORKFLOWS)
+from config.config import (
+    GLOBAL_SEED,
+    SELECTED_DATASET,
+    SELECTED_WORKFLOW,
+    V51_ADDRESS,
+    V51_PORT,
+    WORKFLOWS,
+)
 from utils.data_loader import FiftyOneTorchDatasetCOCO
+
 # Called with globals()
-from utils.dataset_loader import (load_annarbor_rolling, load_dataset_info,
-                                  load_fisheye_8k, load_mars_multiagent,
-                                  load_mars_multitraversal,
-                                  load_mcity_fisheye_3_months,
-                                  load_mcity_fisheye_2000)
+from utils.dataset_loader import (
+    load_annarbor_rolling,
+    load_dataset_info,
+    load_fisheye_8k,
+    load_mars_multiagent,
+    load_mars_multitraversal,
+    load_mcity_fisheye_3_months,
+    load_mcity_fisheye_2000,
+)
 from utils.logging import configure_logging
 from utils.mp_distribution import ZeroShotDistributer
 from utils.wandb_helper import launch_to_queue_terminal
 from workflows.ano_dec import Anodec
-from workflows.auto_labeling import (CustomCoDETRObjectDetection,
-                                     HuggingFaceObjectDetection,
-                                     ZeroShotObjectDetection)
+from workflows.auto_labeling import (
+    CustomCoDETRObjectDetection,
+    HuggingFaceObjectDetection,
+    ZeroShotObjectDetection,
+)
 from workflows.aws_download import AwsDownloader
 from workflows.brain import Brain
 from workflows.ensemble_exploration import EnsembleExploration
@@ -45,6 +58,7 @@ def signal_handler(sig, frame):
     except:
         pass
     sys.exit(0)
+
 
 def workflow_aws_download():
     wandb_run = None
@@ -78,8 +92,15 @@ def workflow_aws_download():
             test_run=test_run,
         )
 
-        sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = aws_downloader.download_files(log_dir=log_dir)
-        dataset = aws_downloader.decode_data(sub_folder=sub_folder, files=files, log_dir=log_dir, dataset_name=dataset_name)
+        sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = (
+            aws_downloader.download_files(log_dir=log_dir)
+        )
+        dataset = aws_downloader.decode_data(
+            sub_folder=sub_folder,
+            files=files,
+            log_dir=log_dir,
+            dataset_name=dataset_name,
+        )
 
         wandb_run.finish(exit_code=0)
     except Exception as e:
@@ -89,8 +110,10 @@ def workflow_aws_download():
 
     return dataset, dataset_name
 
+
 def workflow_anomaly_detection():
     pass
+
 
 def workflow_brain_selection(dataset, dataset_info, MODEL_NAME):
     v51_brain = Brain(dataset, dataset_info, MODEL_NAME)
@@ -112,37 +135,53 @@ def workflow_brain_selection(dataset, dataset_info, MODEL_NAME):
 
     return v51_keys
 
+
 def workflow_auto_labeling():
     pass
 
+
 def workflow_zero_shot_object_detection(dataset, dataset_info):
-    # Set multiprocessing mode for CUDA multiprocessing
-    try:
-        mp.set_start_method("spawn")
-    except:
-        pass
     # Zero-shot object detector models from Huggingface
     # Optimized for parallel multi-GPU inference, also supports single GPU
     config = WORKFLOWS["auto_labeling_zero_shot"]
     dataset_torch = FiftyOneTorchDatasetCOCO(dataset)
-    detector = ZeroShotObjectDetection(dataset_torch=dataset_torch, dataset_info=dataset_info, config=config)
+    detector = ZeroShotObjectDetection(
+        dataset_torch=dataset_torch, dataset_info=dataset_info, config=config
+    )
 
     # Check if model detections are already stored in V51 dataset or on disk
     # TODO Think about config. Detector already has it in init before it is processed, but does not use the hf_models. Could be more elegant.
-    models_splits_dict = detector.exclude_stored_predictions(dataset_v51=dataset, config=config)
+    models_splits_dict = detector.exclude_stored_predictions(
+        dataset_v51=dataset, config=config
+    )
     if len(models_splits_dict) > 0:
         config["hf_models_zeroshot_objectdetection"] = models_splits_dict
-        distributor = ZeroShotDistributer(config=config, n_samples=len(dataset_torch), dataset_info=dataset_info, detector=detector)
+        distributor = ZeroShotDistributer(
+            config=config,
+            n_samples=len(dataset_torch),
+            dataset_info=dataset_info,
+            detector=detector,
+        )
         distributor.distribute_and_run()
     else:
-        logging.info("All zero shot models already have predictions stored in the dataset.")
+        logging.info(
+            "All zero shot models already have predictions stored in the dataset."
+        )
+
 
 def workflow_ensemble_exploration():
     pass
 
 
 class WorkflowExecutor:
-    def __init__(self, workflows: List[str], selected_dataset: str, dataset: fo.Dataset,  dataset_info: Dict, args):
+    def __init__(
+        self,
+        workflows: List[str],
+        selected_dataset: str,
+        dataset: fo.Dataset,
+        dataset_info: Dict,
+        args,
+    ):
         self.workflows = workflows
         self.selected_dataset = selected_dataset
         self.dataset = dataset
@@ -158,7 +197,9 @@ class WorkflowExecutor:
         logging.info(f"Selected workflows: {self.workflows}")
 
         for workflow in self.workflows:
-            logging.info(f"Running workflow {workflow} for dataset {self.selected_dataset}")
+            logging.info(
+                f"Running workflow {workflow} for dataset {self.selected_dataset}"
+            )
             wandb_run = None
             try:
                 if workflow == "aws_download":
@@ -170,25 +211,31 @@ class WorkflowExecutor:
                         dataset_info = {
                             "name": dataset_name,
                             "v51_type": "FiftyOneDataset",
-                            "splits": []
+                            "splits": [],
                         }
 
                         self.dataset = dataset
                         self.dataset_info = dataset_info
                         self.selected_dataset = dataset_name
-                        logging.warning(f"Selected dataset overwritten to {dataset_name}")
+                        logging.warning(
+                            f"Selected dataset overwritten to {dataset_name}"
+                        )
 
                 elif workflow == "brain_selection":
                     embedding_models = WORKFLOWS["brain_selection"]["embedding_models"]
                     config_file_path = "wandb_runs/brain_config.json"
                     with open(config_file_path, "r") as file:
                         config = json.load(file)
-                    config["overrides"]["run_config"]["v51_dataset_name"] = self.selected_dataset
+                    config["overrides"]["run_config"][
+                        "v51_dataset_name"
+                    ] = self.selected_dataset
 
                     for MODEL_NAME in (pbar := tqdm(embedding_models, desc="Brain")):
                         wandb_run = None
                         try:
-                            pbar.set_description("Generating/Loading embeddings with " + MODEL_NAME)
+                            pbar.set_description(
+                                "Generating/Loading embeddings with " + MODEL_NAME
+                            )
                             config["overrides"]["run_config"]["model_name"] = MODEL_NAME
 
                             if args.queue == None:
@@ -207,26 +254,40 @@ class WorkflowExecutor:
                                     wandb_config["v51_dataset_name"],
                                     "local",
                                 )
-                                workflow_brain_selection(self.dataset, self.dataset_info, MODEL_NAME)
+                                workflow_brain_selection(
+                                    self.dataset, self.dataset_info, MODEL_NAME
+                                )
                                 wandb_run.finish(exit_code=0)
                         except Exception as e:
-                            logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
+                            logging.error(
+                                f"An error occurred with model {MODEL_NAME}: {e}"
+                            )
                             if wandb_run:
                                 wandb_run.finish(exit_code=1)
                             continue
 
                 elif workflow == "anomaly_detection":
-                    anomalib_image_models = WORKFLOWS["anomaly_detection"]["anomalib_image_models"]
-                    eval_metrics = WORKFLOWS["anomaly_detection"]["anomalib_eval_metrics"]
+                    anomalib_image_models = WORKFLOWS["anomaly_detection"][
+                        "anomalib_image_models"
+                    ]
+                    eval_metrics = WORKFLOWS["anomaly_detection"][
+                        "anomalib_eval_metrics"
+                    ]
 
                     config_file_path = "wandb_runs/anomalib_config.json"
                     with open(config_file_path, "r") as file:
                         config = json.load(file)
-                    config["overrides"]["run_config"]["v51_dataset_name"] = self.selected_dataset
+                    config["overrides"]["run_config"][
+                        "v51_dataset_name"
+                    ] = self.selected_dataset
                     wandb_project = "Data Engine Anomalib"
 
-                    for MODEL_NAME in (pbar := tqdm(anomalib_image_models, desc="Anomalib")):
-                        pbar.set_description("Training/Loading Anomalib model " + MODEL_NAME)
+                    for MODEL_NAME in (
+                        pbar := tqdm(anomalib_image_models, desc="Anomalib")
+                    ):
+                        pbar.set_description(
+                            "Training/Loading Anomalib model " + MODEL_NAME
+                        )
                         config["overrides"]["run_config"]["model_name"] = MODEL_NAME
 
                         # Local execution
@@ -240,7 +301,11 @@ class WorkflowExecutor:
                                 config=config,
                             )
                             config = wandb.config["overrides"]["run_config"]
-                            wandb_run.tags += (config["v51_dataset_name"], config["model_name"], "local")
+                            wandb_run.tags += (
+                                config["v51_dataset_name"],
+                                config["model_name"],
+                                "local",
+                            )
                             ano_dec = Anodec(
                                 dataset=self.dataset,
                                 eval_metrics=eval_metrics,
@@ -275,19 +340,27 @@ class WorkflowExecutor:
                     selected_model_source = WORKFLOWS["auto_labeling"]["model_source"]
 
                     if selected_model_source == "hf_models_objectdetection":
-                        hf_models = WORKFLOWS["auto_labeling"]["hf_models_objectdetection"]
+                        hf_models = WORKFLOWS["auto_labeling"][
+                            "hf_models_objectdetection"
+                        ]
                         wandb_project = "Data Engine Auto Labeling"
                         config_file_path = "wandb_runs/auto_label_config.json"
                         with open(config_file_path, "r") as file:
                             config = json.load(file)
 
                         # Train models
-                        for MODEL_NAME in (pbar := tqdm(hf_models, desc="Auto Labeling Models")):
+                        for MODEL_NAME in (
+                            pbar := tqdm(hf_models, desc="Auto Labeling Models")
+                        ):
                             wandb_run = None
                             try:
                                 pbar.set_description("Training model " + MODEL_NAME)
-                                config["overrides"]["run_config"]["model_name"] = MODEL_NAME
-                                config["overrides"]["run_config"]["v51_dataset_name"] = self.selected_dataset
+                                config["overrides"]["run_config"][
+                                    "model_name"
+                                ] = MODEL_NAME
+                                config["overrides"]["run_config"][
+                                    "v51_dataset_name"
+                                ] = self.selected_dataset
                                 if self.args.queue == None:
 
                                     wandb_run = wandb.init(
@@ -299,7 +372,9 @@ class WorkflowExecutor:
                                         config=config,
                                         project=wandb_project,
                                     )
-                                    wandb_config = wandb.config["overrides"]["run_config"]
+                                    wandb_config = wandb.config["overrides"][
+                                        "run_config"
+                                    ]
 
                                     wandb_run.tags += (
                                         wandb_config["v51_dataset_name"],
@@ -323,7 +398,9 @@ class WorkflowExecutor:
                                     with open(config_file_path, "w") as file:
                                         json.dump(config, file, indent=4)
 
-                                    wandb_entry_point = config["overrides"]["entry_point"]
+                                    wandb_entry_point = config["overrides"][
+                                        "entry_point"
+                                    ]
                                     # Add job to queue
                                     launch_to_queue_terminal(
                                         name=MODEL_NAME,
@@ -333,25 +410,44 @@ class WorkflowExecutor:
                                         queue=self.args.queue,
                                     )
                             except Exception as e:
-                                logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
+                                logging.error(
+                                    f"An error occurred with model {MODEL_NAME}: {e}"
+                                )
                                 if wandb_run:
                                     wandb_run.finish(exit_code=1)
                                 continue
                     elif selected_model_source == "custom_codetr":
                         # Export dataset into the format Co-DETR expects
-                        export_dir = WORKFLOWS["auto_labeling"]["custom_codetr"]["export_dataset_root"]
-                        container_tool = WORKFLOWS["auto_labeling"]["custom_codetr"]["container_tool"]
-                        param_n_gpus = WORKFLOWS["auto_labeling"]["custom_codetr"]["n_gpus"]
-                        detector = CustomCoDETRObjectDetection(self.dataset, self.selected_dataset, self.dataset_info["v51_splits"], export_dir)
+                        export_dir = WORKFLOWS["auto_labeling"]["custom_codetr"][
+                            "export_dataset_root"
+                        ]
+                        container_tool = WORKFLOWS["auto_labeling"]["custom_codetr"][
+                            "container_tool"
+                        ]
+                        param_n_gpus = WORKFLOWS["auto_labeling"]["custom_codetr"][
+                            "n_gpus"
+                        ]
+                        detector = CustomCoDETRObjectDetection(
+                            self.dataset,
+                            self.selected_dataset,
+                            self.dataset_info["v51_splits"],
+                            export_dir,
+                        )
                         detector.convert_data()
 
-                        codetr_configs = WORKFLOWS["auto_labeling"]["custom_codetr"]["configs"]
+                        codetr_configs = WORKFLOWS["auto_labeling"]["custom_codetr"][
+                            "configs"
+                        ]
                         for config in codetr_configs:
-                            detector.update_config_file(dataset_name=self.selected_dataset, config_file=config)
+                            detector.update_config_file(
+                                dataset_name=self.selected_dataset, config_file=config
+                            )
                             detector.train(config, param_n_gpus, container_tool)
 
                     else:
-                        logging.error(f"Selected model source {selected_model_source} is not supported.")
+                        logging.error(
+                            f"Selected model source {selected_model_source} is not supported."
+                        )
 
                 elif workflow == "auto_labeling_zero_shot":
                     workflow_zero_shot_object_detection(self.dataset, self.dataset_info)
@@ -361,7 +457,9 @@ class WorkflowExecutor:
                     config_file_path = "wandb_runs/ensemble_exploration_config.json"
                     with open(config_file_path, "r") as file:
                         config = json.load(file)
-                    config["overrides"]["run_config"]["v51_dataset_name"] = self.selected_dataset
+                    config["overrides"]["run_config"][
+                        "v51_dataset_name"
+                    ] = self.selected_dataset
                     if self.args.queue == None:
                         wandb_run = wandb.init(
                             name="ensemble-exploration",
@@ -383,7 +481,9 @@ class WorkflowExecutor:
                         wandb_run.finish(exit_code=0)
 
                 else:
-                    logging.error(f"Workflow {workflow} not found. Check available workflows in config.py.")
+                    logging.error(
+                        f"Workflow {workflow} not found. Check available workflows in config.py."
+                    )
                     return False
 
             except Exception as e:
@@ -392,6 +492,7 @@ class WorkflowExecutor:
                     wandb_run.finish(exit_code=1)
 
         return True
+
 
 def load_dataset(selected_dataset: str) -> fo.Dataset:
     dataset_info = load_dataset_info(selected_dataset["name"])
@@ -402,9 +503,16 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
         n_samples_original = len(dataset)
         n_samples_requested = selected_dataset["n_samples"]
 
-        if n_samples_requested is not None and n_samples_requested <= n_samples_original:
-            dataset_reduced_view = dataset.take(n_samples_requested, seed = GLOBAL_SEED)    # Returns a view rather than a full dataset, might lead to issues for some operations that require a fiftyone dataset
-            logging.info(f"Dataset size was reduced from {n_samples_original} to {n_samples_requested} samples.")
+        if (
+            n_samples_requested is not None
+            and n_samples_requested <= n_samples_original
+        ):
+            dataset_reduced_view = dataset.take(
+                n_samples_requested, seed=GLOBAL_SEED
+            )  # Returns a view rather than a full dataset, might lead to issues for some operations that require a fiftyone dataset
+            logging.info(
+                f"Dataset size was reduced from {n_samples_original} to {n_samples_requested} samples."
+            )
             return dataset_reduced_view, dataset_info
     else:
         logging.error(
@@ -413,6 +521,7 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
         )
 
     return dataset, dataset_info
+
 
 def main(args):
     time_start = time.time()
@@ -427,7 +536,9 @@ def main(args):
 
     # Execute workflows
     dataset, dataset_info = load_dataset(SELECTED_DATASET)
-    executor = WorkflowExecutor(SELECTED_WORKFLOW, SELECTED_DATASET["name"], dataset, dataset_info, args)
+    executor = WorkflowExecutor(
+        SELECTED_WORKFLOW, SELECTED_DATASET["name"], dataset, dataset_info, args
+    )
     executor.execute()
 
     # Launch V51 session
@@ -437,13 +548,20 @@ def main(args):
         logging.info(f"Launching Voxel51 session for dataset {dataset.name}:")
         logging.info(dataset)
         fo.pprint(dataset.stats(include_media=True))
-        session = fo.launch_app(dataset, address=V51_ADDRESS, port=V51_PORT, remote=True)
+        session = fo.launch_app(
+            dataset, address=V51_ADDRESS, port=V51_PORT, remote=True
+        )
 
     time_stop = time.time()
     logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
 
 
 if __name__ == "__main__":
+    # Set multiprocessing mode for CUDA multiprocessing
+    try:
+        mp.set_start_method("spawn")
+    except:
+        pass
     parser = argparse.ArgumentParser(description="Run script locally or in W&B queue.")
     parser.add_argument(
         "--queue",
