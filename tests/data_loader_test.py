@@ -24,7 +24,7 @@ def dataset_v51():
             repo_id=dataset_name_hub, max_samples=100, name=dataset_name
         )
         # Ensure that all splits are represented (normally Data Engine takes care of that)
-        for sample in dataset:
+        for sample in dataset.iter_samples(progress=True, autosave=True):
             sample.tags = [random.choice(ACCEPTED_SPLITS)]
     except:
         dataset = fo.load_dataset(dataset_name)
@@ -41,7 +41,7 @@ def dataset_v51_no_splits_no_detections():
             repo_id=dataset_name_hub, max_samples=100, name=dataset_name
         )
         # Remove all tags
-        for sample in dataset:
+        for sample in dataset.iter_samples(progress=True, autosave=True):
             sample.tags = []
 
         # Remove detection field
@@ -52,11 +52,15 @@ def dataset_v51_no_splits_no_detections():
 
 
 def test_conversions_on_raw_dataset(dataset_v51_no_splits_no_detections):
+    "Test if conversions work with a V51 without labels or a split"
     torch_dataset = FiftyOneTorchDatasetCOCO(
         dataset_v51_no_splits_no_detections, gt_field=None
     )
     hf_dataset_converter = TorchToHFDatasetCOCO(torch_dataset)
     hf_dataset = hf_dataset_converter.convert()
+
+    assert torch_dataset is not None
+    assert hf_dataset is not None
 
 
 def test_dataset_v51(dataset_v51):

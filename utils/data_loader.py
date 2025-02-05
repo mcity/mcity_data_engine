@@ -174,10 +174,16 @@ class TorchToHFDatasetCOCO:
 
     def convert(self):
         try:
+            default_split_hf = "test"
             splits = self.torch_dataset.get_splits()
+            if len(splits) == 0:
+                logging.warning(
+                    f"Hugging Face Datasets expects splits, but none are provided. Setting '{default_split_hf}' as the default split."
+                )
+                splits = [default_split_hf]
             hf_dataset = {
                 self.split_mapping[split]: Dataset.from_generator(
-                    gen_factory(self.torch_dataset, split),
+                    gen_factory(self.torch_dataset, split, default_split_hf),
                     split=self.split_mapping[split],
                 )
                 for split in splits
@@ -189,7 +195,7 @@ class TorchToHFDatasetCOCO:
             )
 
 
-def gen_factory(torch_dataset, split_name):
+def gen_factory(torch_dataset, split_name, default_split_hf):
     """
     Factory function to create a generator function for the Hugging Face dataset.
 
@@ -219,13 +225,19 @@ def gen_factory(torch_dataset, split_name):
 
     def _gen():
         for idx, (img_path, img_id) in enumerate(zip(img_paths, img_ids)):
-            split = splits[img_id]
+            split = splits.get(img_id, None)
+
+            # If no split is provided, set default split
+            if split is None:
+                split = default_split_hf
+
+            # Only select samples of the split we are currently looking for
             if split != split_name:
                 continue
 
             sample_data = {
                 "metadata": metadata[idx],
-                "detections": labels[img_id],
+                "detections": labels.get(img_id, None),
             }
             target = create_target(sample_data, labels_map_rev, idx)
             yield {
@@ -255,7 +267,22 @@ def create_target(sample_data, labels_map_rev, idx):
     dict
         A dictionary containing bounding boxes, category IDs, image ID, area, and iscrowd flags.
     """
-    detections = sample_data["detections"]
+    detections = sample_data.get("detections", [])
+
+    logging.warning(detections)
+    # Handle empty or missing detections
+    if not detections:
+        return {
+            "bbox": [],
+            "category_id": [],
+            "image_id": idx,
+            "area": [],
+            "iscrowd": [],
+        }
+
+    boxes = []
+    labels = []
+    area = []
 
     boxes = [det.bounding_box for det in detections]
     labels = [labels_map_rev[det.label] for det in detections]

@@ -13,7 +13,6 @@ from config.config import ACCEPTED_SPLITS, GLOBAL_SEED, NUM_WORKERS, PERSISTENT
 
 
 def get_split(v51_sample: Union[fo.core.sample.Sample, List[str]]) -> str:
-
     if isinstance(v51_sample, fo.core.sample.Sample):
         sample_tags = v51_sample.tags
     elif isinstance(v51_sample, list):
@@ -32,7 +31,9 @@ def get_split(v51_sample: Union[fo.core.sample.Sample, List[str]]) -> str:
         logging.error(f"Multiple splits found in sample tags: '{found_splits}'")
         return None
     else:
-        return found_splits[0]
+        split = found_splits[0]
+        logging.info(f"Selected split {split} from sample tags {sample_tags}")
+        return split
 
 
 def _separate_split(dataset, current_split, new_split, split_ratio=2):
