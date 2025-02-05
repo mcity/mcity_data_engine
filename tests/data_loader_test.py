@@ -3,23 +3,27 @@ import random
 import fiftyone as fo
 import pytest
 import torch
+from datasets import DatasetDict
 from fiftyone.utils.huggingface import load_from_hub
 from torch.utils.data import DataLoader
 
+from config.config import ACCEPTED_SPLITS
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
+from utils.dataset_loader import get_split
 
 
 @pytest.fixture
 def dataset_v51():
     """Fixture to load a FiftyOne dataset from the hub."""
-    dataset_name_hub = "dbogdollumich/mcity_fisheye_v51"
-    dataset_name = "mcity_fisheye_v51_pytest"
+    dataset_name_hub = "Voxel51/fisheye8k"
+    dataset_name = "fisheye8k_pytest"
     try:
         dataset = load_from_hub(
             repo_id=dataset_name_hub, max_samples=100, name=dataset_name
         )
+        # Ensure that all splits are represented (normally Data Engine takes care of that)
         for sample in dataset:
-            sample.tags = random.choice([["train"], ["val"]])
+            sample.tags = [random.choice(ACCEPTED_SPLITS)]
     except:
         dataset = fo.load_dataset(dataset_name)
     return dataset
@@ -83,8 +87,17 @@ def test_torch_dataset_get_classes(torch_dataset):
 def test_torch_dataset_get_splits(torch_dataset):
     """Test getting splits from the torch dataset."""
     splits = torch_dataset.get_splits()
-    assert isinstance(splits, set)
-    assert "train" in splits or "val" in splits
+    # Test return type is set
+    assert isinstance(splits, set), "get_splits() should return a set"
+
+    # Empty splits are allowed
+    if not splits:
+        return
+
+    # If splits exist, they must be subset of ACCEPTED_SPLITS
+    assert splits.issubset(
+        ACCEPTED_SPLITS
+    ), f"Invalid splits found. All splits must be one of {ACCEPTED_SPLITS}"
 
 
 # Tests for torch dataloader
@@ -129,7 +142,20 @@ def converter_torch_hf(torch_dataset):
 def test_hf_dataset_conversion(converter_torch_hf):
     """Test converting the torch dataset to HF dataset."""
     hf_dataset = converter_torch_hf.convert()
-    assert "train" in hf_dataset or "val" in hf_dataset
+    # Verify return type
+    assert isinstance(hf_dataset, DatasetDict), "Conversion should return a DatasetDict"
+
+    # Get splits from dataset
+    splits = set(hf_dataset.keys())
+
+    # Empty splits are allowed
+    if not splits:
+        return
+
+    # If splits exist, they must be subset of ACCEPTED_SPLITS
+    assert splits.issubset(
+        ACCEPTED_SPLITS
+    ), f"Invalid splits found. All splits must be one of {ACCEPTED_SPLITS}"
 
 
 def test_hf_dataset_sample(converter_torch_hf):
@@ -239,3 +265,55 @@ def test_no_annotations_dataset(no_annotations_dataset):
     """Test creating a torch dataset from a FiftyOne dataset with no annotations."""
     dataset = FiftyOneTorchDatasetCOCO(no_annotations_dataset)
     assert len(dataset) == 2
+
+
+def test_detection_preservation(dataset_v51, torch_dataset, converter_torch_hf):
+    """Test that detections are preserved when converting between dataset formats."""
+
+    # Get a sample from FiftyOne dataset
+    v51_sample = dataset_v51.first()
+    v51_detections = v51_sample[
+        "detections"
+    ].detections  # "detections" as used in the Fisheye8K dataset
+    v51_det_count = len(v51_detections)
+
+    # Get corresponding torch sample
+    torch_sample = torch_dataset[0]
+    torch_bboxes = torch_sample[1]["bbox"]
+    torch_categories = torch_sample[1]["category_id"]
+
+    # Build category mapping
+    categories = dataset_v51.default_classes
+    category_map = {label: idx for idx, label in enumerate(categories)}
+
+    # Verify torch detection count matches
+    assert len(torch_bboxes) == v51_det_count
+    assert len(torch_categories) == v51_det_count
+
+    # Convert to HF dataset and get sample
+    hf_dataset = converter_torch_hf.convert()
+    split = get_split(v51_sample)
+    hf_sample = hf_dataset[split][0]
+
+    # Verify HF detection count matches
+    assert len(hf_sample["target"]["bbox"]) == v51_det_count
+    assert len(hf_sample["target"]["category_id"]) == v51_det_count
+
+    # Verify detection properties match between V51 and torch
+    for i, v51_det in enumerate(v51_detections):
+        # Check bounding box format conversion
+        v51_bbox = v51_det.bounding_box
+        torch_bbox = torch_sample[1]["bbox"][i].tolist()
+
+        # Verify coordinates with tolerance
+        assert abs(v51_bbox[0] - torch_bbox[0] / 1224) < 0.01  # width normalization
+        assert abs(v51_bbox[1] - torch_bbox[1] / 1088) < 0.01  # height normalization
+        assert abs(v51_bbox[2] - torch_bbox[2] / 1224) < 0.01
+        assert abs(v51_bbox[3] - torch_bbox[3] / 1088) < 0.01
+
+        # Verify category mapping for all classes
+        expected_category = category_map[v51_det.label]
+        assert (
+            torch_categories[i] == expected_category
+        ), f"Mismatched category for {v51_det.label}"
+        assert hf_sample["target"]["category_id"][i] == expected_category
