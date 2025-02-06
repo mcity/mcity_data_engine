@@ -32,7 +32,6 @@ def get_split(v51_sample: Union[fo.core.sample.Sample, List[str]]) -> str:
         return None
     else:
         split = found_splits[0]
-        logging.info(f"Selected split {split} from sample tags {sample_tags}")
         return split
 
 
