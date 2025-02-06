@@ -141,6 +141,11 @@ def workflow_auto_labeling():
 
 
 def workflow_zero_shot_object_detection(dataset, dataset_info):
+    # Set multiprocessing mode for CUDA multiprocessing
+    try:
+        mp.set_start_method("spawn")
+    except:
+        pass
     # Zero-shot object detector models from Huggingface
     # Optimized for parallel multi-GPU inference, also supports single GPU
     config = WORKFLOWS["auto_labeling_zero_shot"]
@@ -557,11 +562,6 @@ def main(args):
 
 
 if __name__ == "__main__":
-    # Set multiprocessing mode for CUDA multiprocessing
-    try:
-        mp.set_start_method("spawn")
-    except:
-        pass
     parser = argparse.ArgumentParser(description="Run script locally or in W&B queue.")
     parser.add_argument(
         "--queue",
