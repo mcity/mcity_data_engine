@@ -796,8 +796,8 @@ class HuggingFaceObjectDetection:
                 if do_convert_annotations == False:
                     x, y, w, h = bbox
                     img_height, img_width = image_np.shape[:2]
-                    center_x = (x + width / 2) / img_width
-                    center_y = (y + height / 2) / img_height
+                    center_x = (x + w / 2) / img_width
+                    center_y = (y + h / 2) / img_height
                     width = w / img_width
                     height = h / img_height
                     bbox = [center_x, center_y, width, height]
