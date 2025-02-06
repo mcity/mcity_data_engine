@@ -418,7 +418,7 @@ def load_fisheye_8k(dataset_info):
         dataset = fo.load_dataset(dataset_name)
         logging.info("Existing dataset " + dataset_name + " was loaded.")
     else:
-        dataset = load_from_hub(hf_dataset_name)
+        dataset = load_from_hub(hf_dataset_name, name="fisheye8k")
 
     return _post_process_dataset(dataset)
 

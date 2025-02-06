@@ -10,7 +10,7 @@ datasets:
     local_path: /media/dbogdoll/Datasets/midadvrb_3_months/
     v51_type: YOLOv5Dataset
     v51_splits: ["train", "val"]
-  - name: Voxel51/fisheye8k
+  - name: fisheye8k
     loader_fct: load_fisheye_8k
     hf_dataset_name: Voxel51/fisheye8k
   - name: mcity_fisheye_ano_ped
