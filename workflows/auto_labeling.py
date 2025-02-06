@@ -751,7 +751,13 @@ class ZeroShotObjectDetection:
 
 
 class HuggingFaceObjectDetection:
-    def __init__(self, dataset, config=None, detections_path="./output/detections/"):
+    def __init__(
+        self,
+        dataset,
+        config=None,
+        output_model_path="./output/models/object_detection_hf",
+        output_detections_path="./output/detections/",
+    ):
         self.dataset = dataset
         self.config = config
         self.model_name = config["model_name"]
@@ -759,8 +765,18 @@ class HuggingFaceObjectDetection:
         self.dataset_name = config["v51_dataset_name"]
 
         self.detections_root = os.path.join(
-            detections_path, self.dataset_name, self.model_name_key
+            output_detections_path, self.dataset_name, self.model_name_key
         )
+
+        self.model_root = os.path.join(
+            output_model_path, self.dataset_name, self.model_name_key
+        )
+
+        self.hf_hub_model_id = (
+            "mcity-data-engine/"
+            + f"{self.dataset_name}/{self.model_name}".replace("/", "_")
+        )
+
         self.categories = dataset.default_classes
         self.id2label = {index: x for index, x in enumerate(self.categories, start=0)}
         self.label2id = {v: k for k, v in self.id2label.items()}
@@ -911,7 +927,7 @@ class HuggingFaceObjectDetection:
 
         training_args = TrainingArguments(
             run_name=self.model_name,
-            output_dir="output/models/object_detection_hf/" + self.model_name,
+            output_dir=self.model_root,
             num_train_epochs=self.config["epochs"],
             fp16=True,
             per_device_train_batch_size=self.config["batch_size"],
@@ -930,7 +946,10 @@ class HuggingFaceObjectDetection:
             remove_unused_columns=False,
             eval_do_concat_batches=False,
             save_safetensors=False,
-            push_to_hub=False,
+            hub_model_id=self.hf_hub_model_id,
+            hub_private_repo=True,
+            push_to_hub=True,  # Login needed: huggingface-cli login
+            seed=GLOBAL_SEED,
             data_seed=GLOBAL_SEED,
         )
 
@@ -956,15 +975,21 @@ class HuggingFaceObjectDetection:
         metrics = trainer.evaluate(eval_dataset=hf_dataset[Split.TEST])
 
     def inference(self):
+
+        # Look for models in folder
+        for root, dirs, files in os.walk(self.model_root):
+            for file in files:
+                print(os.path.join(root, file))
+
         device = "cuda:0"
         folder_path_model = "/home/dbogdoll/mcity_data_engine/output/models/object_detection_hf/microsoft/conditional-detr-resnet-50/checkpoint-26440"
 
         image_processor = AutoProcessor.from_pretrained(
-            folder_path_model,
+            self.model_name,
             do_resize=False,
             do_pad=True,
             use_fast=True,
-            do_convert_annotations=False,
+            do_convert_annotations=True,
         )
 
         model = AutoModelForObjectDetection.from_pretrained(
