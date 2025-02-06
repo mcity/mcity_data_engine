@@ -20,6 +20,7 @@ import psutil
 import torch
 import torch.multiprocessing as mp
 import wandb
+from accelerate.test_utils.testing import get_backend
 from datasets import Split
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
@@ -974,34 +975,16 @@ class HuggingFaceObjectDetection:
 
         metrics = trainer.evaluate(eval_dataset=hf_dataset[Split.TEST])
 
-    def inference(self):
+    def inference(self, detection_threshold=0.2):
 
-        # Look for models in folder
-        for root, dirs, files in os.walk(self.model_root):
-            for file in files:
-                print(os.path.join(root, file))
+        # Load trained model from Hugging Face
+        image_processor = AutoProcessor.from_pretrained(self.hf_hub_model_id)
+        model = AutoModelForObjectDetection.from_pretrained(self.hf_hub_model_id)
 
-        device = "cuda:0"
-        folder_path_model = "/home/dbogdoll/mcity_data_engine/output/models/object_detection_hf/microsoft/conditional-detr-resnet-50/checkpoint-26440"
-
-        image_processor = AutoProcessor.from_pretrained(
-            self.model_name,
-            do_resize=False,
-            do_pad=True,
-            use_fast=True,
-            do_convert_annotations=True,
-        )
-
-        model = AutoModelForObjectDetection.from_pretrained(
-            folder_path_model,
-            id2label=self.id2label,
-            label2id=self.label2id,
-            ignore_mismatched_sizes=True,
-        )
+        device = device, _, _ = get_backend()
         model = model.to(device)
 
-        model_name = "huggingface_detr_test"
-        pred_key = re.sub(r"[\W-]+", "_", "pred_" + model_name)
+        pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
 
         with torch.no_grad():
             for sample in self.dataset.iter_samples(progress=True, autosave=True):
@@ -1014,7 +997,7 @@ class HuggingFaceObjectDetection:
                 outputs = model(**inputs.to(device))
                 target_sizes = torch.tensor([[image.size[1], image.size[0]]])
                 results = image_processor.post_process_object_detection(
-                    outputs, threshold=0.3, target_sizes=target_sizes
+                    outputs, threshold=detection_threshold, target_sizes=target_sizes
                 )[0]
 
                 detections = []
