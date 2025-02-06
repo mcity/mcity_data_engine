@@ -92,6 +92,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
             if (
                 ground_truths and ground_truths[i]
             ):  # Check if the ground truth exists for the sample
+                # Store detections as (top_left_x, top_left_y, width, height) in rel. coordinates between [0,1]
                 self.labels[sample_id] = ground_truths[i].detections
             if tags[i]:  # Check if the tags exist for the sample
                 self.splits[sample_id] = get_split(tags[i])
@@ -109,12 +110,13 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
 
         for det in detections:
             category_id = self.labels_map_rev[det.label]
+            # https://docs.voxel51.com/api/fiftyone.utils.coco.html#fiftyone.utils.coco.COCOObject
             coco_obj = fouc.COCOObject.from_label(
                 det,
                 metadata,
                 category_id=category_id,
             )
-            x_min, y_min, w, h = coco_obj.bbox  # Relative coordinates between [0, 1]
+            x_min, y_min, w, h = coco_obj.bbox  # Absolute coordinates
             boxes.append([x_min, y_min, w, h])
             labels.append(coco_obj.category_id)
             area.append(coco_obj.area)
@@ -241,15 +243,15 @@ def gen_factory(torch_dataset, split_name, default_split_hf):
             }
             target = create_target(sample_data, labels_map_rev, idx)
             yield {
-                "image": img_path,
-                "target": target,
+                "image_path": img_path,
+                "objects": target,
                 "split": split,
             }
 
     return _gen
 
 
-def create_target(sample_data, labels_map_rev, idx):
+def create_target(sample_data, labels_map_rev, idx, convert_to_coco=True):
     """
     Creates a target dictionary for a given sample.
 
@@ -268,10 +270,12 @@ def create_target(sample_data, labels_map_rev, idx):
         A dictionary containing bounding boxes, category IDs, image ID, area, and iscrowd flags.
     """
     detections = sample_data.get("detections", [])
+    img_width = sample_data["metadata"]["width"]
+    img_height = sample_data["metadata"]["height"]
 
-    logging.warning(detections)
     # Handle empty or missing detections
     if not detections:
+        logging.warning(f"No detections found for sample {idx}")
         return {
             "bbox": [],
             "category_id": [],
@@ -281,18 +285,29 @@ def create_target(sample_data, labels_map_rev, idx):
         }
 
     boxes = []
-    labels = []
-    area = []
+    areas = []
 
-    boxes = [det.bounding_box for det in detections]
+    if convert_to_coco:
+        # From rel. coordinates between [0,1] to abs. coordinates (COCO)
+        for det in detections:
+            x_min = det.bounding_box[0] * img_width
+            y_min = det.bounding_box[1] * img_height
+            width = det.bounding_box[2] * img_width
+            height = det.bounding_box[3] * img_height
+            boxes.append([x_min, y_min, width, height])
+            area = width * height
+            areas.append(area)
+    else:
+        boxes = [det.bounding_box for det in detections]
+        areas = [det.bounding_box[2] * det.bounding_box[3] for det in detections]
+
     labels = [labels_map_rev[det.label] for det in detections]
-    area = [det.bounding_box[2] * det.bounding_box[3] for det in detections]
     iscrowd = [0 for _ in detections]
 
     return {
         "bbox": boxes,
         "category_id": labels,
         "image_id": idx,
-        "area": area,
+        "area": areas,
         "iscrowd": iscrowd,
     }
