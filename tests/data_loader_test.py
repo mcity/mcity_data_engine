@@ -198,74 +198,47 @@ def test_hf_dataset_conversion(converter_torch_hf):
 def test_hf_dataset_sample(converter_torch_hf):
     """Test getting a sample from the HF dataset."""
     hf_dataset = converter_torch_hf.convert()
-    if "train" in hf_dataset:
-        sample = hf_dataset["train"][0]
-        assert "image" in sample
-        assert "target" in sample
-        assert "split" in sample
-    if "val" in hf_dataset:
-        sample = hf_dataset["val"][0]
-        assert "image" in sample
-        assert "target" in sample
-        assert "split" in sample
+    for split in ACCEPTED_SPLITS:
+        if split in hf_dataset:
+            sample = hf_dataset[split][0]
+            assert "image_path" in sample
+            assert "objects" in sample
+            assert "split" in sample
 
 
 def test_hf_dataset_dataloader(converter_torch_hf):
     """Test creating a DataLoader from the HF dataset."""
     hf_dataset = converter_torch_hf.convert()
-    if "train" in hf_dataset:
-        hf_dataset["train"] = hf_dataset["train"]
-        dataloader = DataLoader(
-            hf_dataset["train"],
-            batch_size=4,
-            collate_fn=lambda batch: (
-                [item["image"] for item in batch],
-                [item["target"] for item in batch],
-                [item["split"] for item in batch],
-            ),
-        )
-        for batch in dataloader:
-            images, targets, splits = batch
-            for img, target, split in zip(images, targets, splits):
-                assert isinstance(img, str)
-                assert isinstance(target["bbox"], list)
-                assert isinstance(target["category_id"], list)
-                assert isinstance(split, str)
-    if "val" in hf_dataset:
-        hf_dataset["val"] = hf_dataset["val"]
-        dataloader = DataLoader(
-            hf_dataset["val"],
-            batch_size=4,
-            collate_fn=lambda batch: (
-                [item["image"] for item in batch],
-                [item["target"] for item in batch],
-                [item["split"] for item in batch],
-            ),
-        )
-        for batch in dataloader:
-            images, targets, splits = batch
-            for img, target, split in zip(images, targets, splits):
-                assert isinstance(img, str)
-                assert isinstance(target["bbox"], list)
-                assert isinstance(target["category_id"], list)
-                assert isinstance(split, str)
+    for split in ACCEPTED_SPLITS:
+        if split in hf_dataset:
+            dataloader = DataLoader(
+                hf_dataset[split],
+                batch_size=4,
+                collate_fn=lambda batch: (
+                    [item["image_path"] for item in batch],
+                    [item["objects"] for item in batch],
+                    [item["split"] for item in batch],
+                ),
+            )
+            for batch in dataloader:
+                images, targets, splits = batch
+                for img, target, split in zip(images, targets, splits):
+                    assert isinstance(img, str)
+                    assert isinstance(target["bbox"], list)
+                    assert isinstance(target["category_id"], list)
+                    assert isinstance(split, str)
 
 
 def test_hf_dataset_with_format(converter_torch_hf):
     """Test setting the format of the HF dataset."""
     hf_dataset = converter_torch_hf.convert()
-    if "train" in hf_dataset:
-        hf_dataset["train"] = hf_dataset["train"].with_format("torch")
-        sample = hf_dataset["train"][0]
-        assert isinstance(sample["image"], str)  # Includes filepath
-        assert isinstance(sample["target"]["bbox"], torch.Tensor)
-        assert isinstance(sample["target"]["category_id"], torch.Tensor)
-    if "val" in hf_dataset:
-        hf_dataset["val"] = hf_dataset["val"].with_format("torch")
-        sample = hf_dataset["val"][0]
-        assert isinstance(sample["image"], str)
-        assert isinstance(sample["target"]["bbox"], torch.Tensor)
-        assert isinstance(sample["target"]["category_id"], torch.Tensor)
+    for split in ACCEPTED_SPLITS:
+        if split in hf_dataset:
+            hf_dataset[split] = hf_dataset[split].with_format("torch")
+            sample = hf_dataset[split][0]
+            assert isinstance(sample["image_path"], str)  # Includes filepath
+            assert isinstance(sample["objects"]["bbox"], torch.Tensor)
+            assert isinstance(sample["objects"]["category_id"], torch.Tensor)
 
 
 # Tests for incomplete datasets
@@ -331,8 +304,11 @@ def test_detection_preservation(dataset_v51, torch_dataset, converter_torch_hf):
     hf_sample = hf_dataset[split][0]
 
     # Verify HF detection count matches
-    assert len(hf_sample["target"]["bbox"]) == v51_det_count
-    assert len(hf_sample["target"]["category_id"]) == v51_det_count
+    assert len(hf_sample["objects"]["bbox"]) == v51_det_count
+    assert len(hf_sample["objects"]["category_id"]) == v51_det_count
+
+    img_width = v51_sample.metadata.width
+    img_height = v51_sample.metadata.height
 
     # Verify detection properties match between V51 and torch
     for i, v51_det in enumerate(v51_detections):
@@ -341,14 +317,18 @@ def test_detection_preservation(dataset_v51, torch_dataset, converter_torch_hf):
         torch_bbox = torch_sample[1]["bbox"][i].tolist()
 
         # Verify coordinates with tolerance
-        assert abs(v51_bbox[0] - torch_bbox[0] / 1224) < 0.01  # width normalization
-        assert abs(v51_bbox[1] - torch_bbox[1] / 1088) < 0.01  # height normalization
-        assert abs(v51_bbox[2] - torch_bbox[2] / 1224) < 0.01
-        assert abs(v51_bbox[3] - torch_bbox[3] / 1088) < 0.01
+        assert (
+            abs(v51_bbox[0] - torch_bbox[0] / img_width) < 0.01
+        )  # width normalization
+        assert (
+            abs(v51_bbox[1] - torch_bbox[1] / img_height) < 0.01
+        )  # height normalization
+        assert abs(v51_bbox[2] - torch_bbox[2] / img_width) < 0.01
+        assert abs(v51_bbox[3] - torch_bbox[3] / img_height) < 0.01
 
         # Verify category mapping for all classes
         expected_category = category_map[v51_det.label]
         assert (
             torch_categories[i] == expected_category
         ), f"Mismatched category for {v51_det.label}"
-        assert hf_sample["target"]["category_id"][i] == expected_category
+        assert hf_sample["objects"]["category_id"][i] == expected_category
