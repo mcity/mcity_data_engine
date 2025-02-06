@@ -26,6 +26,12 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+Login with your [Weights and Biases](https://wandb.ai/) and [Hugging Face](https://huggingface.co/) accounts:
+```
+wandb.login()
+huggingface-cli login
+```
+
 Launch a **Voxel51** session in one terminal:
 ```python session_v51.py```
 
@@ -100,7 +106,6 @@ Open the [docs/index.html](./docs/index.html) file locally with your browser to 
 Training runs are logged with [Weights and Biases (WandB)](https://wandb.ai/mcity/mcity-data-engine). To fill queues with your local machine, you need to setup an [agent](https://docs.wandb.ai/guides/launch/setup-launch-docker):
 
 ```
-wandb.login()
 wandb launch-agent -q <queue-name> --max-jobs <n>
 ```
 
