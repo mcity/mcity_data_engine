@@ -5,7 +5,7 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "Voxel51/fisheye8k",
+    "name": "fisheye8k",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
