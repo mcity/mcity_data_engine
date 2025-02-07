@@ -17,6 +17,7 @@ import wandb
 from tqdm import tqdm
 
 from config.config import (
+    ACCEPTED_SPLITS,
     GLOBAL_SEED,
     SELECTED_DATASET,
     SELECTED_WORKFLOW,
@@ -24,18 +25,8 @@ from config.config import (
     V51_PORT,
     WORKFLOWS,
 )
-from utils.data_loader import FiftyOneTorchDatasetCOCO
-
-# Called with globals()
-from utils.dataset_loader import (
-    load_annarbor_rolling,
-    load_dataset_info,
-    load_fisheye_8k,
-    load_mars_multiagent,
-    load_mars_multitraversal,
-    load_mcity_fisheye_3_months,
-    load_mcity_fisheye_2000,
-)
+from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
+from utils.dataset_loader import load_dataset
 from utils.logging import configure_logging
 from utils.mp_distribution import ZeroShotDistributer
 from utils.wandb_helper import launch_to_queue_terminal
@@ -353,6 +344,12 @@ class WorkflowExecutor:
                         with open(config_file_path, "r") as file:
                             config = json.load(file)
 
+                        # Convert dataset
+                        logging.info("Converting dataset into Hugging Face format.")
+                        pytorch_dataset = FiftyOneTorchDatasetCOCO(self.dataset)
+                        pt_to_hf_converter = TorchToHFDatasetCOCO(pytorch_dataset)
+                        hf_dataset = pt_to_hf_converter.convert()
+
                         # Train models
                         for MODEL_NAME in (
                             pbar := tqdm(hf_models, desc="Auto Labeling Models")
@@ -391,9 +388,9 @@ class WorkflowExecutor:
                                     )
 
                                     if mode == "train":
-                                        detector.train()
+                                        detector.train(hf_dataset)
                                     elif mode == "inference":
-                                        detector.inference()
+                                        detector.inference(hf_dataset)
                                     else:
                                         logging.error(f"Mode {mode} is not supported.")
                                     wandb_run.finish(exit_code=0)
@@ -497,35 +494,6 @@ class WorkflowExecutor:
                     wandb_run.finish(exit_code=1)
 
         return True
-
-
-def load_dataset(selected_dataset: str) -> fo.Dataset:
-    dataset_info = load_dataset_info(selected_dataset["name"])
-
-    if dataset_info:
-        loader_function = dataset_info.get("loader_fct")
-        dataset = globals()[loader_function](dataset_info)
-        n_samples_original = len(dataset)
-        n_samples_requested = selected_dataset["n_samples"]
-
-        if (
-            n_samples_requested is not None
-            and n_samples_requested <= n_samples_original
-        ):
-            dataset_reduced_view = dataset.take(
-                n_samples_requested, seed=GLOBAL_SEED
-            )  # Returns a view rather than a full dataset, might lead to issues for some operations that require a fiftyone dataset
-            logging.info(
-                f"Dataset size was reduced from {n_samples_original} to {n_samples_requested} samples."
-            )
-            return dataset_reduced_view, dataset_info
-    else:
-        logging.error(
-            str(selected_dataset["name"])
-            + " is not a valid dataset name. Check supported datasets in datasets.yaml."
-        )
-
-    return dataset, dataset_info
 
 
 def main(args):
