@@ -190,7 +190,7 @@ kubernetes==31.0.0
 kubernetes_asyncio==31.1.0
 launchdarkly-server-sdk==8.2.1
 lazy_loader==0.4
-lightning==2.4.0
+lightning==2.3.3
 lightning-utilities==0.11.9
 llvmlite==0.44.0
 lockfile==0.12.2
