@@ -7,7 +7,7 @@
         "run_config": {
             "batch_size": 32,
             "epochs": 30,
-            "num_workers": 8,
+            "num_workers": 2,
             "early_stop_patience": 5,
             "learning_rate": 5e-05,
             "weight_decay": 0.0001,
