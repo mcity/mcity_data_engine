@@ -12,6 +12,62 @@ from nuscenes.nuscenes import NuScenes
 from config.config import ACCEPTED_SPLITS, GLOBAL_SEED, NUM_WORKERS, PERSISTENT
 
 
+def load_dataset(selected_dataset: str) -> fo.Dataset:
+    dataset_info = load_dataset_info(selected_dataset["name"])
+
+    if dataset_info:
+        loader_function = dataset_info.get("loader_fct")
+        dataset = globals()[loader_function](dataset_info)
+        n_samples_original = len(dataset)
+        n_samples_requested = selected_dataset["n_samples"]
+
+        if (
+            n_samples_requested is not None
+            and n_samples_requested <= n_samples_original
+        ):
+
+            # Make sure that the reduced datasets has samples from every available split
+            split_views = []
+
+            # Get split distribution
+            n_samples = len(dataset)
+            tags_count_dataset_dict = dataset.count_sample_tags()
+            for tag in tags_count_dataset_dict:
+                if tag in ACCEPTED_SPLITS:
+                    count = tags_count_dataset_dict[tag]
+                    percentage = count / n_samples
+                    n_split_samples = int(n_samples_requested * percentage)
+                    logging.warning(f"{tag}: {n_split_samples}")
+
+                    split_view = dataset.match_tags(tag).limit(n_split_samples)
+                    split_views.append(split_view)
+
+            # Concatenate views properly
+            if split_views:
+                combined_view = split_views[0]
+                for view in split_views[1:]:
+                    combined_view = combined_view.concat(view)
+
+                # Fill dataset if smaller than requested
+                if len(combined_view) < n_samples_requested:
+                    n_samples_needed = n_samples_requested - len(combined_view)
+                    view_random = dataset.take(n_samples_needed, seed=GLOBAL_SEED)
+                    combined_view = combined_view.concat(view_random)
+
+                logging.warning(
+                    f"Dataset size was reduced from {len(dataset)} to {len(combined_view)} samples."
+                )
+                return combined_view, dataset_info
+
+    else:
+        logging.error(
+            str(selected_dataset["name"])
+            + " is not a valid dataset name. Check supported datasets in datasets.yaml."
+        )
+
+    return dataset, dataset_info
+
+
 def get_split(v51_sample: Union[fo.core.sample.Sample, List[str]]) -> str:
     if isinstance(v51_sample, fo.core.sample.Sample):
         sample_tags = v51_sample.tags
@@ -418,7 +474,7 @@ def load_fisheye_8k(dataset_info):
         dataset = fo.load_dataset(dataset_name)
         logging.info("Existing dataset " + dataset_name + " was loaded.")
     else:
-        dataset = load_from_hub(hf_dataset_name, name="fisheye8k")
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name)
 
     return _post_process_dataset(dataset)
 
