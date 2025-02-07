@@ -34,7 +34,9 @@ from transformers import (
     EarlyStoppingCallback,
     Trainer,
     TrainingArguments,
+    pipeline,
 )
+from transformers.pipelines.pt_utils import KeyDataset
 
 from config.config import GLOBAL_SEED, NUM_WORKERS, WORKFLOWS
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
@@ -874,12 +876,7 @@ class HuggingFaceObjectDetection:
             data["pixel_mask"] = torch.stack([x["pixel_mask"] for x in batch])
         return data
 
-    def train(self):
-        logging.info("Converting dataset into Hugging Face format.")
-        pytorch_dataset = FiftyOneTorchDatasetCOCO(self.dataset)
-        pt_to_hf_converter = TorchToHFDatasetCOCO(pytorch_dataset)
-        hf_dataset = pt_to_hf_converter.convert()
-
+    def train(self, hf_dataset):
         do_convert_annotations = True  # HF can convert (top_left_x, top_left_y, bottom_right_x, bottom_right_y) in abs. coordinates to (x_min, y_min, width, height) in rel. coordinates https://github.com/huggingface/transformers/blob/v4.48.2/src/transformers/models/conditional_detr/image_processing_conditional_detr.py#L1497
         image_processor = AutoProcessor.from_pretrained(
             self.model_name,
@@ -972,8 +969,10 @@ class HuggingFaceObjectDetection:
 
         logging.info(f"Starting training of model {self.model_name}.")
         trainer.train()
+        trainer.push_to_hub()
 
         metrics = trainer.evaluate(eval_dataset=hf_dataset[Split.TEST])
+        logging.info(f"Model training completed. Evaluation results: {metrics}")
 
     def inference(self, detection_threshold=0.2):
 
@@ -981,12 +980,14 @@ class HuggingFaceObjectDetection:
         image_processor = AutoProcessor.from_pretrained(self.hf_hub_model_id)
         model = AutoModelForObjectDetection.from_pretrained(self.hf_hub_model_id)
 
-        device = device, _, _ = get_backend()
+        device, _, _ = get_backend()
         model = model.to(device)
+        model.eval()
 
         pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
 
-        with torch.no_grad():
+        # TODO Improve GPU utilization similar to ZeroShotInference
+        with torch.amp.autocast("cuda"), torch.inference_mode():
             for sample in self.dataset.iter_samples(progress=True, autosave=True):
                 image_width = sample.metadata.width
                 image_height = sample.metadata.height
@@ -1026,7 +1027,6 @@ class HuggingFaceObjectDetection:
                     detections.append(detection)
 
                 sample[pred_key] = fo.Detections(detections=detections)
-                sample.save()
 
 
 class CustomCoDETRObjectDetection:
