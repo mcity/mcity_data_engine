@@ -1,10 +1,13 @@
 datasets:
   - name: mcity_fisheye_2000
     loader_fct: load_mcity_fisheye_2000
-    hf_dataset_name: dbogdollumich/mcity_fisheye
+    hf_dataset_name: mcity-data-engine/mcity_fisheye_v51
     local_path: /media/dbogdoll/Datasets/midadvrb_2000/
     v51_type: YOLOv5Dataset
     v51_splits: ["train", "val"]
+  - name: mcity_fisheye_2100
+    loader_fct: load_mcity_fisheye_2100_vru
+    hf_dataset_name: mcity-data-engine/mcity_fisheye_vru_v51
   - name: mcity_fisheye_3_months
     loader_fct: load_mcity_fisheye_3_months
     local_path: /media/dbogdoll/Datasets/midadvrb_3_months/

@@ -157,19 +157,6 @@ def _align_splits(dataset):
             f"Dataset had no 'val' split. Split {n_samples_current_split} 'test' into {n_samples_current_split_changed} 'val' and {n_samples_new_split} 'test'."
         )
 
-    # If only val and no test, rename val to test
-    if "val" in splits and "test" not in splits:
-        dataset.rename_tag("val", "test")
-        splits = [tag if tag != "val" else "test" for tag in splits]
-
-    # If train exists, val/test should also exist. If val/test exists, train should also exist
-    if ("train" in splits and "test" not in splits and "val" not in splits) or (
-        ("test" in splits or "val" in splits) and "train" not in splits
-    ):
-        logging.warning(
-            f"Inconsistent splits {splits}: 'train' should exist if 'val' or 'test' exists, and vice versa."
-        )
-
     # Logging of available splits
     tags = dataset.distinct("tags")
     splits = [tag for tag in tags if tag in ACCEPTED_SPLITS]
@@ -289,12 +276,32 @@ def load_mcity_fisheye_2000(dataset_info):
     """
     dataset_name = dataset_info["name"]
     dataset_dir = dataset_info["local_path"]
+    hf_dataset_name = dataset_info.get("hf_dataset_name", None)
     dataset_type = getattr(fo.types, dataset_info["v51_type"])
     dataset_splits = dataset_info["v51_splits"]
 
     if dataset_name in fo.list_datasets():
         dataset = fo.load_dataset(dataset_name)
         logging.info("Existing dataset " + dataset_name + " was loaded.")
+    elif hf_dataset_name is not None:
+        # Read API key for HF access
+        hf_token = None
+        try:
+            with open(".secret", "r") as f:
+                for line in f:
+                    if line.startswith("HF_TOKEN="):
+                        hf_token = line.split("=")[1].strip()
+        except FileNotFoundError:
+            logging.error(
+                "'.secret' file not found. Please create it to load private datasets."
+            )
+            hf_token = None
+
+        if hf_token is None:
+            logging.error(
+                "Provide your Hugging Face 'HF_TOKEN' in the .secret file to load private datasets."
+            )
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name, token=hf_token)
     else:
         dataset = fo.Dataset(dataset_name)
         for split in dataset_splits:
@@ -311,6 +318,44 @@ def load_mcity_fisheye_2000(dataset_info):
             sample["location"] = metadata["location"]
             sample["name"] = metadata["name"]
             sample["timestamp"] = metadata["timestamp"]
+
+    return _post_process_dataset(dataset)
+
+
+def load_mcity_fisheye_2100_vru(dataset_info):
+
+    dataset_name = dataset_info["name"]
+    hf_dataset_name = dataset_info["hf_dataset_name"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        # Read API key for HF access
+        hf_token = None
+        try:
+            with open(".secret", "r") as f:
+                for line in f:
+                    if line.startswith("HF_TOKEN="):
+                        hf_token = line.split("=")[1].strip()
+        except FileNotFoundError:
+            logging.error(
+                "'.secret' file not found. Please create it to load private datasets."
+            )
+            hf_token = None
+
+        if hf_token is None:
+            logging.error(
+                "Provide your Hugging Face 'HF_TOKEN' in the .secret file to load private datasets."
+            )
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name, token=hf_token)
+
+    # Add dataset specific metadata based on filename
+    for sample in dataset.iter_samples(progress=True, autosave=True):
+        metadata = _process_mcity_fisheye_filename(sample["filepath"])
+        sample["location"] = metadata["location"]
+        sample["name"] = metadata["name"]
+        sample["timestamp"] = metadata["timestamp"]
 
     return _post_process_dataset(dataset)
 
