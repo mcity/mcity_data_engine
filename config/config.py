@@ -1,7 +1,7 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["auto_labeling"]
+SELECTED_WORKFLOW = ["brain_selection"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -15,11 +15,10 @@ PERSISTENT = True  # If V51 database is stored
 # Workflows and associated parameters
 WORKFLOWS = {
     "aws_download": {
-        "source": "mcity_gridsmart",
-        "start_date": "2023-11-19",
-        "end_date": "2023-11-25",
-        "sample_rate_hz": 1,
-        "test_run": True,
+        "bucket": "mcity-data-engine",
+        "prefix": "",
+        "download_path": "output/datasets/annarbor_rolling",
+        "test_run": False,
         "selected_dataset_overwrite": True,
     },
     "brain_selection": {
