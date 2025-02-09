@@ -1,5 +1,3 @@
-import random
-
 import fiftyone as fo
 import pytest
 from fiftyone import ViewField as F
@@ -10,7 +8,6 @@ from utils.dataset_loader import load_dataset_info
 from workflows.brain import BRAIN_TAXONOMY
 
 
-# Test might be too slow for GitHub Actions CI
 @pytest.fixture
 def dataset_v51():
     """Fixture to load a FiftyOne dataset from the hub."""
