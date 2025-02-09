@@ -25,10 +25,10 @@ WORKFLOWS = {
         "embedding_models": [  # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
             "clip-vit-base32-torch",
             "open-clip-torch",
-            #"dinov2-vits14-torch",
-            #"dinov2-vitl14-torch",
-            #"dinov2-vits14-reg-torch",
-            #"dinov2-vitl14-reg-torch",
+            # "dinov2-vits14-torch",
+            # "dinov2-vitl14-torch",
+            # "dinov2-vits14-reg-torch",
+            # "dinov2-vitl14-reg-torch",
             "mobilenet-v2-imagenet-torch",
             "resnet152-imagenet-torch",
             "vgg19-imagenet-torch",
@@ -39,26 +39,29 @@ WORKFLOWS = {
         ]
     },
     "anomaly_detection": {
-        "anomalib_image_models": [  # Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/models/image/index.html
-            "Padim",
-            "Draem",
-            "Cfa",
-            "Cflow",
-            "Csflow",
-            "Dfm",
-            "Dsr",
-            "EfficientAd",
-            "Fastflow",
-            "ReverseDistillation",
-            "Rkde",
-            "Stfpm",
-            "Uflow",
+        "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
+            "EfficientAd": {"batch_size": 1, "image_size": [960, 960]},
+            "Padim": {"batch_size": 1, "image_size": [480, 480]},
+            "Draem": {"batch_size": 1, "image_size": [960, 960]},
+            "Cfa": {"batch_size": 1, "image_size": [960, 960]},
+            "Cflow": {"batch_size": 1, "image_size": [960, 960]},
+            "Csflow": {"batch_size": 1, "image_size": [960, 960]},
+            "Dfm": {"batch_size": 1, "image_size": [960, 960]},
+            "Dsr": {"batch_size": 1, "image_size": [960, 960]},
+            "Fastflow": {"batch_size": 1, "image_size": [960, 960]},
+            "ReverseDistillation": {"batch_size": 1, "image_size": [960, 960]},
+            "Rkde": {"batch_size": 1, "image_size": [960, 960]},
+            "Stfpm": {"batch_size": 1, "image_size": [960, 960]},
+            "Uflow": {
+                "batch_size": 1,
+                "image_size": [448, 448],
+            },  # Inflexible model w.r.t image size
             # "WinClip",    # Requires language input
             # "Dfkde",      # Has no pixel metrics
             # "Ganomaly",   # Has no pixel metrics
             # "Patchcore",  # Ineffiecient algorithm, cannot load whole dataset
-        ],
-        "anomalib_eval_metrics": [  # Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/metrics/index.html
+        },
+        "anomalib_eval_metrics": [  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/metrics/index.html
             "AUPR",
             "AUROC",
             "F1Max",
