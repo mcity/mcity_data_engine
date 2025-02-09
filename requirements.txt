@@ -9,7 +9,7 @@ albucore==0.0.23
 albumentations==2.0.3
 alembic==1.13.3
 annotated-types==0.7.0
-anomalib==1.1.1
+anomalib==1.2.0
 antlr4-python3-runtime==4.9.3
 anyio==4.6.0
 appdirs==1.4.4
@@ -300,6 +300,7 @@ pyquaternion==0.9.9
 pyRFC3339==2.0.1
 pytest==8.3.4
 python-dateutil==2.9.0.post0
+python-dotenv==1.0.1
 python-json-logger==2.0.4
 pytorch-lightning==2.4.0
 pytz==2022.7.1
