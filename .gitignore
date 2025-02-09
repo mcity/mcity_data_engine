@@ -175,3 +175,6 @@ cython_debug/
 cloud/data/
 cloud/logs
 cloud/wandb/
+
+# Weights and Biases default
+wandb/
