@@ -39,16 +39,17 @@ class Anodec:
         self.dataset = dataset
         self.eval_metrics = eval_metrics
         self.normal_data = dataset.match_tags("train")
-        self.abnormal_data = dataset.match_tags("val")
+        logging.info(f"Using {len(self.normal_data)} normal images for training.")
+        self.abnormal_data = dataset.match_tags(["val", "test"])
+        logging.info(
+            f"Using {len(self.abnormal_data)} images with anomalies for evaluating."
+        )
         self.brains = dataset.list_brain_runs()
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
         self.model_name = self.config["model_name"]
-        self.IMAGE_SIZE = self.config[
-            "image_size"
-        ]  # Preprocess image size for uniformity
-        if self.model_name == "Uflow":
-            self.IMAGE_SIZE = (448, 448)  # Inflexible model
+        self.image_size = self.config["image_size"]
+        self.batch_size = self.config["batch_size"]
         self.anomalib_output_root = anomalib_output_root
         self.model_path = os.path.join(
             anomalib_output_root,
@@ -95,12 +96,10 @@ class Anodec:
             None
         """
         if transform is None:
-            transform = Compose([Resize(self.IMAGE_SIZE, antialias=True)])
+            transform = Compose([Resize(self.image_size, antialias=True)])
 
         # Symlink the images and masks to the directory Anomalib expects.
-        for sample in tqdm(
-            self.abnormal_data.iter_samples(), desc="Preparing directory for Anomalib"
-        ):
+        for sample in self.abnormal_data.iter_samples(progress=True, autosave=True):
             # Add mask groundtruth
             base_filename = sample.filename
             mask_filename = os.path.basename(base_filename).replace(".jpg", ".png")
@@ -111,7 +110,6 @@ class Anodec:
                 logging.error(f"Mask file not found: {mask_path}")
 
             sample["anomaly_mask"] = fo.Segmentation(mask_path=mask_path)
-            sample.save()
 
             dir_name = os.path.dirname(sample.filepath).split("/")[-1]
             new_filename = f"{dir_name}_{base_filename}"
@@ -126,11 +124,6 @@ class Anodec:
                     os.path.join(self.mask_dir, new_filename),
                 )
 
-        # Anomalib models that requires smaller batch sizes on an RTX 4090
-        batch_size_mapping = {"Draem": 8, "EfficientAd": 1}
-        batch_size = batch_size_mapping.get(self.model_name, self.config["batch_size"])
-        logging.info(f"Batch size {batch_size} for model {self.model_name}")
-
         self.datamodule = Folder(
             name=self.dataset_name,
             normal_dir=self.normal_dir,
@@ -138,8 +131,8 @@ class Anodec:
             mask_dir=self.mask_dir,
             task=self.TASK,
             transform=transform,
-            train_batch_size=batch_size,
-            eval_batch_size=batch_size,
+            train_batch_size=self.batch_size,
+            eval_batch_size=self.batch_size,
             num_workers=NUM_WORKERS,
             seed=GLOBAL_SEED,
         )
@@ -223,6 +216,8 @@ class Anodec:
                 export_type=ExportType.TORCH,
                 ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
             )
+        else:
+            logging.info(f"Model {self.model_path} already trained.")
 
     def validate_model(self):
         """
@@ -243,9 +238,9 @@ class Anodec:
                 datamodule=self.datamodule,
                 ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
             )
-            logging.info(test_results)
+            logging.info(f"Model test results: {test_results}")
         else:
-            pass
+            logging.error(f"Engine '{self.engine}' not available.")
 
     def run_inference(self, threshold=0.5):
         """
@@ -281,7 +276,9 @@ class Anodec:
                 self.abnormal_data.iter_samples(autosave=True, progress=True), outputs
             ):
                 if sample.filepath != output["image_path"][0]:
-                    logging.error("Sample and output are not aligned!")
+                    logging.error(
+                        f"Sample {sample.filepath} and output {output["image_path"][0]} are not aligned!"
+                    )
                     continue
                 conf = output["pred_scores"].item()
                 anomaly = "normal" if conf < threshold else "anomaly"

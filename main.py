@@ -264,11 +264,6 @@ class WorkflowExecutor:
                     ]
 
                     config_file_path = "wandb_runs/anomalib_config.json"
-                    with open(config_file_path, "r") as file:
-                        config = json.load(file)
-                    config["overrides"]["run_config"][
-                        "v51_dataset_name"
-                    ] = self.selected_dataset
                     wandb_project = "Data Engine Anomalib"
 
                     for MODEL_NAME in (
@@ -277,7 +272,20 @@ class WorkflowExecutor:
                         pbar.set_description(
                             "Training/Loading Anomalib model " + MODEL_NAME
                         )
+
+                        with open(config_file_path, "r") as file:
+                            config = json.load(file)
+                        config["overrides"]["run_config"][
+                            "v51_dataset_name"
+                        ] = self.selected_dataset
+
                         config["overrides"]["run_config"]["model_name"] = MODEL_NAME
+                        config["overrides"]["run_config"]["image_size"] = (
+                            anomalib_image_models[MODEL_NAME]["image_size"]
+                        )
+                        config["overrides"]["run_config"]["batch_size"] = (
+                            anomalib_image_models[MODEL_NAME]["batch_size"]
+                        )
 
                         # Local execution
                         if self.args.queue == None:
