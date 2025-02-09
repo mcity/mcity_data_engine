@@ -290,6 +290,7 @@ class WorkflowExecutor:
                         # Local execution
                         if self.args.queue == None:
                             wandb_run = wandb.init(
+                                name=MODEL_NAME,
                                 allow_val_change=True,
                                 sync_tensorboard=True,
                                 project=wandb_project,
