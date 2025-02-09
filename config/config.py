@@ -1,11 +1,11 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["brain_selection"]
+SELECTED_WORKFLOW = ["anomaly_detection"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "fisheye8k",
+    "name": "fisheye8k_anomaly_detection",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
@@ -25,8 +25,10 @@ WORKFLOWS = {
         "embedding_models": [  # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
             "clip-vit-base32-torch",
             "open-clip-torch",
-            "dinov2-vitl14-torch",
-            "dinov2-vits14-reg-torch",
+            #"dinov2-vits14-torch",
+            #"dinov2-vitl14-torch",
+            #"dinov2-vits14-reg-torch",
+            #"dinov2-vitl14-reg-torch",
             "mobilenet-v2-imagenet-torch",
             "resnet152-imagenet-torch",
             "vgg19-imagenet-torch",
@@ -36,7 +38,7 @@ WORKFLOWS = {
             "zero-shot-classification-transformer-torch",
         ]
     },
-    "learn_normality": {
+    "anomaly_detection": {
         "anomalib_image_models": [  # Choose from https://anomalib.readthedocs.io/en/v1.1.1/markdown/guides/reference/models/image/index.html
             "Padim",
             "Draem",
