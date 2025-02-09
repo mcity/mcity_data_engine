@@ -13,6 +13,7 @@ from anomalib.loggers import AnomalibTensorBoardLogger
 from fiftyone import ViewField as F
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from torchvision.transforms.v2 import Compose, Resize
+from tqdm import tqdm
 
 from config.config import GLOBAL_SEED, NUM_WORKERS
 
@@ -97,11 +98,18 @@ class Anodec:
             transform = Compose([Resize(self.IMAGE_SIZE, antialias=True)])
 
         # Symlink the images and masks to the directory Anomalib expects.
-        for sample in self.abnormal_data.iter_samples():
+        for sample in tqdm(
+            self.abnormal_data.iter_samples(), desc="Preparing directory for Anomalib"
+        ):
             # Add mask groundtruth
             base_filename = sample.filename
             mask_filename = os.path.basename(base_filename).replace(".jpg", ".png")
             mask_path = os.path.join(self.mask_dir, mask_filename)
+            logging.debug(f"Assigned mask {mask_path} to sample {base_filename}")
+
+            if not os.path.exists(mask_path):
+                logging.error(f"Mask file not found: {mask_path}")
+
             sample["anomaly_mask"] = fo.Segmentation(mask_path=mask_path)
             sample.save()
 
@@ -121,7 +129,7 @@ class Anodec:
         # Anomalib models that requires smaller batch sizes on an RTX 4090
         batch_size_mapping = {"Draem": 8, "EfficientAd": 1}
         batch_size = batch_size_mapping.get(self.model_name, self.config["batch_size"])
-        logging.info("Batch size = ", batch_size, " for model " + self.model_name)
+        logging.info(f"Batch size {batch_size} for model {self.model_name}")
 
         self.datamodule = Folder(
             name=self.dataset_name,
@@ -135,6 +143,7 @@ class Anodec:
             num_workers=NUM_WORKERS,
             seed=GLOBAL_SEED,
         )
+
         self.datamodule.setup()
 
     def unlink_symlinks(self):

@@ -16,6 +16,12 @@ datasets:
   - name: fisheye8k
     loader_fct: load_fisheye_8k
     hf_dataset_name: Voxel51/fisheye8k
+  - name: fisheye8k_anomaly_detection
+    loader_fct: load_fisheye8K_anomaly_detection
+    local_path: /home/eo233/mcity_data_engine/output/datasets/fisheye8k_anomaly_detection
+    v51_type: YOLOv5Dataset
+    v51_splits: ["train", "val"]
+    anomalib_masks_path: /home/eo233/mcity_data_engine/output/datasets/fisheye8k_anomaly_detection_masks/
   - name: mcity_fisheye_ano_ped
     loader_fct: load_mcity_fisheye_2000
     local_path: /media/dbogdoll/Datasets/midadvrb_ano_ped/

@@ -321,6 +321,28 @@ def load_mcity_fisheye_2000(dataset_info):
 
     return _post_process_dataset(dataset)
 
+def load_fisheye8K_anomaly_detection(dataset_info):
+    dataset_name = dataset_info["name"]
+    dataset_dir = dataset_info["local_path"]
+    dataset_type = getattr(fo.types, dataset_info["v51_type"])
+    dataset_splits = dataset_info["v51_splits"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = fo.Dataset(dataset_name)
+        for split in dataset_splits:
+            dataset.add_dir(
+                dataset_dir=dataset_dir,
+                dataset_type=dataset_type,
+                split=split,
+                tags=split,
+            )
+
+
+    return _post_process_dataset(dataset)
+
 
 def load_mcity_fisheye_2100_vru(dataset_info):
 
