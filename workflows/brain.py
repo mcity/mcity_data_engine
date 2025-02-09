@@ -19,6 +19,16 @@ Implementing Voxel51 brain methods.
 https://docs.voxel51.com/brain.html
 """
 
+BRAIN_TAXONOMY = {
+    "field": "brain_selection",
+    "value_compute_representativeness": "representativeness_center",
+    "value_find_unique": "greedy_center",
+    "value_compute_uniqueness": "deterministic_center",
+    "value_find_unique_neighbour": "greedy_neighbour",
+    "value_compute_uniqueness_neighbour": "deterministic_neighbour",
+    "value_compute_representativeness_neighbour": "representativeness_neighbour",
+}
+
 
 class Brain:
     def __init__(
@@ -55,16 +65,6 @@ class Brain:
         # Generate folder to store all embedding-related results
         self.embeddings_root = embeddings_path + self.dataset_name + "/"
         Path(self.embeddings_root).mkdir(parents=True, exist_ok=True)
-
-        self.brain_taxonomy = {
-            "field": "brain_selection",
-            "value_compute_representativeness": "representativeness_center",
-            "value_find_unique": "greedy_center",
-            "value_compute_uniqueness": "deterministic_center",
-            "value_find_unique_neighbour": "greedy_neighbour",
-            "value_compute_uniqueness_neighbour": "deterministic_neighbour",
-            "value_compute_representativeness_neighbour": "representativeness_neighbour",
-        }
 
     def __del__(self):
         self.steps -= 1  # +1 after every function, need to decrement for final step
@@ -244,8 +244,8 @@ class Brain:
         """
 
         start_time = time.time()
-        field = self.brain_taxonomy["field"]
-        value = self.brain_taxonomy["value_compute_representativeness"]
+        field = BRAIN_TAXONOMY["field"]
+        value = BRAIN_TAXONOMY["value_compute_representativeness"]
         methods_cluster_center = ["cluster-center", "cluster-center-downweight"]
 
         for method in tqdm(methods_cluster_center, desc="Representativeness"):
@@ -308,8 +308,8 @@ class Brain:
         start_time = time.time()
         sample_count = len(self.dataset.view())
         num_of_unique = perct_unique * sample_count
-        field = self.brain_taxonomy["field"]
-        value = self.brain_taxonomy["value_find_unique"]
+        field = BRAIN_TAXONOMY["field"]
+        value = BRAIN_TAXONOMY["value_find_unique"]
 
         # Check if any sample has the label label_unique:
         dataset_labels = self.dataset.count_sample_tags()
@@ -352,8 +352,8 @@ class Brain:
         """
 
         start_time = time.time()
-        field = self.brain_taxonomy["field"]
-        value = self.brain_taxonomy["value_compute_uniqueness"]
+        field = BRAIN_TAXONOMY["field"]
+        value = BRAIN_TAXONOMY["value_compute_uniqueness"]
 
         fob.compute_uniqueness(
             self.dataset,
@@ -399,20 +399,20 @@ class Brain:
         None
         """
         start_time = time.time()
-        field = self.brain_taxonomy["field"]
+        field = BRAIN_TAXONOMY["field"]
         field_neighbour_distance = "distance"
 
-        value_find_unique = self.brain_taxonomy["value_find_unique"]
-        value_compute_uniqueness = self.brain_taxonomy["value_compute_uniqueness"]
-        value_compute_representativeness = self.brain_taxonomy[
+        value_find_unique = BRAIN_TAXONOMY["value_find_unique"]
+        value_compute_uniqueness = BRAIN_TAXONOMY["value_compute_uniqueness"]
+        value_compute_representativeness = BRAIN_TAXONOMY[
             "value_compute_representativeness"
         ]
 
-        value_find_unique_neighbour = self.brain_taxonomy["value_find_unique_neighbour"]
-        value_compute_uniqueness_neighbour = self.brain_taxonomy[
+        value_find_unique_neighbour = BRAIN_TAXONOMY["value_find_unique_neighbour"]
+        value_compute_uniqueness_neighbour = BRAIN_TAXONOMY[
             "value_compute_uniqueness_neighbour"
         ]
-        value_compute_representativeness_neighbour = self.brain_taxonomy[
+        value_compute_representativeness_neighbour = BRAIN_TAXONOMY[
             "value_compute_representativeness_neighbour"
         ]
 
