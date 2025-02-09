@@ -13,9 +13,9 @@ if IGNORE_FUTURE_WARNINGS:
     warnings.simplefilter("ignore", category=FutureWarning)
 import fiftyone as fo
 import torch.multiprocessing as mp
-import wandb
 from tqdm import tqdm
 
+import wandb
 from config.config import (
     ACCEPTED_SPLITS,
     GLOBAL_SEED,
@@ -118,13 +118,6 @@ def workflow_brain_selection(dataset, dataset_info, MODEL_NAME):
 
     # Select samples similar to the center points to enlarge the dataset
     v51_brain.compute_similar_images()
-
-    v51_keys = {}
-    v51_keys["embedding"] = v51_brain.embedding_key
-    v51_keys["similarity"] = v51_brain.similiarity_key
-    v51_keys["uniqueness"] = v51_brain.uniqueness_key
-
-    return v51_keys
 
 
 def workflow_auto_labeling():

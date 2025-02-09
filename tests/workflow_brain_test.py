@@ -2,18 +2,20 @@ import random
 
 import fiftyone as fo
 import pytest
+from fiftyone import ViewField as F
 from fiftyone.utils.huggingface import load_from_hub
 
 from main import workflow_brain_selection
 from utils.dataset_loader import load_dataset_info
+from workflows.brain import BRAIN_TAXONOMY
 
 
 # Test might be too slow for GitHub Actions CI
 @pytest.fixture
 def dataset_v51():
     """Fixture to load a FiftyOne dataset from the hub."""
-    dataset_name_hub = "dbogdollumich/mcity_fisheye_v51"
-    dataset_name = "mcity_fisheye_v51_brain_test"
+    dataset_name_hub = "Voxel51/fisheye8k"
+    dataset_name = "fisheye8k_v51_brain_test"
     try:
         dataset = load_from_hub(
             repo_id=dataset_name_hub, max_samples=200, name=dataset_name
@@ -23,21 +25,25 @@ def dataset_v51():
     assert dataset is not None, "Failed to load or create the FiftyOne dataset"
     return dataset
 
+
 def test_brain(dataset_v51):
     MODEL_NAME = "mobilenet-v2-imagenet-torch"
-    dataset_info = load_dataset_info("mcity_fisheye_2000")  # Use loader for actual dataset
-    dataset_info["name"] = "mcity_fisheye_v51_brain_test"   # Update with test name for local tests where both exist
-    v51_keys = workflow_brain_selection(dataset_v51, dataset_info, MODEL_NAME)
+    dataset_info = load_dataset_info("fisheye8k")  # Use loader for actual dataset
+    dataset_info["name"] = (
+        "fisheye8k_v51_brain_test"  # Update with test name for local tests where both exist
+    )
+    workflow_brain_selection(dataset_v51, dataset_info, MODEL_NAME)
 
-    embedding_key = v51_keys["embedding"]
-    uniqueness_key = v51_keys["uniqueness"]
+    # Check number of selected samples
+    results_field = BRAIN_TAXONOMY["field"]
+    n_samples_selected = 0
+    for key in BRAIN_TAXONOMY:
+        if "value" in key:
+            value = BRAIN_TAXONOMY[key]
+            view_result = dataset_v51.match(F(results_field) == value)
+            n_samples = len(view_result)
+            print(f"Found {n_samples} samples for {results_field}/{value}")
+            n_samples_selected += n_samples
 
-    embeddings = dataset_v51.values(embedding_key)
-    uniqueness = dataset_v51.values(uniqueness_key)
-
-    print(embeddings)
-    print(uniqueness)
-
-    # Assert the results are not empty and have the correct length
-    assert len(embeddings) == len(dataset_v51), "Embeddings length does not match dataset length"
-    assert len(uniqueness) == len(dataset_v51), "Uniqueness length does not match dataset length"
+    # Assert if no samples were selected
+    assert n_samples_selected != 0, "No samples were selected"
