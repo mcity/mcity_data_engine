@@ -3,11 +3,11 @@ import random
 import fiftyone as fo
 import pytest
 import torch
-from datasets import Dataset
 from fiftyone.utils.huggingface import load_from_hub
 from torch.utils.data import DataLoader
 
 from config.config import ACCEPTED_SPLITS
+from datasets import Dataset
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.dataset_loader import get_split
 

@@ -11,14 +11,18 @@ from utils.selector import select_by_class
 
 
 class AnomalyDetectionDataPreparation:
-    def __init__(self, dataset, dataset_name):
+    def __init__(self, dataset, dataset_name, config=None):
         self.dataset = dataset
         self.dataset_ano_dec = None
         self.dataset_name = dataset_name
         self.export_root = "output/datasets/"
-        self.config = WORKFLOWS["anomaly_detection"]["data_preparation"].get(
-            self.dataset_name, None
-        )
+        try:
+            # Allow custom config for testing
+            self.config = config
+        except:
+            self.config = WORKFLOWS["anomaly_detection"]["data_preparation"].get(
+                self.dataset_name, None
+            )
         if self.config is None:
             logging.error(
                 f"Data preparation config for dataset {self.dataset_name} missing"
