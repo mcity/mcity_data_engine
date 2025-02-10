@@ -16,10 +16,10 @@ class AnomalyDetectionDataPreparation:
         self.dataset_ano_dec = None
         self.dataset_name = dataset_name
         self.export_root = "output/datasets/"
-        try:
+        if config is not None:
             # Allow custom config for testing
             self.config = config
-        except:
+        else:
             self.config = WORKFLOWS["anomaly_detection"]["data_preparation"].get(
                 self.dataset_name, None
             )

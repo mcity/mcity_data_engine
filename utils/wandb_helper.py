@@ -42,4 +42,4 @@ def wandb_close(wandb_run=None, exit_code=0, sync_tensorboard=True):
         if sync_tensorboard:
             wandb.tensorboard.unpatch()
     except Exception as e:
-        logging.error(f"W&B run {wandb_run} could not be closed.")
+        pass
