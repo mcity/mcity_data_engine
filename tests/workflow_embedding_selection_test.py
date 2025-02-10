@@ -3,9 +3,9 @@ import pytest
 from fiftyone import ViewField as F
 from fiftyone.utils.huggingface import load_from_hub
 
-from main import workflow_brain_selection
+from main import workflow_embedding_selection
 from utils.dataset_loader import load_dataset_info
-from workflows.brain import BRAIN_TAXONOMY
+from workflows.embedding_selection import BRAIN_TAXONOMY
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def test_brain(dataset_v51):
     dataset_info["name"] = (
         "fisheye8k_v51_brain_test"  # Update with test name for local tests where both exist
     )
-    workflow_brain_selection(dataset_v51, dataset_info, MODEL_NAME)
+    workflow_embedding_selection(dataset_v51, dataset_info, MODEL_NAME)
 
     # Check number of selected samples
     results_field = BRAIN_TAXONOMY["field"]
