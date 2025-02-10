@@ -42,6 +42,9 @@ class AnomalyDetectionDataPreparation:
         rare_classes = self.config.get("rare_classes", ["Truck"])
         # Filter to only include data from one camera to make the data distribution clearer
         view_location = self.dataset.match(F("location") == location_filter)
+        logging.info(
+            f"Data pre-processing for the Fisheye8K dataset. Data from location {location_filter} is used, with {rare_classes} as the rare classes."
+        )
 
         # Build training and validation datasets
         view_train = select_by_class(view_location, classes_out=rare_classes)
