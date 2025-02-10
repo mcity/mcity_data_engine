@@ -178,3 +178,5 @@ cloud/wandb/
 
 # Weights and Biases default
 wandb/
+# Anomalib
+pre_trained/
