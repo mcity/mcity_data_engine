@@ -66,7 +66,7 @@ WORKFLOWS = {
         "anomalib_eval_metrics": [  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/metrics/index.html
             "AUPR",
             "AUROC",
-            "F1Max",
+            # "F1Max",      # Deprecated
             # "AUPRO",      # Focus on standard metrics, computation of others can be expensive
             # "AnomalyScoreDistribution",
             # "BinaryPrecisionRecallCurve",
