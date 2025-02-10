@@ -1,7 +1,7 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["aws_download", "embedding_selection", "anomaly_detection"]
+SELECTED_WORKFLOW = ["anomaly_detection"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -39,6 +39,7 @@ WORKFLOWS = {
         ]
     },
     "anomaly_detection": {
+        "mode": "inference",  # "train" or "inference"
         "epochs": 30,
         "early_stop_patience": 5,
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
