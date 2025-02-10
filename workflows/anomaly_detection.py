@@ -11,6 +11,7 @@ from anomalib.deploy import ExportType, TorchInferencer
 from anomalib.engine import Engine
 from anomalib.loggers import AnomalibTensorBoardLogger
 from fiftyone import ViewField as F
+from huggingface_hub import HfApi
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from torchvision.transforms.v2 import Compose, Resize
 
@@ -68,6 +69,10 @@ class Anodec:
         self.normal_dir = os.path.dirname(filepath_train)
         self.abnormal_dir = os.path.dirname(filepath_val)
         self.mask_dir = os.path.dirname(filepath_masks)
+
+        logging.info(f"Directory for normal samples: {self.normal_dir}")
+        logging.info(f"Directory for abnormal samples: {self.abnormal_dir}")
+        logging.info(f"Directory for masks: {self.mask_dir}")
 
         # Anomalib objects
         self.inferencer = None
@@ -143,20 +148,24 @@ class Anodec:
         self.datamodule.setup()
 
     def unlink_symlinks(self):
-        for sample in self.abnormal_data.iter_samples():
+        for sample in self.abnormal_data.iter_samples(progress=True):
             base_filename = sample.filename
             dir_name = os.path.dirname(sample.filepath).split("/")[-1]
             new_filename = f"{dir_name}_{base_filename}"
 
             try:
                 os.unlink(os.path.join(self.abnormal_dir, new_filename))
-            except:
-                pass
+            except Exception as e:
+                logging.debug(
+                    f"Unlinking of {os.path.join(self.abnormal_dir, new_filename)} failed: {e}"
+                )
 
             try:
                 os.unlink(os.path.join(self.mask_dir, new_filename))
-            except:
-                pass
+            except Exception as e:
+                logging.debug(
+                    f"Unlinking of {os.path.join(self.mask_dir, new_filename)} failed: {e}"
+                )
 
     def train_and_export_model(self, transform=None):
         """
@@ -218,6 +227,21 @@ class Anodec:
                 export_type=ExportType.TORCH,
                 ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
             )
+
+            # Upload model to Hugging Face
+            api = HfApi()
+            repo_name = (
+                f"mcity-data-engine/{self.dataset_name}_anomalib_{self.model_name}"
+            )
+            logging.info(f"Uploading model to Hugging Face: {repo_name}")
+            api.create_repo(repo_name, private=True, repo_type="model", exist_ok=True)
+            api.upload_file(
+                path_or_fileobj=self.model_path,
+                path_in_repo="model.pt",
+                repo_id=repo_name,
+                repo_type="model",
+            )
+
         else:
             logging.info(f"Model {self.model_path} already trained.")
 
@@ -245,85 +269,28 @@ class Anodec:
             logging.error(f"Engine '{self.engine}' not available.")
 
     def run_inference(self, threshold=0.5):
-        """
-        Runs inference on a collection of samples to detect anomalies.
+        logging.info(f"Running inference")
+        inferencer = TorchInferencer(path=os.path.join(self.model_path), device="cuda")
+        self.inferencer = inferencer
 
-        Parameters:
-        threshold (float): The cutoff value for the anomaly score. Samples with a score above this threshold
-                           are considered anomalous. Default is 0.5.
+        for sample in self.abnormal_data.iter_samples(autosave=True, progress=True):
 
-        Description:
-        This method takes a FiftyOne sample collection (e.g., a test set) as input, along with an inferencer object,
-        and a key for storing the results in the samples. It runs the model on each sample in the collection and stores
-        the results. The threshold argument acts as a cutoff for the anomaly score. If the score is above the threshold,
-        the sample is considered anomalous.
+            image = read_image(sample.filepath, as_tensor=True)
+            output = self.inferencer.predict(image)
 
-        If the engine is available, it uses the engine to predict the outputs. For each sample, it checks if the sample
-        and output are aligned. If they are not aligned, it logs an error and continues to the next sample. It then
-        calculates the confidence score and determines if the sample is anomalous based on the threshold. The results
-        are stored in the sample with keys for anomaly score, anomaly classification, anomaly map, and defect mask.
+            # Classification
+            conf = output.pred_score
+            anomaly = "normal" if conf < threshold else "anomaly"
+            sample[f"pred_anomaly_score_{self.model_name}"] = conf
+            sample[f"pred_anomaly_{self.model_name}"] = fo.Classification(label=anomaly)
 
-        If the engine is not available, it initializes a TorchInferencer and uses it to predict the outputs for each sample.
-        It reads the image from the sample's filepath, predicts the output, calculates the confidence score, and determines
-        if the sample is anomalous based on the threshold. The results are stored in the sample with keys for anomaly score,
-        anomaly classification, anomaly map, and defect mask.
-        """
-        if self.engine:
-            outputs = self.engine.predict(
-                model=self.model,
-                datamodule=self.datamodule,
-                ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
+            # Segmentation
+            sample[f"pred_anomaly_map_{self.model_name}"] = fo.Heatmap(
+                map=output.anomaly_map
             )
-            for sample, output in zip(
-                self.abnormal_data.iter_samples(autosave=True, progress=True), outputs
-            ):
-                if sample.filepath != output["image_path"][0]:
-                    logging.error(
-                        f"Sample {sample.filepath} and output {output["image_path"][0]} are not aligned!"
-                    )
-                    continue
-                conf = output["pred_scores"].item()
-                anomaly = "normal" if conf < threshold else "anomaly"
-
-                sample[f"pred_anomaly_score_{self.model_name}"] = conf
-                sample[f"pred_anomaly_{self.model_name}"] = fo.Classification(
-                    label=anomaly
-                )
-                sample[f"pred_anomaly_map_{self.model_name}"] = fo.Heatmap(
-                    map=output["anomaly_maps"].numpy()
-                )
-                sample[f"pred_defect_mask_{self.model_name}"] = fo.Segmentation(
-                    mask=output["pred_masks"].numpy()
-                )
-                sample.save()
-
-        else:
-            inferencer = TorchInferencer(
-                path=os.path.join(self.model_path), device="cuda"
+            sample[f"pred_defect_mask_{self.model_name}"] = fo.Segmentation(
+                mask=output.pred_mask
             )
-            self.inferencer = inferencer
-
-            for sample in self.abnormal_data.iter_samples(autosave=True, progress=True):
-
-                image = read_image(sample.filepath, as_tensor=True)
-                output = self.inferencer.predict(image)
-
-                # Classification
-                conf = output.pred_score
-                anomaly = "normal" if conf < threshold else "anomaly"
-                sample[f"pred_anomaly_score_{self.model_name}"] = conf
-                sample[f"pred_anomaly_{self.model_name}"] = fo.Classification(
-                    label=anomaly
-                )
-
-                # Segmentation
-                sample[f"pred_anomaly_map_{self.model_name}"] = fo.Heatmap(
-                    map=output.anomaly_map
-                )
-                sample[f"pred_defect_mask_{self.model_name}"] = fo.Segmentation(
-                    mask=output.pred_mask
-                )
-                sample.save()
 
     def eval_v51(self):
         """
