@@ -1,74 +1,45 @@
-from config.config import WANDB_CONFIG
+import datetime
+import logging
+import os
+import re
 
-# from wandb.sdk.launch import launch_add
-
-import subprocess
-
-
-def get_wandb_conf(config, value):
-    """
-    Retrieve a specific configuration value from a nested dictionary structure.
-
-    Args:
-        config (dict): The configuration dictionary containing nested 'overrides' and 'run_config' keys.
-        value (str): The key whose corresponding value needs to be retrieved from the 'run_config' dictionary.
-
-    Returns:
-        The value associated with the specified key in the 'run_config' dictionary.
-
-    Raises:
-        KeyError: If the specified key is not found in the 'run_config' dictionary.
-    """
-    return config["overrides"]["run_config"][value]
+import wandb
 
 
-#
-#
-# def launch_to_queue_python(name, project, config):
-#    """
-#    Adds a launch configuration to the queue for execution. More info:
-#    - https://docs.wandb.ai/ref/python/launch-library/launch_add/
-#    - https://docs.wandb.ai/guides/launch/add-job-to-queue/
-#
-#    Parameters:
-#    name (str): The name of the launch.
-#    project (str): The project name associated with the launch.
-#    config (dict): The configuration dictionary for the launch.
-#
-#    Returns:
-#    None
-#    """
-#    launch_add(
-#        name=name,
-#        entity=WANDB_CONFIG["entity"],
-#        uri=WANDB_CONFIG["github"],
-#        config=config,
-#        docker_image=WANDB_CONFIG[
-#            "docker_image"
-#        ],  # "Dockerfile.wandb" # BUG --> build Docker Image on Docker Hub has the whole repository in it hardcopied
-#        queue_name=WANDB_CONFIG["queue"],
-#        project=project,
-#        entry_point=["python", "wandb_runs/anomalib_run.py"],
-#        # build=True, # FIXME Throws error "To build an image on queue a URI must be set."
-#    )
-#
-#
-def launch_to_queue_terminal(name, project, config_file, entry_point, queue):
-    uri = WANDB_CONFIG["github"]
-    entity = WANDB_CONFIG["entity"]
-    docker = WANDB_CONFIG["docker_file"]
-    entry_point = entry_point[0] + " " + entry_point[1]
+def wandb_init(
+    run_name,
+    project_name,
+    dataset_name,
+    config=None,
+    log_dir_root="logs/tensorboard/",
+    log_dir=None,
+    sync_tensorboard=True,
+):
+    # Logging dir
+    if log_dir is None:
+        project_folder = re.sub(r"[^\w\-_]", "_", project_name)
+        run_folder = re.sub(r"[^\w\-_]", "_", run_name)
+        now = datetime.datetime.now()
+        time_folder = now.strftime("%Y-%m-%d_%H-%M-%S")
+        log_dir = os.path.join(log_dir_root, project_folder, run_folder, time_folder)
 
-    command = (
-        f"wandb launch "
-        f"--uri {uri} "
-        f"--entity {entity} "
-        f"--name {name} "
-        f'--project "{project}" '
-        f'--entry-point "{entry_point}" '
-        f"--dockerfile {docker} "
-        f"--queue {queue} "
-        f"--config {config_file}"
+    wandb.tensorboard.patch(root_logdir=log_dir)
+
+    wandb_run = wandb.init(
+        name=run_name,
+        sync_tensorboard=sync_tensorboard,
+        project=project_name,
+        tags=[dataset_name],
+        config=config,
     )
 
-    subprocess.run(command, shell=True, check=True)
+    return wandb_run, log_dir
+
+
+def wandb_close(wandb_run=None, exit_code=0, sync_tensorboard=True):
+    try:
+        wandb_run.finish(exit_code=exit_code)
+        if sync_tensorboard:
+            wandb.tensorboard.unpatch()
+    except Exception as e:
+        logging.error(f"W&B run {wandb_run} could not be closed.")
