@@ -209,20 +209,24 @@ class WorkflowExecutor:
                     dataset, dataset_name = workflow_aws_download()
 
                     # Select downloaded dataset for further workflows if configured
-                    if WORKFLOWS["aws_download"]["selected_dataset_overwrite"] == True:
+                    if dataset is not None:
+                        if (
+                            WORKFLOWS["aws_download"]["selected_dataset_overwrite"]
+                            == True
+                        ):
 
-                        dataset_info = {
-                            "name": dataset_name,
-                            "v51_type": "FiftyOneDataset",
-                            "splits": [],
-                        }
+                            dataset_info = {
+                                "name": dataset_name,
+                                "v51_type": "FiftyOneDataset",
+                                "splits": [],
+                            }
 
-                        self.dataset = dataset
-                        self.dataset_info = dataset_info
-                        self.selected_dataset = dataset_name
-                        logging.warning(
-                            f"Selected dataset overwritten to {dataset_name}"
-                        )
+                            self.dataset = dataset
+                            self.dataset_info = dataset_info
+                            self.selected_dataset = dataset_name
+                            logging.warning(
+                                f"Selected dataset overwritten to {dataset_name}"
+                            )
 
                 elif workflow == "embedding_selection":
                     embedding_models = WORKFLOWS["embedding_selection"][
