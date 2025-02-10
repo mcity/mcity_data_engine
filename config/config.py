@@ -42,8 +42,8 @@ WORKFLOWS = {
         "epochs": 30,
         "early_stop_patience": 5,
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
+            "Padim": {"batch_size": 1, "image_size": [960, 960]},
             "EfficientAd": {"batch_size": 1, "image_size": [960, 960]},
-            "Padim": {"batch_size": 1, "image_size": [480, 480]},
             "Draem": {"batch_size": 1, "image_size": [960, 960]},
             "Cfa": {"batch_size": 1, "image_size": [960, 960]},
             "Cflow": {"batch_size": 1, "image_size": [960, 960]},
