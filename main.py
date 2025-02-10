@@ -102,12 +102,15 @@ def workflow_aws_download():
     return dataset, dataset_name
 
 
-def workflow_anomaly_detection(dataset, dataset_info, eval_metrics, run_config):
+def workflow_anomaly_detection(
+    dataset, dataset_info, eval_metrics, run_config, log_dir
+):
     ano_dec = Anodec(
         dataset=dataset,
         eval_metrics=eval_metrics,
         dataset_info=dataset_info,
         config=run_config,
+        tensorboard_output=log_dir,
     )
     ano_dec.train_and_export_model()
     ano_dec.run_inference()
@@ -282,7 +285,7 @@ class WorkflowExecutor:
                                 ],
                                 "data_root": data_preparer.export_root,
                             }
-                            wandb_run = wandb_init(
+                            wandb_run, log_dir = wandb_init(
                                 run_name=MODEL_NAME,
                                 project_name="Selection by Anomaly Detection",
                                 dataset_name=self.selected_dataset,
@@ -294,6 +297,7 @@ class WorkflowExecutor:
                                 self.dataset_info,
                                 eval_metrics,
                                 run_config,
+                                log_dir,
                             )
                         except Exception as e:
                             logging.error(f"Error in Anomaly Detection: {e}")
@@ -302,7 +306,6 @@ class WorkflowExecutor:
                             wandb_close(wandb_run=wandb_run, exit_code=wandb_exit_code)
 
                 elif workflow == "auto_labeling":
-                    logging.info("Model training with Hugging Face")
                     mode = WORKFLOWS["auto_labeling"]["mode"]
                     selected_model_source = WORKFLOWS["auto_labeling"]["model_source"]
 
@@ -310,10 +313,6 @@ class WorkflowExecutor:
                         hf_models = WORKFLOWS["auto_labeling"][
                             "hf_models_objectdetection"
                         ]
-                        wandb_project = "Data Engine Auto Labeling"
-                        config_file_path = "wandb_runs/auto_label_config.json"
-                        with open(config_file_path, "r") as file:
-                            config = json.load(file)
 
                         # Convert dataset
                         logging.info("Converting dataset into Hugging Face format.")
@@ -325,31 +324,16 @@ class WorkflowExecutor:
                         for MODEL_NAME in (
                             pbar := tqdm(hf_models, desc="Auto Labeling Models")
                         ):
-                            wandb_run = None
                             try:
-                                pbar.set_description("Training model " + MODEL_NAME)
-                                config["overrides"]["run_config"][
-                                    "model_name"
-                                ] = MODEL_NAME
-                                config["overrides"]["run_config"][
-                                    "v51_dataset_name"
-                                ] = self.selected_dataset
+                                wandb_exit_code = 0
+                                pbar.set_description(f"Training model {MODEL_NAME}")
 
-                                wandb_run = wandb.init(
-                                    name=MODEL_NAME,
-                                    allow_val_change=True,
-                                    sync_tensorboard=True,
-                                    group="Auto Labeling HF",
-                                    job_type="train",
-                                    config=config,
-                                    project=wandb_project,
+                                wandb_run = wandb_init(
+                                    run_name=MODEL_NAME,
+                                    project_name="Auto Labeling Hugging Face",
+                                    dataset_name=self.selected_dataset,
                                 )
-                                wandb_config = wandb.config["overrides"]["run_config"]
 
-                                wandb_run.tags += (
-                                    wandb_config["v51_dataset_name"],
-                                    "local",
-                                )
                                 detector = HuggingFaceObjectDetection(
                                     dataset=self.dataset,
                                     config=wandb_config,
@@ -357,17 +341,21 @@ class WorkflowExecutor:
 
                                 if mode == "train":
                                     detector.train(hf_dataset)
+                                    detector.inference(hf_dataset)
                                 elif mode == "inference":
                                     detector.inference(hf_dataset)
                                 else:
                                     logging.error(f"Mode {mode} is not supported.")
-                                wandb_run.finish(exit_code=0)
 
                             except Exception as e:
                                 logging.error(
                                     f"An error occurred with model {MODEL_NAME}: {e}"
                                 )
-                                wandb_close(wandb_run, exit_code=1)
+                                wandb_exit_code = 1
+
+                            finally:
+                                wandb_close(wandb_run, wandb_exit_code)
+
                     elif selected_model_source == "custom_codetr":
                         # Export dataset into the format Co-DETR expects
                         export_dir = WORKFLOWS["auto_labeling"]["custom_codetr"][

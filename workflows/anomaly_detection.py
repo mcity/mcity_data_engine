@@ -29,6 +29,7 @@ class Anodec:
         eval_metrics,
         dataset_info,
         config,
+        tensorboard_output,
         anomalib_output_root="./output/models/anomalib/",
     ):
         torch.set_float32_matmul_precision(
@@ -49,6 +50,7 @@ class Anodec:
         self.model_name = self.config["model_name"]
         self.image_size = self.config["image_size"]
         self.batch_size = self.config["batch_size"]
+        self.tensorboard_output = tensorboard_output
         self.anomalib_output_root = anomalib_output_root
         self.model_path = os.path.join(
             anomalib_output_root,
@@ -177,11 +179,10 @@ class Anodec:
             self.model = getattr(anomalib.models, self.model_name)()
 
             os.makedirs(self.anomalib_output_root, exist_ok=True)
-            tensorboard_logs_dir = "./logs/tensorboard"
-            os.makedirs(tensorboard_logs_dir, exist_ok=True)
+            os.makedirs(self.tensorboard_output, exist_ok=True)
             self.unlink_symlinks()
             self.anomalib_logger = AnomalibTensorBoardLogger(
-                save_dir=tensorboard_logs_dir,
+                save_dir=self.tensorboard_output,
                 # project="mcity-data-engine",
             )
 
