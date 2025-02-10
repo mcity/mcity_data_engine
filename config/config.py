@@ -1,7 +1,7 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["anomaly_detection"]
+SELECTED_WORKFLOW = ["aws_download", "embedding_selection", "anomaly_detection"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -27,15 +27,15 @@ WORKFLOWS = {
             "open-clip-torch",
             # "dinov2-vits14-torch",        # Issue with query IDs
             # "dinov2-vitl14-torch",        # Issue with query IDs
-            "dinov2-vits14-reg-torch",
+            # "dinov2-vits14-reg-torch",
             # "dinov2-vitl14-reg-torch",    # High GPU memory requirements
-            "mobilenet-v2-imagenet-torch",
-            "resnet152-imagenet-torch",
-            "vgg19-imagenet-torch",
-            "classification-transformer-torch",
-            "detection-transformer-torch",
-            "zero-shot-detection-transformer-torch",
-            "zero-shot-classification-transformer-torch",
+            # "mobilenet-v2-imagenet-torch",
+            # "resnet152-imagenet-torch",
+            # "vgg19-imagenet-torch",
+            # "classification-transformer-torch",
+            # "detection-transformer-torch",
+            # "zero-shot-detection-transformer-torch",
+            # "zero-shot-classification-transformer-torch",
         ]
     },
     "anomaly_detection": {
@@ -44,20 +44,20 @@ WORKFLOWS = {
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
             "Padim": {"batch_size": 1, "image_size": [960, 960]},
             "EfficientAd": {"batch_size": 1, "image_size": [960, 960]},
-            "Draem": {"batch_size": 1, "image_size": [960, 960]},
-            "Cfa": {"batch_size": 1, "image_size": [960, 960]},
-            "Cflow": {"batch_size": 1, "image_size": [960, 960]},
-            "Csflow": {"batch_size": 1, "image_size": [960, 960]},
-            "Dfm": {"batch_size": 1, "image_size": [960, 960]},
-            "Dsr": {"batch_size": 1, "image_size": [960, 960]},
-            "Fastflow": {"batch_size": 1, "image_size": [960, 960]},
-            "ReverseDistillation": {"batch_size": 1, "image_size": [960, 960]},
-            "Rkde": {"batch_size": 1, "image_size": [960, 960]},
-            "Stfpm": {"batch_size": 1, "image_size": [960, 960]},
-            "Uflow": {
-                "batch_size": 1,
-                "image_size": [448, 448],
-            },  # Inflexible model w.r.t image size
+            # "Draem": {"batch_size": 1, "image_size": [960, 960]},
+            # "Cfa": {"batch_size": 1, "image_size": [960, 960]},
+            # "Cflow": {"batch_size": 1, "image_size": [960, 960]},
+            # "Csflow": {"batch_size": 1, "image_size": [960, 960]},
+            # "Dfm": {"batch_size": 1, "image_size": [960, 960]},
+            # "Dsr": {"batch_size": 1, "image_size": [960, 960]},
+            # "Fastflow": {"batch_size": 1, "image_size": [960, 960]},
+            # "ReverseDistillation": {"batch_size": 1, "image_size": [960, 960]},
+            # "Rkde": {"batch_size": 1, "image_size": [960, 960]},
+            # "Stfpm": {"batch_size": 1, "image_size": [960, 960]},
+            # "Uflow": {
+            #    "batch_size": 1,
+            #    "image_size": [448, 448],
+            # },  # Inflexible model w.r.t image size
             # "WinClip",    # Requires language input
             # "Dfkde",      # Has no pixel metrics
             # "Ganomaly",   # Has no pixel metrics
@@ -66,7 +66,7 @@ WORKFLOWS = {
         "anomalib_eval_metrics": [  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/metrics/index.html
             "AUPR",
             "AUROC",
-            # "F1Max",      # Deprecated
+            "F1Max",
             # "AUPRO",      # Focus on standard metrics, computation of others can be expensive
             # "AnomalyScoreDistribution",
             # "BinaryPrecisionRecallCurve",
@@ -82,24 +82,24 @@ WORKFLOWS = {
         "mode": "train",  # "train" or "inference"
         "model_source": "hf_models_objectdetection",  # Pick from one of the options below (hf_models_objectdetection, custom_codetr, ultralytics)
         "hf_models_objectdetection": [
-            "microsoft/conditional-detr-resnet-50",
-            "Omnifact/conditional-detr-resnet-101-dc5",
-            "facebook/detr-resnet-50",
-            "facebook/detr-resnet-50-dc5",
-            "facebook/detr-resnet-101",
-            "facebook/detr-resnet-101-dc5",
-            "facebook/deformable-detr-detic",
-            "facebook/deformable-detr-box-supervised",
-            "SenseTime/deformable-detr",
-            "SenseTime/deformable-detr-with-box-refine-two-stage",
-            "SenseTime/deformable-detr-with-box-refine",
-            "PekingU/rtdetr_r50vd",
-            "PekingU/rtdetr_r50vd_coco_o365",
+            # "microsoft/conditional-detr-resnet-50",
+            # "Omnifact/conditional-detr-resnet-101-dc5",
+            # "facebook/detr-resnet-50",
+            # "facebook/detr-resnet-50-dc5",
+            # "facebook/detr-resnet-101",
+            # "facebook/detr-resnet-101-dc5",
+            # "facebook/deformable-detr-detic",
+            # "facebook/deformable-detr-box-supervised",
+            # "SenseTime/deformable-detr",
+            # "SenseTime/deformable-detr-with-box-refine-two-stage",
+            # "SenseTime/deformable-detr-with-box-refine",
+            # "PekingU/rtdetr_r50vd",
+            # "PekingU/rtdetr_r50vd_coco_o365",
             "jozhang97/deta-swin-large",  # Ranks best on HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
-            "jozhang97/deta-swin-large-o365",
-            "jozhang97/deta-resnet-50",
-            "jozhang97/deta-resnet-50-24-epochs",
-            "hustvl/yolos-base",
+            # "jozhang97/deta-swin-large-o365",
+            # "jozhang97/deta-resnet-50",
+            # "jozhang97/deta-resnet-50-24-epochs",
+            # "hustvl/yolos-base",
         ],
         "custom_codetr": {
             "train_model": True,  # Set false if model file should be loaded without training
