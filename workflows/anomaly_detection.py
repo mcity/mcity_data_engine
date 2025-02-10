@@ -11,7 +11,7 @@ from anomalib.deploy import ExportType, TorchInferencer
 from anomalib.engine import Engine
 from anomalib.loggers import AnomalibTensorBoardLogger
 from fiftyone import ViewField as F
-from huggingface_hub import HfApi
+from huggingface_hub import HfApi, hf_hub_download
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from torchvision.transforms.v2 import Compose, Resize
 
@@ -70,9 +70,9 @@ class Anodec:
         self.abnormal_dir = os.path.dirname(filepath_val)
         self.mask_dir = os.path.dirname(filepath_masks)
 
-        logging.info(f"Directory for normal samples: {self.normal_dir}")
-        logging.info(f"Directory for abnormal samples: {self.abnormal_dir}")
-        logging.info(f"Directory for masks: {self.mask_dir}")
+        self.hf_repo_name = (
+            f"mcity-data-engine/{self.dataset_name}_anomalib_{self.model_name}"
+        )
 
         # Anomalib objects
         self.inferencer = None
@@ -230,15 +230,15 @@ class Anodec:
 
             # Upload model to Hugging Face
             api = HfApi()
-            repo_name = (
-                f"mcity-data-engine/{self.dataset_name}_anomalib_{self.model_name}"
+
+            logging.info(f"Uploading model to Hugging Face: {self.hf_repo_name}")
+            api.create_repo(
+                self.hf_repo_name, private=True, repo_type="model", exist_ok=True
             )
-            logging.info(f"Uploading model to Hugging Face: {repo_name}")
-            api.create_repo(repo_name, private=True, repo_type="model", exist_ok=True)
             api.upload_file(
                 path_or_fileobj=self.model_path,
                 path_in_repo="model.pt",
-                repo_id=repo_name,
+                repo_id=self.hf_repo_name,
                 repo_type="model",
             )
 
@@ -246,17 +246,6 @@ class Anodec:
             logging.info(f"Model {self.model_path} already trained.")
 
     def validate_model(self):
-        """
-        Validates the model using the engine's test method.
-
-        This method tests the model if the engine is available. It logs the test results
-        using the `logging` module. If the engine is not available, it currently does nothing
-        but has a TODO comment indicating that the model should be loaded from a path similar
-        to inference mode.
-
-        Returns:
-            None
-        """
         # Test model
         if self.engine:
             test_results = self.engine.test(
@@ -270,7 +259,23 @@ class Anodec:
 
     def run_inference(self, threshold=0.5):
         logging.info(f"Running inference")
-        inferencer = TorchInferencer(path=os.path.join(self.model_path), device="cuda")
+        try:
+            if os.path.exists(self.model_path):
+                file_path = self.model_path
+            else:
+
+                download_dir = self.model_path.replace("model.pt", "")
+                logging.info(
+                    f"Downloading model {self.hf_repo_name} from Hugging Face to {download_dir}"
+                )
+                file_path = hf_hub_download(
+                    repo_id=self.hf_repo_name,
+                    filename="model.pt",
+                    local_dir=download_dir,
+                )
+        except Exception as e:
+            logging.error(f"Failed to load or download model: {str(e)}")
+        inferencer = TorchInferencer(path=os.path.join(file_path), device="cuda")
         self.inferencer = inferencer
 
         for sample in self.abnormal_data.iter_samples(autosave=True, progress=True):

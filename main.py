@@ -103,7 +103,7 @@ def workflow_aws_download():
 
 
 def workflow_anomaly_detection(
-    dataset, dataset_info, eval_metrics, run_config, log_dir
+    dataset, dataset_info, eval_metrics, run_config, log_dir, mode
 ):
     ano_dec = Anodec(
         dataset=dataset,
@@ -112,9 +112,14 @@ def workflow_anomaly_detection(
         config=run_config,
         tensorboard_output=log_dir,
     )
-    ano_dec.train_and_export_model()
-    ano_dec.run_inference()
-    ano_dec.eval_v51()
+    if mode == "train":
+        ano_dec.train_and_export_model()
+        ano_dec.run_inference()
+        ano_dec.eval_v51()
+    elif mode == "inference":
+        ano_dec.run_inference()
+    else:
+        logging.error(f"Mode {mode} not suported.")
 
     return True
 
@@ -260,7 +265,9 @@ class WorkflowExecutor:
                             wandb_close(wandb_run, wandb_exit_code)
 
                 elif workflow == "anomaly_detection":
+
                     ano_dec_config = WORKFLOWS["anomaly_detection"]
+                    mode = ano_dec_config["mode"]
                     anomalib_image_models = ano_dec_config["anomalib_image_models"]
                     eval_metrics = ano_dec_config["anomalib_eval_metrics"]
 
@@ -302,6 +309,7 @@ class WorkflowExecutor:
                                 eval_metrics,
                                 run_config,
                                 log_dir,
+                                mode,
                             )
                         except Exception as e:
                             logging.error(f"Error in Anomaly Detection: {e}")
