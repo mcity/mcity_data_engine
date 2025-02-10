@@ -1,14 +1,13 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["anomaly_detection"]
+SELECTED_WORKFLOW = ["embedding_selection", "anomaly_detection"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
     "name": "fisheye8k",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
-
 
 PERSISTENT = True  # If V51 database is stored
 
@@ -22,43 +21,44 @@ WORKFLOWS = {
         "selected_dataset_overwrite": True,
     },
     "embedding_selection": {
+        "mode": "compute",  # "compute" or "load"
         "embedding_models": [  # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
             "clip-vit-base32-torch",
             "open-clip-torch",
             # "dinov2-vits14-torch",        # Issue with query IDs
             # "dinov2-vitl14-torch",        # Issue with query IDs
-            # "dinov2-vits14-reg-torch",
+            "dinov2-vits14-reg-torch",
             # "dinov2-vitl14-reg-torch",    # High GPU memory requirements
-            # "mobilenet-v2-imagenet-torch",
-            # "resnet152-imagenet-torch",
-            # "vgg19-imagenet-torch",
-            # "classification-transformer-torch",
-            # "detection-transformer-torch",
-            # "zero-shot-detection-transformer-torch",
-            # "zero-shot-classification-transformer-torch",
-        ]
+            "mobilenet-v2-imagenet-torch",
+            "resnet152-imagenet-torch",
+            "vgg19-imagenet-torch",
+            "classification-transformer-torch",
+            "detection-transformer-torch",
+            "zero-shot-detection-transformer-torch",
+            "zero-shot-classification-transformer-torch",
+        ],
     },
     "anomaly_detection": {
-        "mode": "inference",  # "train" or "inference"
+        "mode": "train",  # "train" or "inference"
         "epochs": 30,
         "early_stop_patience": 5,
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
             "Padim": {"batch_size": 1, "image_size": [960, 960]},
             "EfficientAd": {"batch_size": 1, "image_size": [960, 960]},
-            # "Draem": {"batch_size": 1, "image_size": [960, 960]},
-            # "Cfa": {"batch_size": 1, "image_size": [960, 960]},
-            # "Cflow": {"batch_size": 1, "image_size": [960, 960]},
-            # "Csflow": {"batch_size": 1, "image_size": [960, 960]},
-            # "Dfm": {"batch_size": 1, "image_size": [960, 960]},
-            # "Dsr": {"batch_size": 1, "image_size": [960, 960]},
-            # "Fastflow": {"batch_size": 1, "image_size": [960, 960]},
-            # "ReverseDistillation": {"batch_size": 1, "image_size": [960, 960]},
-            # "Rkde": {"batch_size": 1, "image_size": [960, 960]},
-            # "Stfpm": {"batch_size": 1, "image_size": [960, 960]},
-            # "Uflow": {
-            #    "batch_size": 1,
-            #    "image_size": [448, 448],
-            # },  # Inflexible model w.r.t image size
+            "Draem": {"batch_size": 1, "image_size": [960, 960]},
+            "Cfa": {"batch_size": 1, "image_size": [960, 960]},
+            "Cflow": {"batch_size": 1, "image_size": [960, 960]},
+            "Csflow": {"batch_size": 1, "image_size": [960, 960]},
+            "Dfm": {"batch_size": 1, "image_size": [960, 960]},
+            "Dsr": {"batch_size": 1, "image_size": [960, 960]},
+            "Fastflow": {"batch_size": 1, "image_size": [960, 960]},
+            "ReverseDistillation": {"batch_size": 1, "image_size": [960, 960]},
+            "Rkde": {"batch_size": 1, "image_size": [960, 960]},
+            "Stfpm": {"batch_size": 1, "image_size": [960, 960]},
+            "Uflow": {
+                "batch_size": 1,
+                "image_size": [448, 448],
+            },  # Inflexible model w.r.t image size
             # "WinClip",    # Requires language input
             # "Dfkde",      # Has no pixel metrics
             # "Ganomaly",   # Has no pixel metrics

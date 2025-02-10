@@ -9,6 +9,7 @@ import fiftyone.brain as fob
 import fiftyone.zoo as foz
 import numpy as np
 from fiftyone import ViewField as F
+from huggingface_hub import HfApi, hf_hub_download
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
@@ -71,11 +72,15 @@ class EmbeddingSelection:
         self.embeddings_root = embeddings_path + self.dataset_name + "/"
         Path(self.embeddings_root).mkdir(parents=True, exist_ok=True)
 
+        self.hf_repo_name = (
+            f"mcity-data-engine/{self.dataset_name}_embedding_{self.model_name_key}"
+        )
+
     def __del__(self):
         self.steps -= 1  # +1 after every function, need to decrement for final step
         self.writer.close()
 
-    def compute_embeddings(self):
+    def compute_embeddings(self, mode):
         """
         Computes and stores embeddings for the given model name. Uses V51 pre-defined dim. reduction methods.
 
@@ -99,26 +104,68 @@ class EmbeddingSelection:
         embedding_file_name = self.embeddings_root + self.model_name_key + ".pkl"
 
         if self.model.has_embeddings:
-            # Load or compute embeddings for the model
-            if self.dataset.get_field(self.embedding_key) is not None:
-                logging.info("Loading embeddings from V51.")
-                self.embeddings_model = self.dataset.values(self.embedding_key)
-            elif os.path.exists(embedding_file_name):
-                logging.info("Loading embeddings from disk.")
-                with open(embedding_file_name, "rb") as f:
-                    self.embeddings_model = pickle.load(f)
-                self.dataset.set_values(self.embedding_key, self.embeddings_model)
-            else:
+            # Compute embeddings for the model
+
+            if mode == "compute":
                 logging.info("Computing embeddings.")
                 self.dataset.compute_embeddings(
                     model=self.model, embeddings_field=self.embedding_key
                 )
                 self.embeddings_model = self.dataset.values(self.embedding_key)
 
-                # TODO Is this necessary? (since compute_embeddings is not stored into a variable)
                 self.dataset.set_values(self.embedding_key, self.embeddings_model)
                 with open(embedding_file_name, "wb") as f:
                     pickle.dump(self.embeddings_model, f)
+
+                # Upload embeddings to Hugging Face
+                api = HfApi()
+
+                logging.info(
+                    f"Uploading embeddings to Hugging Face: {self.hf_repo_name}"
+                )
+                api.create_repo(
+                    self.hf_repo_name, private=True, repo_type="model", exist_ok=True
+                )
+
+                model_name = f"{self.model_name_key}.pkl"
+                api.upload_file(
+                    path_or_fileobj=embedding_file_name,
+                    path_in_repo=model_name,
+                    repo_id=self.hf_repo_name,
+                    repo_type="model",
+                )
+            elif mode == "load":
+                try:
+                    if self.dataset.get_field(self.embedding_key) is not None:
+                        logging.info("Loading embeddings from V51.")
+                        self.embeddings_model = self.dataset.values(self.embedding_key)
+                    elif os.path.exists(embedding_file_name):
+                        logging.info("Loading embeddings from disk.")
+                        with open(embedding_file_name, "rb") as f:
+                            self.embeddings_model = pickle.load(f)
+                        self.dataset.set_values(
+                            self.embedding_key, self.embeddings_model
+                        )
+                    else:
+                        logging.info(
+                            f"Downloading embeddings {self.hf_repo_name} from Hugging Face to {self.embeddings_root}"
+                        )
+                        model_name = f"{self.model_name_key}.pkl"
+                        embedding_file_name = hf_hub_download(
+                            repo_id=self.hf_repo_name,
+                            filename=model_name,
+                            local_dir=self.embeddings_root,
+                        )
+                        logging.info("Loading embeddings from disk.")
+                        with open(embedding_file_name, "rb") as f:
+                            self.embeddings_model = pickle.load(f)
+                        self.dataset.set_values(
+                            self.embedding_key, self.embeddings_model
+                        )
+                except Exception as e:
+                    logging.error(f"Failed to load or download embeddings: {str(e)}")
+            else:
+                logging.error(f"Mode {mode} is not supported.")
 
             for method in tqdm(dim_reduction_methods, "Dimensionality reductions"):
                 method_key = self.model_name_key + "_" + re.sub(r"[\W-]+", "_", method)
