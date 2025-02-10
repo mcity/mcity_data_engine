@@ -20,7 +20,7 @@ def select_random(dataset, n_samples):
     return random_view
 
 
-def select_by_class(dataset, classes_in, classes_out):
+def select_by_class(dataset, classes_in=[], classes_out=[]):
     """
     Filters a dataset based on inclusion and exclusion of specified classes.
 

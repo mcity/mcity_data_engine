@@ -1,7 +1,7 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["embedding_selection"]
+SELECTED_WORKFLOW = ["anomaly_detection"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -39,6 +39,8 @@ WORKFLOWS = {
         ]
     },
     "anomaly_detection": {
+        "epochs": 30,
+        "early_stop_patience": 5,
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
             "EfficientAd": {"batch_size": 1, "image_size": [960, 960]},
             "Padim": {"batch_size": 1, "image_size": [480, 480]},
@@ -74,6 +76,7 @@ WORKFLOWS = {
             # "MinMax",
             # "PRO",
         ],
+        "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
         "mode": "train",  # "train" or "inference"
