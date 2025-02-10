@@ -1,11 +1,11 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["anomaly_detection"]
+SELECTED_WORKFLOW = ["embedding_selection"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "fisheye8k_anomaly_detection",
+    "name": "fisheye8k",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
@@ -18,17 +18,17 @@ WORKFLOWS = {
         "bucket": "mcity-data-engine",
         "prefix": "",
         "download_path": "output/datasets/annarbor_rolling",
-        "test_run": False,
+        "test_run": True,
         "selected_dataset_overwrite": True,
     },
-    "brain_selection": {
+    "embedding_selection": {
         "embedding_models": [  # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
             "clip-vit-base32-torch",
             "open-clip-torch",
-            # "dinov2-vits14-torch",
-            # "dinov2-vitl14-torch",
-            # "dinov2-vits14-reg-torch",
-            # "dinov2-vitl14-reg-torch",
+            # "dinov2-vits14-torch",        # Issue with query IDs
+            # "dinov2-vitl14-torch",        # Issue with query IDs
+            "dinov2-vits14-reg-torch",
+            # "dinov2-vitl14-reg-torch",    # High GPU memory requirements
             "mobilenet-v2-imagenet-torch",
             "resnet152-imagenet-torch",
             "vgg19-imagenet-torch",
@@ -175,15 +175,6 @@ WORKFLOWS = {
         ],
     },
     "ensemble_exploration": {},
-}
-
-# Configuration for Weights and Biases
-WANDB_CONFIG = {
-    "docker_image": "dbogdollresearch/mcity_data_engine:latest",
-    "docker_file": "Dockerfile.wandb",
-    "queue": "data-engine",  # TODO Make this a command line argument to support cluster
-    "entity": "mcity",
-    "github": "git@github.com:daniel-bogdoll/mcity_data_engine.git",  # TODO https might be necessary for jobs on lighthouse
 }
 
 ACCEPTED_SPLITS = {"train", "val", "test"}
