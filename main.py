@@ -25,12 +25,13 @@ from config.config import (
     V51_PORT,
     WORKFLOWS,
 )
+from utils.anomaly_detection_data_preparation import AnomalyDetectionDataPreparation
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.dataset_loader import load_dataset
 from utils.logging import configure_logging
 from utils.mp_distribution import ZeroShotDistributer
 from utils.wandb_helper import wandb_close, wandb_init
-from workflows.ano_dec import Anodec
+from workflows.anomaly_detection import Anodec
 from workflows.auto_labeling import (
     CustomCoDETRObjectDetection,
     HuggingFaceObjectDetection,
@@ -101,8 +102,18 @@ def workflow_aws_download():
     return dataset, dataset_name
 
 
-def workflow_anomaly_detection():
-    pass
+def workflow_anomaly_detection(dataset, dataset_info, eval_metrics, run_config):
+    ano_dec = Anodec(
+        dataset=dataset,
+        eval_metrics=eval_metrics,
+        dataset_info=dataset_info,
+        config=run_config,
+    )
+    ano_dec.train_and_export_model()
+    ano_dec.run_inference()
+    ano_dec.eval_v51()
+
+    return True
 
 
 def workflow_embedding_selection(dataset, dataset_info, MODEL_NAME, log_dir):
@@ -117,6 +128,8 @@ def workflow_embedding_selection(dataset, dataset_info, MODEL_NAME, log_dir):
 
     # Select samples similar to the center points to enlarge the dataset
     embedding_selector.compute_similar_images()
+
+    return True
 
 
 def workflow_auto_labeling():
@@ -155,6 +168,8 @@ def workflow_zero_shot_object_detection(dataset, dataset_info):
         logging.info(
             "All zero shot models already have predictions stored in the dataset."
         )
+
+    return True
 
 
 def workflow_ensemble_exploration():
@@ -238,61 +253,53 @@ class WorkflowExecutor:
                             wandb_close(wandb_run, wandb_exit_code)
 
                 elif workflow == "anomaly_detection":
-                    anomalib_image_models = WORKFLOWS["anomaly_detection"][
-                        "anomalib_image_models"
-                    ]
-                    eval_metrics = WORKFLOWS["anomaly_detection"][
-                        "anomalib_eval_metrics"
-                    ]
+                    ano_dec_config = WORKFLOWS["anomaly_detection"]
+                    anomalib_image_models = ano_dec_config["anomalib_image_models"]
+                    eval_metrics = ano_dec_config["anomalib_eval_metrics"]
 
-                    wandb_project = "Data Engine Anomalib"
+                    data_preparer = AnomalyDetectionDataPreparation(
+                        self.dataset, self.selected_dataset
+                    )
 
                     for MODEL_NAME in (
                         pbar := tqdm(anomalib_image_models, desc="Anomalib")
                     ):
-                        pbar.set_description(
-                            "Training/Loading Anomalib model " + MODEL_NAME
-                        )
+                        wandb_exit_code = 0
+                        try:
+                            pbar.set_description(f"Anomalib model {MODEL_NAME}.")
 
-                        config["overrides"]["run_config"][
-                            "v51_dataset_name"
-                        ] = self.selected_dataset
+                            run_config = {
+                                "model_name": MODEL_NAME,
+                                "image_size": anomalib_image_models[MODEL_NAME][
+                                    "image_size"
+                                ],
+                                "batch_size": anomalib_image_models[MODEL_NAME][
+                                    "batch_size"
+                                ],
+                                "epochs": ano_dec_config["epochs"],
+                                "early_stop_patience": ano_dec_config[
+                                    "early_stop_patience"
+                                ],
+                                "data_root": data_preparer.export_root,
+                            }
+                            wandb_run = wandb_init(
+                                run_name=MODEL_NAME,
+                                project_name="Selection by Anomaly Detection",
+                                dataset_name=self.selected_dataset,
+                                config=run_config,
+                            )
 
-                        config["overrides"]["run_config"]["model_name"] = MODEL_NAME
-                        config["overrides"]["run_config"]["image_size"] = (
-                            anomalib_image_models[MODEL_NAME]["image_size"]
-                        )
-                        config["overrides"]["run_config"]["batch_size"] = (
-                            anomalib_image_models[MODEL_NAME]["batch_size"]
-                        )
-
-                        # Local execution
-                        wandb_run = wandb.init(
-                            name=MODEL_NAME,
-                            allow_val_change=True,
-                            sync_tensorboard=True,
-                            project=wandb_project,
-                            group="Anomalib",
-                            job_type="train",
-                            config=config,
-                        )
-                        config = wandb.config["overrides"]["run_config"]
-                        wandb_run.tags += (
-                            config["v51_dataset_name"],
-                            config["model_name"],
-                            "local",
-                        )
-                        ano_dec = Anodec(
-                            dataset=self.dataset,
-                            eval_metrics=eval_metrics,
-                            dataset_info=self.dataset_info,
-                            config=config,
-                        )
-                        ano_dec.train_and_export_model()
-                        ano_dec.run_inference()
-                        ano_dec.eval_v51()
-
-                        wandb_run.finish(exit_code=0)
+                            workflow_anomaly_detection(
+                                data_preparer.dataset_ano_dec,
+                                self.dataset_info,
+                                eval_metrics,
+                                run_config,
+                            )
+                        except Exception as e:
+                            logging.error(f"Error in Anomaly Detection: {e}")
+                            wandb_exit_code = 1
+                        finally:
+                            wandb_close(wandb_run=wandb_run, exit_code=wandb_exit_code)
 
                 elif workflow == "auto_labeling":
                     logging.info("Model training with Hugging Face")

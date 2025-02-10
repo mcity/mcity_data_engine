@@ -13,7 +13,6 @@ from anomalib.loggers import AnomalibTensorBoardLogger
 from fiftyone import ViewField as F
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from torchvision.transforms.v2 import Compose, Resize
-from tqdm import tqdm
 
 from config.config import GLOBAL_SEED, NUM_WORKERS
 
@@ -32,10 +31,10 @@ class Anodec:
         config,
         anomalib_output_root="./output/models/anomalib/",
     ):
-        self.config = config
         torch.set_float32_matmul_precision(
             "medium"
         )  # Utilize Tensor core, came in warning
+        self.config = config
         self.dataset = dataset
         self.eval_metrics = eval_metrics
         self.normal_data = dataset.match_tags("train")
@@ -58,7 +57,9 @@ class Anodec:
             "weights/torch/model.pt",
         )
 
-        filepath_masks = dataset_info["anomalib_masks_path"]
+        data_root = self.config["data_root"]
+        dataset_name_ano_dec_masks = f"{self.dataset_name}_anomaly_detection_masks/"
+        filepath_masks = os.path.join(data_root, dataset_name_ano_dec_masks)
         filepath_train = self.normal_data.take(1).first().filepath
         filepath_val = self.abnormal_data.take(1).first().filepath
 
