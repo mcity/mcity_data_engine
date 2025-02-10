@@ -124,9 +124,9 @@ def workflow_anomaly_detection(
     return True
 
 
-def workflow_embedding_selection(dataset, dataset_info, MODEL_NAME, log_dir):
+def workflow_embedding_selection(dataset, dataset_info, MODEL_NAME, log_dir, mode):
     embedding_selector = EmbeddingSelection(dataset, dataset_info, MODEL_NAME, log_dir)
-    embedding_selector.compute_embeddings()
+    embedding_selector.compute_embeddings(mode)
     embedding_selector.compute_similarity()
 
     # Find representative and unique samples as center points for further selections
@@ -140,8 +140,19 @@ def workflow_embedding_selection(dataset, dataset_info, MODEL_NAME, log_dir):
     return True
 
 
-def workflow_auto_labeling():
-    pass
+def workflow_auto_labeling(dataset, hf_dataset, mode, run_config):
+
+    detector = HuggingFaceObjectDetection(
+        dataset=dataset,
+        config=run_config,
+    )
+    if mode == "train":
+        detector.train(hf_dataset)
+        detector.inference(hf_dataset)
+    elif mode == "inference":
+        detector.inference(hf_dataset)
+    else:
+        logging.error(f"Mode {mode} is not supported.")
 
 
 def workflow_zero_shot_object_detection(dataset, dataset_info):
@@ -346,18 +357,9 @@ class WorkflowExecutor:
                                     dataset_name=self.selected_dataset,
                                 )
 
-                                detector = HuggingFaceObjectDetection(
-                                    dataset=self.dataset,
-                                    config=wandb_config,
-                                )
+                                run_config = {}
 
-                                if mode == "train":
-                                    detector.train(hf_dataset)
-                                    detector.inference(hf_dataset)
-                                elif mode == "inference":
-                                    detector.inference(hf_dataset)
-                                else:
-                                    logging.error(f"Mode {mode} is not supported.")
+                                workflow_auto_labeling(dataset, hf_dataset, mode)
 
                             except Exception as e:
                                 logging.error(
