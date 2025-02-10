@@ -30,9 +30,14 @@ BRAIN_TAXONOMY = {
 }
 
 
-class Brain:
+class EmbeddingSelection:
     def __init__(
-        self, dataset, dataset_info, model_name, embeddings_path="./output/embeddings/"
+        self,
+        dataset,
+        dataset_info,
+        model_name,
+        log_dir,
+        embeddings_path="./output/embeddings/",
     ):
         # WandB counter
         self.steps = 0
@@ -40,7 +45,7 @@ class Brain:
         self.brains = dataset.list_brain_runs()
         self.dataset_name = dataset_info["name"]
         self.v51_model_zoo = foz.list_zoo_models()
-        self.writer = SummaryWriter(log_dir="logs/tensorboard/brain")
+        self.writer = SummaryWriter(log_dir=log_dir)
 
         # Model
         if model_name not in self.v51_model_zoo:
