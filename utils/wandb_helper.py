@@ -36,10 +36,12 @@ def wandb_init(
     return wandb_run, log_dir
 
 
-def wandb_close(wandb_run=None, exit_code=0, sync_tensorboard=True):
+def wandb_close(wandb_run=None, exit_code=0):
     try:
         wandb_run.finish(exit_code=exit_code)
-        if sync_tensorboard:
-            wandb.tensorboard.unpatch()
-    except Exception as e:
-        pass
+    except:
+        logging.debug(f"WandB run {wandb_run} could not be finished")
+    try:
+        wandb.tensorboard.unpatch()
+    except:
+        logging.debug(f"WandB tensorboard could not be unpatched")
