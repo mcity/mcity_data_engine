@@ -369,9 +369,29 @@ class WorkflowExecutor:
                                 wandb_exit_code = 0
                                 pbar.set_description(f"Training model {MODEL_NAME}")
 
+                                config_autolabel = WORKFLOWS["auto_labeling"]
+                                config_model = config_autolabel[
+                                    "hf_models_objectdetection"
+                                ][MODEL_NAME]
+
                                 run_config = {
                                     "model_name": MODEL_NAME,
                                     "v51_dataset_name": self.selected_dataset,
+                                    "epochs": config_autolabel["epochs"],
+                                    "early_stop_threshold": config_autolabel[
+                                        "early_stop_threshold"
+                                    ],
+                                    "early_stop_patience": config_autolabel[
+                                        "early_stop_patience"
+                                    ],
+                                    "learning_rate": config_autolabel["learning_rate"],
+                                    "weight_decay": config_autolabel["weight_decay"],
+                                    "max_grad_norm": config_autolabel["max_grad_norm"],
+                                    "batch_size": config_model["batch_size"],
+                                    "image_size": config_model["image_size"],
+                                    "n_worker_dataloader": config_autolabel[
+                                        "n_worker_dataloader"
+                                    ],
                                 }
 
                                 wandb_run = wandb_init(
