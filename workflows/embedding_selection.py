@@ -13,7 +13,7 @@ from huggingface_hub import HfApi, hf_hub_download
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from config.config import GLOBAL_SEED, NUM_WORKERS
+from config.config import GLOBAL_SEED, HF_ROOT, NUM_WORKERS
 
 """
 Implementing Voxel51 brain methods.
@@ -73,7 +73,7 @@ class EmbeddingSelection:
         Path(self.embeddings_root).mkdir(parents=True, exist_ok=True)
 
         self.hf_repo_name = (
-            f"mcity-data-engine/{self.dataset_name}_embedding_{self.model_name_key}"
+            f"{HF_ROOT}/{self.dataset_name}_embedding_{self.model_name_key}"
         )
 
     def __del__(self):

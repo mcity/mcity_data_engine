@@ -10,12 +10,11 @@ from anomalib.data.utils import read_image
 from anomalib.deploy import ExportType, TorchInferencer
 from anomalib.engine import Engine
 from anomalib.loggers import AnomalibTensorBoardLogger
-from fiftyone import ViewField as F
 from huggingface_hub import HfApi, hf_hub_download
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from torchvision.transforms.v2 import Compose, Resize
 
-from config.config import GLOBAL_SEED, NUM_WORKERS
+from config.config import GLOBAL_SEED, HF_ROOT, NUM_WORKERS
 
 # https://docs.voxel51.com/tutorials/anomaly_detection.html
 # https://medium.com/@enrico.randellini/anomalib-a-library-for-image-anomaly-detection-and-localization-fb363639104f
@@ -70,9 +69,7 @@ class Anodec:
         self.abnormal_dir = os.path.dirname(filepath_val)
         self.mask_dir = os.path.dirname(filepath_masks)
 
-        self.hf_repo_name = (
-            f"mcity-data-engine/{self.dataset_name}_anomalib_{self.model_name}"
-        )
+        self.hf_repo_name = f"{HF_ROOT}/{self.dataset_name}_anomalib_{self.model_name}"
 
         # Anomalib objects
         self.inferencer = None
@@ -192,7 +189,6 @@ class Anodec:
             self.unlink_symlinks()
             self.anomalib_logger = AnomalibTensorBoardLogger(
                 save_dir=self.tensorboard_output,
-                # project="mcity-data-engine",
             )
 
             # Callbacks

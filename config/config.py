@@ -1,7 +1,7 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["embedding_selection"]
+SELECTED_WORKFLOW = ["auto_labeling"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -21,7 +21,7 @@ WORKFLOWS = {
         "selected_dataset_overwrite": True,
     },
     "embedding_selection": {
-        "mode": "load",  # "compute" or "load"
+        "mode": "compute",  # "compute" or "load"
         "thresholds": {
             "compute_representativeness": 0.99,
             "compute_unique_images_greedy": 0.01,
@@ -189,6 +189,8 @@ WORKFLOWS = {
 }
 
 ACCEPTED_SPLITS = {"train", "val", "test"}
+HF_ROOT = "mcity-data-engine"
+
 
 cpu_count = os.cpu_count()
 NUM_WORKERS = 32 if cpu_count > 32 else cpu_count
