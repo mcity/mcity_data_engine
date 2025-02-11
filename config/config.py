@@ -1,7 +1,7 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["embedding_selection"]
+SELECTED_WORKFLOW = ["class_mapping"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -186,6 +186,21 @@ WORKFLOWS = {
         ],
     },
     "ensemble_exploration": {},
+    "class_mapping": {
+        "models": [
+            "Salesforce/blip2-itm-vit-g",
+            "openai/clip-vit-large-patch14",
+            "google/siglip-so400m-patch14-384"
+        ],
+        "thresholds": {
+            "confidence": 0.2
+        },
+        "candidate_labels": {
+            "Car": ["Car", "Van", "Pickup"],
+            "Truck": ["Truck", "Pickup"]
+            #Can add other class mappings in here
+        }
+    }
 }
 
 ACCEPTED_SPLITS = {"train", "val", "test"}

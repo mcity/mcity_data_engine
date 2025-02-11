@@ -6,6 +6,7 @@ import sys
 import time
 import warnings
 from typing import Dict, List
+from PIL import Image
 
 IGNORE_FUTURE_WARNINGS = True
 if IGNORE_FUTURE_WARNINGS:
@@ -40,6 +41,7 @@ from workflows.auto_labeling import (
 from workflows.aws_download import AwsDownloader
 from workflows.embedding_selection import EmbeddingSelection
 from workflows.ensemble_exploration import EnsembleExploration
+from workflows.class_mapping import ClassMapper
 
 
 def signal_handler(sig, frame):
@@ -202,6 +204,92 @@ def workflow_zero_shot_object_detection(dataset, dataset_info):
 
 def workflow_ensemble_exploration():
     pass
+
+def workflow_class_mapping(dataset, dataset_info):
+    """Execute class mapping workflow with interactive-style output"""
+    config = WORKFLOWS["class_mapping"]
+    models = config["models"]
+    threshold = config["thresholds"]["confidence"]
+    candidate_labels = config["candidate_labels"]
+
+    print("\nClass Mapping Workflow")
+    print("Available Models:")
+    for idx, model in enumerate(models, 1):
+        print(f"{idx}: {model}")
+
+    # Select model (could be config-driven instead of interactive)
+    model_choice = 0  # Default to first model, or implement selection logic
+    model_name = models[model_choice]
+    print(f"\nRunning model: {model_name}")
+
+    # Initialize mapper
+    mapper = ClassMapper(
+        dataset=dataset,
+        model_name=model_name,
+        config=config
+    )
+
+    # Load the model before processing - THIS IS THE KEY FIX
+    try:
+        mapper.load_model()
+    except Exception as e:
+        logging.error(f"Failed to load model: {e}")
+        return False
+
+    # Add real-time print handler
+    class PrintLogger:
+        def __init__(self):
+            self.count = 0
+
+        def log(self, tag, confidence):
+            self.count += 1
+            print(f"Tag added: {tag} (Confidence: {confidence:.2f})")
+
+    print_logger = PrintLogger()
+
+    # Process dataset with progress bar
+    with tqdm(total=len(dataset), desc="Processing samples") as pbar:
+        for sample in dataset.iter_samples(progress=True, autosave=True):
+            try:
+                image = Image.open(sample.filepath)
+                detections = sample["ground_truth"]
+
+                for det in detections.detections:
+                    old_label = det.label
+                    if old_label not in candidate_labels:
+                        continue
+
+                    # Process detection
+                    label_candidates = candidate_labels[old_label]
+                    predicted_label, confidence = mapper.process_detection(
+                        image, det, label_candidates
+                    )
+
+                    # Check and apply changes
+                    if confidence > threshold and old_label != predicted_label:
+                        tag = f"new_class_{mapper.model_name}_{predicted_label}"
+                        if tag not in det.tags:
+                            det.tags.append(tag)
+                            print_logger.log(tag, confidence)
+
+                pbar.update(1)
+            except Exception as e:
+                logging.error(f"Error processing sample {sample.id}: {str(e)}")
+                continue
+
+    # Get final stats
+    stats = mapper.stats
+    total_vehicles = stats["total_processed"]
+
+    print("\nVehicle Classification Results:")
+    for cls, count in stats["class_counts"].items():
+        percentage = (count / total_vehicles) * 100 if total_vehicles > 0 else 0
+        print(f"{cls}: {count} vehicles ({percentage:.1f}%)")
+
+    print(f"\nTotal vehicles processed: {total_vehicles}")
+    print(f"Total tags added: {print_logger.count}")
+
+    return True
 
 
 class WorkflowExecutor:
@@ -448,6 +536,9 @@ class WorkflowExecutor:
                     explorer = EnsembleExploration(self.dataset, wandb_config)
                     explorer.ensemble_exploration()
                     wandb_run.finish(exit_code=0)
+
+                elif workflow == "class_mapping":
+                    workflow_class_mapping(self.dataset, self.dataset_info)
 
                 else:
                     logging.error(
