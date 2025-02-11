@@ -19,9 +19,7 @@ import numpy as np
 import psutil
 import torch
 import torch.multiprocessing as mp
-import wandb
 from accelerate.test_utils.testing import get_backend
-from datasets import Split
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
@@ -38,7 +36,9 @@ from transformers import (
 )
 from transformers.pipelines.pt_utils import KeyDataset
 
+import wandb
 from config.config import GLOBAL_SEED, NUM_WORKERS, WORKFLOWS
+from datasets import Split
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.logging import configure_logging
 
@@ -141,7 +141,9 @@ class ZeroShotObjectDetection:
         models_splits_dict = {}
         for model_name, value in config["hf_models_zeroshot_objectdetection"].items():
             model_name_key = re.sub(r"[\W-]+", "_", model_name)
-            pred_key = re.sub(r"[\W-]+", "_", "pred_" + model_name)
+            pred_key = re.sub(
+                r"[\W-]+", "_", "pred_zsod_" + model_name
+            )  # od for Object Detection
             # Check if data already stored in V51 dataset
             if pred_key in dataset_schema:
                 logging.info(
@@ -391,8 +393,8 @@ class ZeroShotObjectDetection:
                         timeout=5
                     )  # Timeout to prevent indefinite blocking
                     model_name = dict["model_name"]
-                    pred_key = re.sub(r"[\W-]+", "_", "pred_" + model_name)
-                    eval_key = re.sub(r"[\W-]+", "_", "eval_" + model_name)
+                    pred_key = re.sub(r"[\W-]+", "_", "pred_zsod_" + model_name)
+                    eval_key = re.sub(r"[\W-]+", "_", "eval_zsod_" + model_name)
                     dataset.reload()
                     run_successful = self.eval_and_export(
                         dataset, model_name, pred_key, eval_key
@@ -451,9 +453,7 @@ class ZeroShotObjectDetection:
 
             # Load the model
             logging.info(f"Loading model {model_name}")
-            processor = AutoProcessor.from_pretrained(
-                model_name, use_fast=True
-            )  # TODO consider use_fast=True https://github.com/huggingface/transformers/pull/34354
+            processor = AutoProcessor.from_pretrained(model_name, use_fast=True)
             model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name)
             model = model.to(device, non_blocking=True)
             model.eval()
@@ -717,7 +717,9 @@ class ZeroShotObjectDetection:
                         detections.append(detection)
 
                 # Attach label to V51 dataset
-                pred_key = re.sub(r"[\W-]+", "_", "pred_" + model_name)
+                pred_key = re.sub(
+                    r"[\W-]+", "_", "pred_zsod_" + model_name
+                )  # zsod Zero-Shot Object Deection
                 sample = dataset_v51[target["image_id"]]
                 sample[pred_key] = fo.Detections(detections=detections)
                 sample.save()
@@ -984,7 +986,7 @@ class HuggingFaceObjectDetection:
         model = model.to(device)
         model.eval()
 
-        pred_key = re.sub(r"[\W-]+", "_", "pred_" + self.model_name)
+        pred_key = re.sub(r"[\W-]+", "_", "pred_od_" + self.model_name)
 
         # TODO Improve GPU utilization similar to ZeroShotInference
         with torch.amp.autocast("cuda"), torch.inference_mode():
