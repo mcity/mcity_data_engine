@@ -37,7 +37,7 @@ from transformers import (
 from transformers.pipelines.pt_utils import KeyDataset
 
 import wandb
-from config.config import GLOBAL_SEED, NUM_WORKERS, WORKFLOWS
+from config.config import GLOBAL_SEED, NUM_WORKERS, WORKFLOWS, HF_ROOT
 from datasets import Split
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.logging import configure_logging
@@ -759,7 +759,7 @@ class HuggingFaceObjectDetection:
     def __init__(
         self,
         dataset,
-        config=None,
+        config,
         output_model_path="./output/models/object_detection_hf",
         output_detections_path="./output/detections/",
     ):
@@ -778,7 +778,7 @@ class HuggingFaceObjectDetection:
         )
 
         self.hf_hub_model_id = (
-            "mcity-data-engine/"
+            {HF_ROOT}"/"
             + f"{self.dataset_name}/{self.model_name}".replace("/", "_")
         )
 
