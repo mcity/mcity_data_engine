@@ -51,7 +51,7 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-def workflow_aws_download():
+def workflow_aws_download(wandb_activate=True):
     try:
         dataset = None
         dataset_name = None
@@ -76,6 +76,7 @@ def workflow_aws_download():
             project_name="AWS Download",
             dataset_name=dataset_name,
             log_dir=log_dir,
+            wandb_activate=wandb_activate,
         )
 
         # Workflow
@@ -106,7 +107,9 @@ def workflow_aws_download():
     return dataset, dataset_name
 
 
-def workflow_anomaly_detection(dataset, dataset_info, eval_metrics, run_config):
+def workflow_anomaly_detection(
+    dataset, dataset_info, eval_metrics, run_config, wandb_activate=True
+):
     try:
         # Weights and Biases
         wandb_exit_code = 0
@@ -115,7 +118,10 @@ def workflow_anomaly_detection(dataset, dataset_info, eval_metrics, run_config):
             project_name="Selection by Anomaly Detection",
             dataset_name=dataset_info["name"],
             config=run_config,
+            wandb_activate=wandb_activate,
         )
+
+        # Workflow
         ano_dec = Anodec(
             dataset=dataset,
             eval_metrics=eval_metrics,
@@ -140,7 +146,9 @@ def workflow_anomaly_detection(dataset, dataset_info, eval_metrics, run_config):
     return True
 
 
-def workflow_embedding_selection(dataset, dataset_info, MODEL_NAME, config):
+def workflow_embedding_selection(
+    dataset, dataset_info, MODEL_NAME, config, wandb_activate=True
+):
     try:
         wandb_exit_code = 0
         wandb_run, log_dir = wandb_init(
@@ -148,6 +156,7 @@ def workflow_embedding_selection(dataset, dataset_info, MODEL_NAME, config):
             project_name="Selection by Embedding",
             dataset_name=dataset_info["name"],
             config=config,
+            wandb_activate=wandb_activate,
         )
         embedding_selector = EmbeddingSelection(
             dataset, dataset_info, MODEL_NAME, log_dir
@@ -181,7 +190,9 @@ def workflow_embedding_selection(dataset, dataset_info, MODEL_NAME, config):
     return True
 
 
-def workflow_auto_labeling(dataset, dataset_info, hf_dataset, mode, run_config):
+def workflow_auto_labeling(
+    dataset, dataset_info, hf_dataset, mode, run_config, wandb_activate=True
+):
     try:
         wandb_exit_code = 0
         wandb_run = wandb_init(
@@ -189,6 +200,7 @@ def workflow_auto_labeling(dataset, dataset_info, hf_dataset, mode, run_config):
             project_name="Auto Labeling Hugging Face",
             dataset_name=dataset_info["name"],
             config=run_config,
+            wandb_activate=wandb_activate,
         )
 
         detector = HuggingFaceObjectDetection(
@@ -213,7 +225,7 @@ def workflow_auto_labeling(dataset, dataset_info, hf_dataset, mode, run_config):
 
 
 def workflow_auto_labeling_custom_codetr(
-    dataset_info, run_config, dataset=None, detector=None
+    dataset_info, run_config, dataset=None, detector=None, wandb_activate=True
 ):
     try:
         if detector is None:
@@ -239,6 +251,7 @@ def workflow_auto_labeling_custom_codetr(
             project_name="Selection by Embedding",
             dataset_name=dataset_info["name"],
             config=run_config,
+            wandb_activate=wandb_activate,
         )
 
         detector.update_config_file(
@@ -299,7 +312,9 @@ def workflow_zero_shot_object_detection(dataset, dataset_info):
     return True
 
 
-def workflow_ensemble_exploration(dataset, dataset_info, run_config):
+def workflow_ensemble_exploration(
+    dataset, dataset_info, run_config, wandb_activate=True
+):
     try:
         wandb_exit_code = 0
 
@@ -308,6 +323,7 @@ def workflow_ensemble_exploration(dataset, dataset_info, run_config):
             project_name="Ensemble Exploration",
             dataset_name=dataset_info["name"],
             config=run_config,
+            wandb_activate=wandb_activate,
         )
         explorer = EnsembleExploration(dataset, run_config)
         explorer.ensemble_exploration()
