@@ -19,6 +19,7 @@ import numpy as np
 import psutil
 import torch
 import torch.multiprocessing as mp
+import wandb
 from accelerate.test_utils.testing import get_backend
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
@@ -36,8 +37,7 @@ from transformers import (
 )
 from transformers.pipelines.pt_utils import KeyDataset
 
-import wandb
-from config.config import GLOBAL_SEED, NUM_WORKERS, WORKFLOWS, HF_ROOT
+from config.config import GLOBAL_SEED, HF_ROOT, NUM_WORKERS, WORKFLOWS
 from datasets import Split
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.logging import configure_logging
@@ -778,8 +778,7 @@ class HuggingFaceObjectDetection:
         )
 
         self.hf_hub_model_id = (
-            {HF_ROOT}"/"
-            + f"{self.dataset_name}/{self.model_name}".replace("/", "_")
+            f"{HF_ROOT}/" + f"{self.dataset_name}_{self.model_name}".replace("/", "_")
         )
 
         self.categories = dataset.default_classes
@@ -932,7 +931,7 @@ class HuggingFaceObjectDetection:
             fp16=True,
             per_device_train_batch_size=self.config["batch_size"],
             auto_find_batch_size=True,
-            dataloader_num_workers=min(self.config["num_workers"], NUM_WORKERS),
+            dataloader_num_workers=min(self.config["n_worker_dataloader"], NUM_WORKERS),
             learning_rate=self.config["learning_rate"],
             lr_scheduler_type="cosine",
             weight_decay=self.config["weight_decay"],
@@ -955,7 +954,7 @@ class HuggingFaceObjectDetection:
 
         early_stopping_callback = EarlyStoppingCallback(
             early_stopping_patience=self.config["early_stop_patience"],
-            early_stopping_threshold=0.0,
+            early_stopping_threshold=self.config["early_stop_threshold"],
         )
 
         trainer = Trainer(
