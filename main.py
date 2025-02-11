@@ -124,18 +124,27 @@ def workflow_anomaly_detection(
     return True
 
 
-def workflow_embedding_selection(dataset, dataset_info, MODEL_NAME, log_dir, mode):
+def workflow_embedding_selection(dataset, dataset_info, MODEL_NAME, log_dir, config):
     embedding_selector = EmbeddingSelection(dataset, dataset_info, MODEL_NAME, log_dir)
-    embedding_selector.compute_embeddings(mode)
+    thresholds = config["thresholds"]
+    embedding_selector.compute_embeddings(config["mode"])
     embedding_selector.compute_similarity()
 
     # Find representative and unique samples as center points for further selections
-    embedding_selector.compute_representativeness()
-    embedding_selector.compute_unique_images_greedy()
-    embedding_selector.compute_unique_images_deterministic()
+    embedding_selector.compute_representativeness(
+        thresholds["compute_representativeness"]
+    )
+    embedding_selector.compute_unique_images_greedy(
+        thresholds["compute_unique_images_greedy"]
+    )
+    embedding_selector.compute_unique_images_deterministic(
+        thresholds["compute_unique_images_deterministic"]
+    )
 
     # Select samples similar to the center points to enlarge the dataset
-    embedding_selector.compute_similar_images()
+    embedding_selector.compute_similar_images(
+        thresholds["compute_similar_images"], thresholds["neighbour_count"]
+    )
 
     return True
 
@@ -258,14 +267,23 @@ class WorkflowExecutor:
                                 f"Selection by embeddings with model {MODEL_NAME}."
                             )
 
+                            mode = WORKFLOWS["embedding_selection"]["mode"]
+                            thresholds = WORKFLOWS["embedding_selection"]["thresholds"]
+                            config = {"mode": mode, "thresholds": thresholds}
+
                             wandb_run, log_dir = wandb_init(
                                 run_name=MODEL_NAME,
                                 project_name="Selection by Embedding",
                                 dataset_name=self.selected_dataset,
+                                config=config,
                             )
 
                             workflow_embedding_selection(
-                                self.dataset, self.dataset_info, MODEL_NAME, log_dir
+                                self.dataset,
+                                self.dataset_info,
+                                MODEL_NAME,
+                                log_dir,
+                                config,
                             )
                         except Exception as e:
                             logging.error(
