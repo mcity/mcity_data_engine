@@ -5,8 +5,8 @@ import numpy as np
 from PIL import Image
 import torch
 import os 
-from sam2.sam2_image_predictor import SAM2ImagePredictor
 from config.config import WORKFLOWS
+from transformers import AutoImageProcessor, AutoModelForDepthEstimation
 
 # from depth_pro.depth_pro import create_model_and_transforms, DepthProConfig, load_rgb
 
@@ -66,61 +66,57 @@ class MaskTeacher:
 
         logging.info("Semantic segmentation completed for all models.")
 
+    def inference_depth_estimation(self, dataset, model_name, label_field, prompt_field=None):
+        logging.info(f"Starting depth estimation for model {model_name}")
+
+        image_processor = AutoImageProcessor.from_pretrained(model_name)
+        model = AutoModelForDepthEstimation.from_pretrained(model_name, ignore_mismatched_sizes=True)
+
+        def apply_depth_model(sample, model, image_processor, label_field):
+            image = Image.open(sample.filepath).convert("RGB")  
+            inputs = image_processor(images=image, return_tensors="pt")
+
+            with torch.no_grad():
+                outputs = model(**inputs)
+                predicted_depth = outputs.predicted_depth
+
+            prediction = torch.nn.functional.interpolate(
+                predicted_depth.unsqueeze(1),
+                size=image.size[::-1],  
+                mode="bicubic",
+                align_corners=False,
+            )
+
+            output = prediction.squeeze().cpu().numpy()
+
+            formatted = (255 - output * 255 / np.max(output)).astype("uint8")
+
+            sample[label_field] = fo.Heatmap(map=formatted)
+            sample.save()
+
+        for sample in dataset.iter_samples(autosave=True, progress=True):
+            apply_depth_model(sample, model, image_processor, label_field)
+
+        logging.info("Depth estimation completed successfully!")
+
     def _run_depth_estimation(self):
-        pass
-        # try:
-        #     logging.info("Initializing DepthPro model")
-        #     checkpoint_path = "/home/wizard/ml-depth-pro/checkpoints/depth_pro.pt"
-        #     depth_map_save_dir = "depth_maps"
-        #     os.makedirs(depth_map_save_dir, exist_ok=True)
+        if self.model_name in ["dpt", "depth_anything", "glpn", "zoe_depth"]:
+            logging.info(f"Loading depth model: {self.model_name}")
 
-        #     # Initialize DepthPro
-        #     depthpro_config = DepthProConfig(
-        #         checkpoint_uri=checkpoint_path,
-        #         decoder_features=256,
-        #         fov_encoder_preset="dinov2l16_384",
-        #         image_encoder_preset="dinov2l16_384",
-        #         patch_encoder_preset="dinov2l16_384",
-        #         use_fov_head=True,
-        #     )
+            depth_models = self.model_config["models"]
+            prompt_field = self.model_config.get("prompt_field", None)  # None if not provided
 
-        #     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        #     depth_model, transform = create_model_and_transforms(
-        #         config=depthpro_config,
-        #         device=device,
-        #         precision=torch.float32,
-        #     )
-        #     depth_model.eval()
+            for depth_model in depth_models:
+                model_name_clear = depth_model.replace("-", "_")
+                logging.info(f"Running depth estimation for model {depth_model}")
 
-        #     for sample in self.dataset.iter_samples(progress=True):
-        #         try:
-        #             image_path = sample.filepath
-        #             image, _, f_px = load_rgb(image_path)
-        #             transformed_image = transform(image)
+                label_field_no_prompt = f"pred_{model_name_clear}_no_prompt"
+                label_field_with_prompt = f"pred_{model_name_clear}_prompt_{prompt_field}" if prompt_field else None
 
-        #             with torch.no_grad():
-        #                 prediction = depth_model.infer(transformed_image, f_px=f_px)
-        #                 depth = prediction["depth"]
 
-        #             depth_normalized = np.interp(
-        #                 depth.cpu().numpy(),
-        #                 (depth.min().cpu().numpy(), depth.max().cpu().numpy()),
-        #                 (0, 255)
-        #             ).astype(np.uint8)
+                if prompt_field:
+                    self.inference_depth_estimation(self.dataset, depth_model, label_field_with_prompt, prompt_field)
+                else: 
+                    self.inference_depth_estimation(self.dataset, depth_model, label_field_no_prompt)
 
-        #             depth_map_path = os.path.join(
-        #                 depth_map_save_dir, 
-        #                 f"{os.path.basename(image_path)}_depth.png"
-        #             )
-        #             depth_image = Image.fromarray(depth_normalized)
-        #             depth_image.save(depth_map_path)
-
-        #             sample["depth_map_path"] = depth_map_path
-        #             sample.save()
-
-        #         except Exception as e:
-        #             logging.error(f"Error processing depth for {image_path}: {e}")
-        #             continue
-
-        # except Exception as e:
-        #     logging.error(f"Error in depth estimation setup: {e}")
+        logging.info("Depth estimation completed for all models.")

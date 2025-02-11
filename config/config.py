@@ -165,7 +165,48 @@ WORKFLOWS = {
                 ]
             },
         },
-        "depth_estimation": {}
+        "depth_estimation": {
+            "dpt": {
+                "prompt_field": None,
+                "models": {
+                    "Intel/dpt-swinv2-tiny-256",
+                    "Intel/dpt-swinv2-large-384",
+                    "Intel/dpt-beit-large-384",
+                    "Intel/dpt-beit-large-512",
+                    "Intel/dpt-large-ade",
+                    "Intel/dpt-large",
+                    "Intel/dpt-hybrid-midas",
+                    "Intel/dpt-swinv2-base-384",
+                    "Intel/dpt-beit-base-384"
+                    },
+            },
+            "depth_anything": {
+                "prompt_field": None,
+                "models": {
+                    "LiheYoung/depth-anything-base-hf",
+                    "LiheYoung/depth-anything-large-hf",
+                    "LiheYoung/depth-anything-small-hf",
+                    "LiheYoung/depth_anything_vitb14",
+                    "LiheYoung/depth_anything_vitl14",
+                    "LiheYoung/depth_anything_vits14"
+                }
+            },
+            "glpn": {
+                "prompt_field": None,
+                "models": {
+                    "vinvino02/glpn-nyu",
+                    "vinvino02/glpn-kitti"
+                },
+            },
+            "zoe_depth": {
+                "prompt_field": None,
+                "models": {
+                    "Intel/zoedepth-nyu-kitti",
+                    "Intel/zoedepth-nyu",
+                    "Intel/zoedepth-kitti"
+                }
+            }
+        }
     },
     "ensemble_exploration": {},
 }
