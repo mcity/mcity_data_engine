@@ -266,7 +266,7 @@ class AwsDownloader:
 
         if self.test_run == True:
             logging.error(
-                f"Test run - no data downloaded. Set 'test_run': False in the config. Aborting."
+                f"Test run: No data downloaded. Set 'test_run': False in the config. Aborting."
             )
             return False
 
