@@ -40,7 +40,7 @@ class AnomalyDetectionDataPreparation:
             )
             return None
 
-    def fisheye8k(self, gt_field="ground_truth"):
+    def fisheye8k(self):
         dataset_name_ano_dec = f"{self.dataset_name}_anomaly_detection"
 
         if dataset_name_ano_dec in fo.list_datasets():
@@ -51,6 +51,7 @@ class AnomalyDetectionDataPreparation:
         else:
             location_filter = self.config.get("location", "cam1")
             rare_classes = self.config.get("rare_classes", ["Truck"])
+            gt_field = self.config.get("gt_field", "ground_truth")
             # Filter to only include data from one camera to make the data distribution clearer
             view_location = self.dataset.match(F("location") == location_filter)
             logging.info(
