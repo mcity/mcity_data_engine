@@ -3,7 +3,6 @@ import pytest
 from fiftyone import ViewField as F
 from fiftyone.utils.huggingface import load_from_hub
 
-from config.config import ACCEPTED_SPLITS
 from main import workflow_anomaly_detection
 from utils.anomaly_detection_data_preparation import AnomalyDetectionDataPreparation
 from utils.dataset_loader import _post_process_dataset
@@ -12,9 +11,7 @@ from utils.dataset_loader import _post_process_dataset
 @pytest.fixture
 def dataset_v51():
     """Fixture to load a FiftyOne dataset from the hub."""
-    dataset_name_hub = (
-        "Voxel51/fisheye8k"  # TODO Upload anomaly dataset to Hugging Face
-    )
+    dataset_name_hub = "Voxel51/fisheye8k"
     dataset_name = "fisheye8k_v51_anomaly_test"
     try:
         dataset = load_from_hub(
@@ -28,7 +25,7 @@ def dataset_v51():
     return dataset
 
 
-def test_anomaly_detection(dataset_v51):
+def test_anomaly_detection_train(dataset_v51):
 
     prep_config = {"location": "cam3", "rare_classes": ["Bus"]}
 
@@ -42,6 +39,7 @@ def test_anomaly_detection(dataset_v51):
         "epochs": 1,
         "early_stop_patience": 1,
         "data_root": data_preparer.export_root,
+        "mode": "train",
     }
 
     eval_metrics = ["AUPR", "AUROC"]
@@ -53,6 +51,7 @@ def test_anomaly_detection(dataset_v51):
         dataset_info,
         eval_metrics,
         run_config,
+        wandb_activate=False,
     )
 
     # Select all samples that are considered anomalous
