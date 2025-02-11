@@ -186,9 +186,6 @@ WORKFLOWS = {
                     "LiheYoung/depth-anything-base-hf",
                     "LiheYoung/depth-anything-large-hf",
                     "LiheYoung/depth-anything-small-hf",
-                    "LiheYoung/depth_anything_vitb14",
-                    "LiheYoung/depth_anything_vitl14",
-                    "LiheYoung/depth_anything_vits14"
                 }
             },
             "glpn": {

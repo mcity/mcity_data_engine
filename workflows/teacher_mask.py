@@ -66,14 +66,14 @@ class MaskTeacher:
 
         logging.info("Semantic segmentation completed for all models.")
 
-    def inference_depth_estimation(self, dataset, model_name, label_field, prompt_field=None):
+    def inference_depth_estimation(self, dataset, model_name, label_field, prompt_field=None, max_samples=2):
         logging.info(f"Starting depth estimation for model {model_name}")
 
         image_processor = AutoImageProcessor.from_pretrained(model_name)
         model = AutoModelForDepthEstimation.from_pretrained(model_name, ignore_mismatched_sizes=True)
 
-        def apply_depth_model(sample, model, image_processor, label_field):
-            image = Image.open(sample.filepath).convert("RGB")  
+        def apply_depth_model(data, model, image_processor, label_field):
+            image = Image.open(data.filepath).convert("RGB")  
             inputs = image_processor(images=image, return_tensors="pt")
 
             with torch.no_grad():
@@ -91,15 +91,17 @@ class MaskTeacher:
 
             formatted = (255 - output * 255 / np.max(output)).astype("uint8")
 
-            sample[label_field] = fo.Heatmap(map=formatted)
-            sample.save()
+            data[label_field] = fo.Heatmap(map=formatted)
+            data.save()
 
-        for sample in dataset.iter_samples(autosave=True, progress=True):
-            apply_depth_model(sample, model, image_processor, label_field)
+        for idx, data in enumerate(dataset.iter_samples(autosave=True, progress=True)):
+            if idx >= max_samples:
+                break  # Stop after `max_samples` images
+            apply_depth_model(data, model, image_processor, label_field)
 
         logging.info("Depth estimation completed successfully!")
 
-    def _run_depth_estimation(self):
+    def _run_depth_estimation(self, max_samples=2):
         if self.model_name in ["dpt", "depth_anything", "glpn", "zoe_depth"]:
             logging.info(f"Loading depth model: {self.model_name}")
 
@@ -113,10 +115,9 @@ class MaskTeacher:
                 label_field_no_prompt = f"pred_{model_name_clear}_no_prompt"
                 label_field_with_prompt = f"pred_{model_name_clear}_prompt_{prompt_field}" if prompt_field else None
 
-
                 if prompt_field:
-                    self.inference_depth_estimation(self.dataset, depth_model, label_field_with_prompt, prompt_field)
+                    self.inference_depth_estimation(self.dataset, depth_model, label_field_with_prompt, prompt_field, max_samples)
                 else: 
-                    self.inference_depth_estimation(self.dataset, depth_model, label_field_no_prompt)
+                    self.inference_depth_estimation(self.dataset, depth_model, label_field_no_prompt, max_samples)
 
         logging.info("Depth estimation completed for all models.")
