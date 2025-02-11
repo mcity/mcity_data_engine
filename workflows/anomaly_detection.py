@@ -42,9 +42,8 @@ class Anodec:
         logging.info(f"Using {len(self.normal_data)} normal images for training.")
         self.abnormal_data = dataset.match_tags(["val", "test"])
         logging.info(
-            f"Using {len(self.abnormal_data)} images with anomalies for evaluating."
+            f"Using {len(self.abnormal_data)} images with anomalies for evaluation."
         )
-        self.brains = dataset.list_brain_runs()
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
         self.model_name = self.config["model_name"]

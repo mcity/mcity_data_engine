@@ -64,24 +64,16 @@ class EnsembleExploration:
     def __init__(self, dataset, config):
         self.dataset = dataset
         self.config = config
-        self.positive_classes = config[
-            "positive_classes"
-        ]  # List of classes that count as a detection. Must be included in the classes used for detections
-        self.agreement_threshold = config[
-            "agreement_threshold"
-        ]  # Threshold for agreement between models
-        self.iou_threshold = config[
-            "iou_threshold"
-        ]  # Threshold for IoU between bboxes to consider them as overlapping
-        self.max_bbox_size = config[
-            "max_bbox_size"
-        ]  # Value between [0,1] for the max size of considered bboxes
+        self.positive_classes = config["positive_classes"]
+        self.agreement_threshold = config["agreement_threshold"]
+        self.iou_threshold = config["iou_threshold"]
+        self.max_bbox_size = config["max_bbox_size"]
+        pred_prefix = config["field_includes"]
         self.v51_agreement_tag = "detections_overlap"
 
         # Get V51 fields that store detection results
         self.v51_detection_fields = []
         dataset_schema = self.dataset.get_field_schema()
-        pred_prefix = "pred_"  # Assume object detection workflow was used for detections
         for field in dataset_schema:
             if pred_prefix in field:
                 self.v51_detection_fields.append(field)
@@ -102,10 +94,7 @@ class EnsembleExploration:
 
         if len(self.v51_detection_fields) < self.agreement_threshold:
             logging.error(
-                f"Number of detection models used ({len(self.v51_detection_fields)}) is less than the agreement threshold ({self.agreement_threshold}). No agreements will be possible."
-            )
-            logging.warning(
-                "Detections can be generated with the workflow `auto_labeling_zero_shot`"
+                f"Number of detection models used ({len(self.v51_detection_fields)}) is less than the agreement threshold ({self.agreement_threshold}). No agreements will be possible. Detections are expected in the field {pred_prefix}. Detections can be generated with the workflow `auto_labeling_zero_shot`"
             )
 
         # Get filtered V51 view for faster processing

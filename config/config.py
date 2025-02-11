@@ -1,7 +1,7 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["auto_labeling"]
+SELECTED_WORKFLOW = ["ensemble_exploration"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -22,7 +22,7 @@ WORKFLOWS = {
     },
     "embedding_selection": {
         "mode": "compute",  # "compute" or "load"
-        "thresholds": {
+        "parameters": {
             "compute_representativeness": 0.99,
             "compute_unique_images_greedy": 0.01,
             "compute_unique_images_deterministic": 0.99,
@@ -31,18 +31,18 @@ WORKFLOWS = {
         },
         "embedding_models": [  # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
             "clip-vit-base32-torch",
-            "open-clip-torch",
+            # "open-clip-torch",
             # "dinov2-vits14-torch",        # Issue with query IDs
             # "dinov2-vitl14-torch",        # Issue with query IDs
-            "dinov2-vits14-reg-torch",
+            # "dinov2-vits14-reg-torch",
             # "dinov2-vitl14-reg-torch",    # High GPU memory requirements
             "mobilenet-v2-imagenet-torch",
-            "resnet152-imagenet-torch",
-            "vgg19-imagenet-torch",
-            "classification-transformer-torch",
-            "detection-transformer-torch",
-            "zero-shot-detection-transformer-torch",
-            "zero-shot-classification-transformer-torch",
+            # "resnet152-imagenet-torch",
+            # "vgg19-imagenet-torch",
+            # "classification-transformer-torch",
+            # "detection-transformer-torch",
+            # "zero-shot-detection-transformer-torch",
+            # "zero-shot-classification-transformer-torch",
         ],
     },
     "anomaly_detection": {
@@ -195,11 +195,35 @@ WORKFLOWS = {
             "delivery driver",
         ],
     },
-    "ensemble_exploration": {},
+    "ensemble_exploration": {
+        "field_includes": "pred_zsod_",
+        "agreement_threshold": 3,  # Threshold for n models necessary for agreement between models
+        "iou_threshold": 0.5,  # Threshold for IoU between bboxes to consider them as overlapping
+        "max_bbox_size": 0.01,  # Value between [0,1] for the max size of considered bboxes
+        "positive_classes": [  # Example for Vulnerable Road Users. Must be subset of available classes in the detections.
+            "skater",
+            "child",
+            "bicycle",
+            "bicyclist",
+            "cyclist",
+            "bike",
+            "rider",
+            "motorcycle",
+            "motorcyclist",
+            "pedestrian",
+            "person",
+            "walker",
+            "jogger",
+            "runner",
+            "skateboarder",
+            "scooter",
+            "delivery driver",
+        ],
+    },
 }
 
 ACCEPTED_SPLITS = {"train", "val", "test"}
-HF_ROOT = "mcity-data-engine"
+HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
 
 
 cpu_count = os.cpu_count()
@@ -207,3 +231,4 @@ NUM_WORKERS = 32 if cpu_count > 32 else cpu_count
 GLOBAL_SEED = 0
 V51_ADDRESS = "localhost"
 V51_PORT = 5151
+V51_REMOTE = True
