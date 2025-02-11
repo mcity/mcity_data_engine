@@ -369,15 +369,21 @@ class WorkflowExecutor:
                                 wandb_exit_code = 0
                                 pbar.set_description(f"Training model {MODEL_NAME}")
 
+                                run_config = {
+                                    "model_name": MODEL_NAME,
+                                    "v51_dataset_name": self.selected_dataset,
+                                }
+
                                 wandb_run = wandb_init(
                                     run_name=MODEL_NAME,
                                     project_name="Auto Labeling Hugging Face",
                                     dataset_name=self.selected_dataset,
+                                    config=run_config,
                                 )
 
-                                run_config = {}
-
-                                workflow_auto_labeling(dataset, hf_dataset, mode)
+                                workflow_auto_labeling(
+                                    self.dataset, hf_dataset, mode, run_config
+                                )
 
                             except Exception as e:
                                 logging.error(
