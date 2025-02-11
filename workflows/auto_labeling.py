@@ -900,6 +900,8 @@ class HuggingFaceObjectDetection:
                 },
                 do_pad=True,
                 pad_size={"height": img_size_target[1], "width": img_size_target[0]},
+                use_fast=True,
+                do_convert_annotations=do_convert_annotations,
             )
 
         hf_model_config = AutoConfig.from_pretrained(self.model_name)
