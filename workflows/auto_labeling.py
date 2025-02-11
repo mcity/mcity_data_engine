@@ -879,13 +879,28 @@ class HuggingFaceObjectDetection:
 
     def train(self, hf_dataset):
         do_convert_annotations = True  # HF can convert (top_left_x, top_left_y, bottom_right_x, bottom_right_y) in abs. coordinates to (x_min, y_min, width, height) in rel. coordinates https://github.com/huggingface/transformers/blob/v4.48.2/src/transformers/models/conditional_detr/image_processing_conditional_detr.py#L1497
-        image_processor = AutoProcessor.from_pretrained(
-            self.model_name,
-            do_resize=False,
-            do_pad=True,
-            use_fast=True,
-            do_convert_annotations=do_convert_annotations,
-        )
+
+        img_size_target = self.config.get("image_size", None)
+        if img_size_target is None:
+            image_processor = AutoProcessor.from_pretrained(
+                self.model_name,
+                do_resize=False,
+                do_pad=True,
+                use_fast=True,
+                do_convert_annotations=do_convert_annotations,
+            )
+        else:
+            logging.warning(f"Resizing images to target size {img_size_target}.")
+            image_processor = AutoProcessor.from_pretrained(
+                self.model_name,
+                do_resize=True,
+                size={
+                    "max_height": img_size_target[1],
+                    "max_width": img_size_target[0],
+                },
+                do_pad=True,
+                pad_size={"height": img_size_target[1], "width": img_size_target[0]},
+            )
 
         hf_model_config = AutoConfig.from_pretrained(self.model_name)
         train_transform_batch = partial(
