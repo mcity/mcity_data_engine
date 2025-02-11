@@ -104,38 +104,13 @@ class EmbeddingSelection:
         embedding_file_name = self.embeddings_root + self.model_name_key + ".pkl"
 
         if self.model.has_embeddings:
-            # Compute embeddings for the model
-
-            if mode == "compute":
-                logging.info("Computing embeddings.")
-                self.dataset.compute_embeddings(
-                    model=self.model, embeddings_field=self.embedding_key
-                )
-                self.embeddings_model = self.dataset.values(self.embedding_key)
-
-                self.dataset.set_values(self.embedding_key, self.embeddings_model)
-                with open(embedding_file_name, "wb") as f:
-                    pickle.dump(self.embeddings_model, f)
-
-                # Upload embeddings to Hugging Face
-                api = HfApi()
-
-                logging.info(
-                    f"Uploading embeddings to Hugging Face: {self.hf_repo_name}"
-                )
-                api.create_repo(
-                    self.hf_repo_name, private=True, repo_type="model", exist_ok=True
-                )
-
-                model_name = f"{self.model_name_key}.pkl"
-                api.upload_file(
-                    path_or_fileobj=embedding_file_name,
-                    path_in_repo=model_name,
-                    repo_id=self.hf_repo_name,
-                    repo_type="model",
-                )
-            elif mode == "load":
+            # Try to load models
+            load_models_successful = None
+            if mode == "load":
                 try:
+                    logging.info(
+                        f"Attempting to load embeddings for model {self.model_name_key}."
+                    )
                     if self.dataset.get_field(self.embedding_key) is not None:
                         logging.info("Loading embeddings from V51.")
                         self.embeddings_model = self.dataset.values(self.embedding_key)
@@ -162,9 +137,41 @@ class EmbeddingSelection:
                         self.dataset.set_values(
                             self.embedding_key, self.embeddings_model
                         )
+                    load_models_successful = True
                 except Exception as e:
-                    logging.error(f"Failed to load or download embeddings: {str(e)}")
-            else:
+                    logging.warning(f"Failed to load or download embeddings: {str(e)}")
+                    load_models_successful = False
+
+            if mode == "compute" or load_models_successful == False:
+                logging.info(f"Computing embeddings for model {self.model_name_key}.")
+                self.dataset.compute_embeddings(
+                    model=self.model, embeddings_field=self.embedding_key
+                )
+                self.embeddings_model = self.dataset.values(self.embedding_key)
+
+                self.dataset.set_values(self.embedding_key, self.embeddings_model)
+                with open(embedding_file_name, "wb") as f:
+                    pickle.dump(self.embeddings_model, f)
+
+                # Upload embeddings to Hugging Face
+                api = HfApi()
+
+                logging.info(
+                    f"Uploading embeddings to Hugging Face: {self.hf_repo_name}"
+                )
+                api.create_repo(
+                    self.hf_repo_name, private=True, repo_type="model", exist_ok=True
+                )
+
+                model_name = f"{self.model_name_key}.pkl"
+                api.upload_file(
+                    path_or_fileobj=embedding_file_name,
+                    path_in_repo=model_name,
+                    repo_id=self.hf_repo_name,
+                    repo_type="model",
+                )
+
+            if mode not in ["load", "compute"]:
                 logging.error(f"Mode {mode} is not supported.")
 
             for method in tqdm(dim_reduction_methods, "Dimensionality reductions"):
@@ -264,7 +271,7 @@ class EmbeddingSelection:
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
         self.steps += 1
 
-    def compute_representativeness(self, threshold=0.99):
+    def compute_representativeness(self, threshold):
         """
         Computes the representativeness of frames in the dataset using specified
         embedding models and methods.
@@ -333,7 +340,7 @@ class EmbeddingSelection:
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
         self.steps += 1
 
-    def compute_unique_images_greedy(self, perct_unique=0.01):
+    def compute_unique_images_greedy(self, perct_unique):
         """
         Computes a subset of unique images from the dataset using a greedy algorithm.
 
@@ -384,7 +391,7 @@ class EmbeddingSelection:
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
         self.steps += 1
 
-    def compute_unique_images_deterministic(self, threshold=0.99):
+    def compute_unique_images_deterministic(self, threshold):
         """
         Computes a deterministic uniqueness score for each sample in the dataset
         and updates the dataset with the computed uniqueness values. Weighted k-neighbors distances for each sample.
@@ -417,7 +424,6 @@ class EmbeddingSelection:
         # quant_threshold = self.dataset.quantiles(key, threshold)
         # view = self.dataset.match(F(key) >= quant_threshold)
         view = self.dataset.match(F(self.uniqueness_key) >= threshold)
-        # TODO Improve with values() and set_values()
         for sample in view.iter_samples(progress=True, autosave=True):
             sample[field] = value
         end_time = time.time()
@@ -425,17 +431,18 @@ class EmbeddingSelection:
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
         self.steps += 1
 
-    def find_samples_by_text(self, prompt, model_name):
+    def find_samples_by_text(self, prompt, model_name, k=5):
+        # TODO Implement if of interest
         # https://docs.voxel51.com/api/fiftyone.core.collections.html#fiftyone.core.collections.SampleCollection.sort_by_similarity
         if model_name == "clip-vit-base32-torch":
-            view = self.dataset.sort_by_similarity(prompt, k=5)
+            view = self.dataset.sort_by_similarity(prompt, k=k)
 
     def compute_duplicate_images(self, fraction=0.99):
-        # Find duplicates of least similar images
+        # TODO Implement if of interest
         # https://docs.voxel51.com/brain.html#finding-near-duplicate-images
         pass
 
-    def compute_similar_images(self, dist_threshold=0.03, neighbour_count=3):
+    def compute_similar_images(self, dist_threshold, neighbour_count):
         """
         Computes and assigns similar images based on a distance threshold and neighbour count.
 

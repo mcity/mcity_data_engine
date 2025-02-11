@@ -1,7 +1,7 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["embedding_selection", "anomaly_detection"]
+SELECTED_WORKFLOW = ["embedding_selection"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -21,7 +21,14 @@ WORKFLOWS = {
         "selected_dataset_overwrite": True,
     },
     "embedding_selection": {
-        "mode": "compute",  # "compute" or "load"
+        "mode": "load",  # "compute" or "load"
+        "thresholds": {
+            "compute_representativeness": 0.99,
+            "compute_unique_images_greedy": 0.01,
+            "compute_unique_images_deterministic": 0.99,
+            "compute_similar_images": 0.03,
+            "neighbour_count": 3,
+        },
         "embedding_models": [  # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
             "clip-vit-base32-torch",
             "open-clip-torch",
