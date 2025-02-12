@@ -12,9 +12,9 @@ if IGNORE_FUTURE_WARNINGS:
 
 import fiftyone as fo
 import torch.multiprocessing as mp
+import wandb
 from tqdm import tqdm
 
-import wandb
 from config.config import (
     SELECTED_DATASET,
     SELECTED_WORKFLOW,
@@ -508,7 +508,7 @@ class WorkflowExecutor:
                                 "weight_decay": config_autolabel["weight_decay"],
                                 "max_grad_norm": config_autolabel["max_grad_norm"],
                                 "batch_size": config_model["batch_size"],
-                                "image_size": config_model["image_size"],
+                                "image_size": config_model.get("image_size", None),
                                 "n_worker_dataloader": config_autolabel[
                                     "n_worker_dataloader"
                                 ],
