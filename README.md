@@ -15,14 +15,14 @@
 The Mcity Data Engine is an essential tool in the Mcity makerspace for transportation innovators making AI algorithms and seeking actionable data insights through machine learning. Details on the Data Engine can be found in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki).
 
 <p align='center'>
-<a target="_blank" href="https://github.com/mcity/mcity_data_engine/wiki">
+<a target="_blank" rel="noopener noreferrer" href="https://github.com/mcity/mcity_data_engine/wiki">
 <picture>
   <source srcset="https://github.com/user-attachments/assets/e3e1cd10-5195-4db7-9147-11b75e078662" width="15%">
   <img alt="Mcity Data Engine Wiki" src="">
 </picture>
 </a>
   
-<a target="_blank" href="">
+<a target="_blank" rel="noopener noreferrer" href="">
 <picture>
   <source srcset="https://github.com/user-attachments/assets/b93f0c88-172d-4eed-8dac-3fdb82436f71"
 width="15%">
@@ -30,14 +30,14 @@ width="15%">
 </picture>
 </a>
 
-<a target="_blank" href="https://wandb.ai/mcity">
+<a target="_blank" rel="noopener noreferrer" href="https://wandb.ai/mcity">
 <picture>
   <source srcset="https://github.com/user-attachments/assets/2e54c0ba-26b7-42cf-b33f-903ddfd55ae9" width="15%">
   <img alt="Mcity Data Engine Logs" src="">
 </picture>
 </a>
 
-<a target="_blank" href="https://huggingface.co/mcity-data-engine">
+<a target="_blank" rel="noopener noreferrer" href="https://huggingface.co/mcity-data-engine">
 <picture>
   <source srcset="https://github.com/user-attachments/assets/5b925a76-d0a2-46ad-8d95-b9296d6a5b46" width="15%">
   <img alt="Mcity Data Engine Models" src="">
