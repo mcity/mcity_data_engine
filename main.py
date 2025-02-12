@@ -465,10 +465,15 @@ class WorkflowExecutor:
                 elif workflow == "auto_labeling":
 
                     # Config
+                    SUPPORTED_MODEL_SOURCES = [
+                        "hf_models_objectdetection",
+                        "custom_codetr",
+                        "ultralytics",
+                    ]
                     config_autolabel = WORKFLOWS["auto_labeling"]
                     selected_model_source = config_autolabel["model_source"]
 
-                    if selected_model_source == "hf_models_objectdetection":
+                    if SUPPORTED_MODEL_SOURCES[0] in selected_model_source:
                         hf_models = config_autolabel["hf_models_objectdetection"]
 
                         # Dataset Conversion
@@ -523,7 +528,7 @@ class WorkflowExecutor:
                                 run_config,
                             )
 
-                    elif selected_model_source == "custom_codetr":
+                    if SUPPORTED_MODEL_SOURCES[1] in selected_model_source:
 
                         # Config
                         config_codetr = WORKFLOWS["auto_labeling"]["custom_codetr"]
