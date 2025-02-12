@@ -272,7 +272,8 @@ class Anodec:
                 )
         except Exception as e:
             logging.error(f"Failed to load or download model: {str(e)}")
-        inferencer = TorchInferencer(path=os.path.join(file_path), device="cuda")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        inferencer = TorchInferencer(path=os.path.join(file_path), device=device)
         self.inferencer = inferencer
 
         for sample in self.abnormal_data.iter_samples(autosave=True, progress=True):
