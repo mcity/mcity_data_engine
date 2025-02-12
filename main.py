@@ -129,13 +129,14 @@ def workflow_anomaly_detection(
             config=run_config,
             tensorboard_output=log_dir,
         )
-        if run_config["mode"] == "train":
+        SUPPORTED_MODES = ["train", "inference"]
+        if SUPPORTED_MODES[0] in run_config["mode"]:
             ano_dec.train_and_export_model()
             ano_dec.run_inference()
             ano_dec.eval_v51()
-        elif run_config["mode"] == "inference":
+        if SUPPORTED_MODES[1] in run_config["mode"]:
             ano_dec.run_inference()
-        else:
+        if run_config["mode"] not in SUPPORTED_MODES:
             logging.error(f"Mode {run_config['mode']} not suported.")
     except Exception as e:
         logging.error(f"Error in Anomaly Detection: {e}")
@@ -207,14 +208,14 @@ def workflow_auto_labeling(
             dataset=dataset,
             config=run_config,
         )
-        if run_config["mode"] == "train":
+        SUPPORTED_MODES = ["train", "inference"]
+        if SUPPORTED_MODES[0] in run_config["mode"]:
             logging.info(f"Training model {run_config['model_name']}")
             detector.train(hf_dataset)
-            detector.inference()
-        elif run_config["mode"] == "inference":
+        if SUPPORTED_MODES[1] in run_config["mode"]:
             logging.info(f"Running inference for model {run_config['model_name']}")
             detector.inference()
-        else:
+        if run_config["mode"] not in SUPPORTED_MODES:
             logging.error(f"Mode {run_config['mode']} is not supported.")
     except Exception as e:
         logging.error(f"An error occurred with model {run_config['model_name']}: {e}")
