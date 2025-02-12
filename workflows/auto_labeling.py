@@ -14,6 +14,7 @@ from difflib import get_close_matches
 from functools import partial
 from typing import Union
 
+import albumentations as A
 import fiftyone as fo
 import numpy as np
 import psutil
@@ -785,18 +786,15 @@ class HuggingFaceObjectDetection:
 
     def transform_batch(
         self,
-        examples,
+        batch,
         image_processor,
         return_pixel_mask=False,
     ):
         """Apply format annotations in COCO format for object detection task"""
-        # TODO Include augmentations
-        # https://albumentations.ai/docs/integrations/fiftyone/
-
         images = []
         annotations = []
 
-        for image_path, annotation in zip(examples["image_path"], examples["objects"]):
+        for image_path, annotation in zip(batch["image_path"], batch["objects"]):
             image = Image.open(image_path).convert("RGB")
             image_np = np.array(image)
             images.append(image_np)
@@ -874,7 +872,8 @@ class HuggingFaceObjectDetection:
             data["pixel_mask"] = torch.stack([x["pixel_mask"] for x in batch])
         return data
 
-    def train(self, hf_dataset):
+    def train(self, hf_dataset, overwrite_output=True):
+        torch.cuda.empty_cache()
         img_size_target = self.config.get("image_size", None)
         if img_size_target is None:
             image_processor = AutoProcessor.from_pretrained(
@@ -899,15 +898,14 @@ class HuggingFaceObjectDetection:
                 do_convert_annotations=self.do_convert_annotations,
             )
 
-        hf_model_config = AutoConfig.from_pretrained(self.model_name)
         train_transform_batch = partial(
             self.transform_batch,
-            # transform=train_augment_and_transform,
+            # transform=None,  # TODO train_augmentation_and_transform,
             image_processor=image_processor,
         )
         val_test_transform_batch = partial(
             self.transform_batch,
-            # transform=validation_transform,
+            # transform=None,  # TODO validation_transform,
             image_processor=image_processor,
         )
 
@@ -920,6 +918,9 @@ class HuggingFaceObjectDetection:
         hf_dataset[Split.TEST] = hf_dataset[Split.TEST].with_transform(
             val_test_transform_batch
         )
+
+        hf_model_config = AutoConfig.from_pretrained(self.model_name)
+        hf_model_config_name = type(hf_model_config).__name__
 
         if type(hf_model_config) in AutoModelForObjectDetection._model_mapping:
             model = AutoModelForObjectDetection.from_pretrained(
@@ -934,9 +935,15 @@ class HuggingFaceObjectDetection:
                 "Hugging Face AutoModel does not support " + str(type(hf_model_config))
             )
 
+        if overwrite_output == True:
+            logging.warning(
+                f"Training will overwrite existing results in {self.model_root}"
+            )
+
         training_args = TrainingArguments(
             run_name=self.model_name,
             output_dir=self.model_root,
+            overwrite_output_dir=overwrite_output,
             num_train_epochs=self.config["epochs"],
             fp16=True,
             per_device_train_batch_size=self.config["batch_size"],
@@ -946,15 +953,15 @@ class HuggingFaceObjectDetection:
             lr_scheduler_type="cosine",
             weight_decay=self.config["weight_decay"],
             max_grad_norm=self.config["max_grad_norm"],
-            metric_for_best_model="eval_loss",  # eval_map,
+            metric_for_best_model="eval_loss",
             greater_is_better=False,
             load_best_model_at_end=True,
             eval_strategy="epoch",
             save_strategy="best",
-            save_total_limit=1,  # Possible that two checkpoints are saved: the last one and the best one (if they are different)
+            save_total_limit=1,
             remove_unused_columns=False,
             eval_do_concat_batches=False,
-            save_safetensors=False,
+            save_safetensors=False,  # Does not work with all models
             hub_model_id=self.hf_hub_model_id,
             hub_private_repo=True,
             push_to_hub=HF_DO_UPLOAD,
@@ -975,18 +982,19 @@ class HuggingFaceObjectDetection:
             tokenizer=image_processor,
             data_collator=self.collate_fn,
             callbacks=[early_stopping_callback],
-            # compute_metrics=eval_compute_metrics_fn, # TODO Write eval function
+            # compute_metrics=eval_compute_metrics_fn,
         )
 
         logging.info(f"Starting training of model {self.model_name}.")
         trainer.train()
-        trainer.push_to_hub()
+        if HF_DO_UPLOAD:
+            trainer.push_to_hub()
 
         metrics = trainer.evaluate(eval_dataset=hf_dataset[Split.TEST])
         logging.info(f"Model training completed. Evaluation results: {metrics}")
 
     def inference(self, detection_threshold=0.2, load_from_hf=True):
-
+        torch.cuda.empty_cache()
         # Load trained model from Hugging Face
         load_from_hf_successful = None
         if load_from_hf:
@@ -1004,12 +1012,44 @@ class HuggingFaceObjectDetection:
                 )
         if load_from_hf == False or load_from_hf_successful == False:
             try:
-                logging.info(f"Loading model from disk: {self.model_root}")
-                image_processor = AutoProcessor.from_pretrained(self.model_root)
-                model = AutoModelForObjectDetection.from_pretrained(self.model_root)
+                # Select folder in self.model_root that include 'checkpoint-'
+                checkpoint_dirs = [
+                    d
+                    for d in os.listdir(self.model_root)
+                    if "checkpoint-" in d
+                    and os.path.isdir(os.path.join(self.model_root, d))
+                ]
+
+                if not checkpoint_dirs:
+                    logging.error(
+                        f"No checkpoint directory found in {self.model_root}!"
+                    )
+                    model_path = None
+                else:
+                    # Sort by modification time (latest first)
+                    checkpoint_dirs.sort(
+                        key=lambda d: os.path.getmtime(
+                            os.path.join(self.model_root, d)
+                        ),
+                        reverse=True,
+                    )
+
+                    if len(checkpoint_dirs) > 1:
+                        logging.warning(
+                            f"Multiple checkpoint directories found: {checkpoint_dirs}. Selecting the latest one: {checkpoint_dirs[0]}."
+                        )
+
+                    selected_checkpoint = checkpoint_dirs[0]
+                    logging.info(
+                        f"Loading model from disk: {self.model_root}/{selected_checkpoint}"
+                    )
+                    model_path = os.path.join(self.model_root, selected_checkpoint)
+
+                image_processor = AutoProcessor.from_pretrained(model_path)
+                model = AutoModelForObjectDetection.from_pretrained(model_path)
             except Exception as e:
                 logging.error(
-                    f"Model {self.model_name} could not be loaded from folder {self.model_root}. Inference not possible."
+                    f"Model {self.model_name} could not be loaded from folder {self.model_root}/{selected_checkpoint}. Inference not possible."
                 )
 
         device, _, _ = get_backend()

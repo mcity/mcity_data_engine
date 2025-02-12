@@ -25,7 +25,7 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
             n_samples_requested is not None
             and n_samples_requested <= n_samples_original
         ):
-
+            logging.info("Dataset reduction in process.")
             # Make sure that the reduced datasets has samples from every available split
             split_views = []
 
@@ -37,7 +37,7 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
                     count = tags_count_dataset_dict[tag]
                     percentage = count / n_samples
                     n_split_samples = int(n_samples_requested * percentage)
-                    logging.warning(f"{tag}: {n_split_samples}")
+                    logging.info(f"Split {tag}: {n_split_samples} samples")
 
                     split_view = dataset.match_tags(tag).limit(n_split_samples)
                     split_views.append(split_view)

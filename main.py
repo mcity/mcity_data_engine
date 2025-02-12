@@ -129,14 +129,18 @@ def workflow_anomaly_detection(
             config=run_config,
             tensorboard_output=log_dir,
         )
-        if run_config["mode"] == "train":
+        SUPPORTED_MODES = ["train", "inference"]
+        # Check if all selected modes are supported
+        for mode in run_config["mode"]:
+            if mode not in SUPPORTED_MODES:
+                logging.error(f"Selected mode {mode} is not supported.")
+        if SUPPORTED_MODES[0] in run_config["mode"]:
             ano_dec.train_and_export_model()
             ano_dec.run_inference()
             ano_dec.eval_v51()
-        elif run_config["mode"] == "inference":
+        if SUPPORTED_MODES[1] in run_config["mode"]:
             ano_dec.run_inference()
-        else:
-            logging.error(f"Mode {run_config['mode']} not suported.")
+
     except Exception as e:
         logging.error(f"Error in Anomaly Detection: {e}")
         wandb_exit_code = 1
@@ -207,15 +211,19 @@ def workflow_auto_labeling(
             dataset=dataset,
             config=run_config,
         )
-        if run_config["mode"] == "train":
+        SUPPORTED_MODES = ["train", "inference"]
+
+        # Check if all selected modes are supported
+        for mode in run_config["mode"]:
+            if mode not in SUPPORTED_MODES:
+                logging.error(f"Selected mode {mode} is not supported.")
+        if SUPPORTED_MODES[0] in run_config["mode"]:
             logging.info(f"Training model {run_config['model_name']}")
             detector.train(hf_dataset)
-            detector.inference()
-        elif run_config["mode"] == "inference":
+        if SUPPORTED_MODES[1] in run_config["mode"]:
             logging.info(f"Running inference for model {run_config['model_name']}")
             detector.inference()
-        else:
-            logging.error(f"Mode {run_config['mode']} is not supported.")
+
     except Exception as e:
         logging.error(f"An error occurred with model {run_config['model_name']}: {e}")
         wandb_exit_code = 1
@@ -442,9 +450,9 @@ class WorkflowExecutor:
                             "image_size": anomalib_image_models[MODEL_NAME].get(
                                 "image_size", None
                             ),
-                            "batch_size": anomalib_image_models[MODEL_NAME][
-                                "batch_size"
-                            ],
+                            "batch_size": anomalib_image_models[MODEL_NAME].get(
+                                "batch_size", 1
+                            ),
                             "epochs": ano_dec_config["epochs"],
                             "early_stop_patience": ano_dec_config[
                                 "early_stop_patience"
@@ -464,10 +472,22 @@ class WorkflowExecutor:
                 elif workflow == "auto_labeling":
 
                     # Config
+                    SUPPORTED_MODEL_SOURCES = [
+                        "hf_models_objectdetection",
+                        "custom_codetr",
+                        "ultralytics",
+                    ]
+
+                    # Check if all selected modes are supported
                     config_autolabel = WORKFLOWS["auto_labeling"]
                     selected_model_source = config_autolabel["model_source"]
+                    for model_source in selected_model_source:
+                        if model_source not in SUPPORTED_MODEL_SOURCES:
+                            logging.error(
+                                f"Selected model source {model_source} is not supported."
+                            )
 
-                    if selected_model_source == "hf_models_objectdetection":
+                    if SUPPORTED_MODEL_SOURCES[0] in selected_model_source:
                         hf_models = config_autolabel["hf_models_objectdetection"]
 
                         # Dataset Conversion
@@ -507,7 +527,7 @@ class WorkflowExecutor:
                                 "learning_rate": config_autolabel["learning_rate"],
                                 "weight_decay": config_autolabel["weight_decay"],
                                 "max_grad_norm": config_autolabel["max_grad_norm"],
-                                "batch_size": config_model["batch_size"],
+                                "batch_size": config_model.get("batch_size", 1),
                                 "image_size": config_model.get("image_size", None),
                                 "n_worker_dataloader": config_autolabel[
                                     "n_worker_dataloader"
@@ -522,7 +542,7 @@ class WorkflowExecutor:
                                 run_config,
                             )
 
-                    elif selected_model_source == "custom_codetr":
+                    if SUPPORTED_MODEL_SOURCES[1] in selected_model_source:
 
                         # Config
                         config_codetr = WORKFLOWS["auto_labeling"]["custom_codetr"]
@@ -558,10 +578,6 @@ class WorkflowExecutor:
                             workflow_auto_labeling_custom_codetr(
                                 self.dataset_info, run_config
                             )
-                    else:
-                        logging.error(
-                            f"Selected model source {selected_model_source} is not supported."
-                        )
 
                 elif workflow == "auto_labeling_zero_shot":
                     workflow_zero_shot_object_detection(self.dataset, self.dataset_info)

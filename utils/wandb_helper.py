@@ -35,16 +35,21 @@ def wandb_init(
             tags=[dataset_name],
             config=config,
         )
+        logging.info(
+            f"Launched Weights and Biases run {wandb_run} with config {config}"
+        )
 
     return wandb_run, log_dir
 
 
 def wandb_close(wandb_run=None, exit_code=0):
+
     try:
-        wandb_run.finish(exit_code=exit_code)
+        logging.info(f"Closing Weights and Biases run with exit_code {exit_code}")
+        wandb.finish(exit_code=exit_code)
     except:
-        logging.debug(f"WandB run {wandb_run} could not be finished")
+        logging.warning(f"WandB run {wandb_run} could not be finished")
     try:
         wandb.tensorboard.unpatch()
     except:
-        logging.debug(f"WandB tensorboard could not be unpatched")
+        logging.warning(f"WandB tensorboard could not be unpatched")

@@ -6,7 +6,7 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
     "name": "fisheye8k",
-    "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
+    "n_samples": 100,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
 PERSISTENT = True  # If V51 database is stored
@@ -46,8 +46,8 @@ WORKFLOWS = {
         ],
     },
     "anomaly_detection": {
-        "mode": "train",  # "train" or "inference"
-        "epochs": 30,
+        "mode": ["train", "inference"],  # "train" and "inference" supported
+        "epochs": 1,
         "early_stop_patience": 5,
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
             "Padim": {"batch_size": 1, "image_size": [960, 960]},
@@ -87,10 +87,12 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": "inference",  # "train" or "inference"
-        "model_source": "hf_models_objectdetection",  # Pick from one of the options below (hf_models_objectdetection, custom_codetr, ultralytics)
+        "mode": ["train", "inference"],  # "train" and "inference" supported
+        "model_source": [
+            "hf_models_objectdetection"
+        ],  # "hf_models_objectdetection" and "custom_codetr" and "ultralytics" supported
         "n_worker_dataloader": 3,
-        "epochs": 1,
+        "epochs": 2,
         "early_stop_patience": 5,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -98,35 +100,44 @@ WORKFLOWS = {
         "max_grad_norm": 0.01,
         "hf_models_objectdetection": {
             "microsoft/conditional-detr-resnet-50": {"batch_size": 1},
-            # "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
-            # "facebook/detr-resnet-50": {"batch_size": 1},
-            # "facebook/detr-resnet-50-dc5": {"batch_size": 1, "image_size": [960, 960]},
-            # "facebook/detr-resnet-101": {"batch_size": 1, "image_size": [960, 960]},
-            # "facebook/detr-resnet-101-dc5": {"batch_size": 1, "image_size": [960, 960]},
-            # "facebook/deformable-detr-detic": {"batch_size": 1},
-            # "facebook/deformable-detr-box-supervised": {"batch_size": 1},
-            # "SenseTime/deformable-detr": {"batch_size": 1},
-            # "SenseTime/deformable-detr-with-box-refine-two-stage": {
-            #    "batch_size": 1,
-            #    "image_size": [960, 960],
-            # },
-            # "SenseTime/deformable-detr-with-box-refine": {"batch_size": 1},
-            # "PekingU/rtdetr_r50vd": {"batch_size": 1},
-            # "PekingU/rtdetr_r50vd_coco_o365": {"batch_size": 1},
-            # "jozhang97/deta-swin-large": {
-            #    "batch_size": 1,
-            #    "image_size": [960, 960],
-            # },  # Ranks best on HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
-            # "jozhang97/deta-swin-large-o365": {
-            #    "batch_size": 1,
-            #    "image_size": [960, 960],
-            # },
-            # "jozhang97/deta-resnet-50": {"batch_size": 1, "image_size": [960, 960]},
-            # "jozhang97/deta-resnet-50-24-epochs": {
-            #   "batch_size": 1,
-            #   "image_size": [960, 960],
-            # },
-            # "hustvl/yolos-base": {"batch_size": 1},
+            "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
+            "facebook/detr-resnet-50": {"batch_size": 1},
+            "facebook/detr-resnet-50-dc5": {"batch_size": 1, "image_size": [960, 960]},
+            "facebook/detr-resnet-101": {"batch_size": 1, "image_size": [960, 960]},
+            "facebook/detr-resnet-101-dc5": {"batch_size": 1, "image_size": [960, 960]},
+            "facebook/deformable-detr-detic": {
+                "batch_size": 1,
+                "image_size": [960, 960],
+            },
+            "facebook/deformable-detr-box-supervised": {
+                "batch_size": 1,
+                "image_size": [960, 960],
+            },
+            "SenseTime/deformable-detr": {"batch_size": 1, "image_size": [960, 960]},
+            "SenseTime/deformable-detr-with-box-refine-two-stage": {
+                "batch_size": 1,
+                "image_size": [960, 960],
+            },
+            "SenseTime/deformable-detr-with-box-refine": {
+                "batch_size": 1,
+                "image_size": [960, 960],
+            },
+            "jozhang97/deta-swin-large": {
+                "batch_size": 1,
+                "image_size": [960, 960],
+            },  # Ranks best on HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
+            "jozhang97/deta-swin-large-o365": {
+                "batch_size": 1,
+                "image_size": [960, 960],
+            },
+            "jozhang97/deta-resnet-50": {"batch_size": 1, "image_size": [960, 960]},
+            "jozhang97/deta-resnet-50-24-epochs": {
+                "batch_size": 1,
+                "image_size": [960, 960],
+            },
+            "hustvl/yolos-base": {"batch_size": 1},
+            # "PekingU/rtdetr_r50vd": {},              # Tensor size mismatch error
+            # "PekingU/rtdetr_r50vd_coco_o365": {},    # Tensor size mismatch error
         },
         "custom_codetr": {
             "train_model": True,  # Set false if model file should be loaded without training
