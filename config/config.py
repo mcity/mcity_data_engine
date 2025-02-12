@@ -47,7 +47,7 @@ WORKFLOWS = {
     },
     "anomaly_detection": {
         "mode": ["train", "inference"],  # "train" and "inference" supported
-        "epochs": 30,
+        "epochs": 1,
         "early_stop_patience": 5,
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
             "Padim": {"batch_size": 1, "image_size": [960, 960]},
@@ -88,7 +88,9 @@ WORKFLOWS = {
     },
     "auto_labeling": {
         "mode": ["train", "inference"],  # "train" and "inference" supported
-        "model_source": "hf_models_objectdetection",  # Pick from one of the options below (hf_models_objectdetection, custom_codetr, ultralytics)
+        "model_source": [
+            "hf_models_objectdetection"
+        ],  # Pick from one of the options below (hf_models_objectdetection, custom_codetr, ultralytics)
         "n_worker_dataloader": 3,
         "epochs": 1,
         "early_stop_patience": 5,
