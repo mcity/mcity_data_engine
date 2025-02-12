@@ -14,7 +14,7 @@ from huggingface_hub import HfApi, hf_hub_download
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from torchvision.transforms.v2 import Compose, Resize
 
-from config.config import GLOBAL_SEED, HF_ROOT, NUM_WORKERS
+from config.config import GLOBAL_SEED, HF_DO_UPLOAD, HF_ROOT, NUM_WORKERS
 
 # https://docs.voxel51.com/tutorials/anomaly_detection.html
 # https://medium.com/@enrico.randellini/anomalib-a-library-for-image-anomaly-detection-and-localization-fb363639104f
@@ -226,18 +226,18 @@ class Anodec:
             )
 
             # Upload model to Hugging Face
-            api = HfApi()
-
-            logging.info(f"Uploading model to Hugging Face: {self.hf_repo_name}")
-            api.create_repo(
-                self.hf_repo_name, private=True, repo_type="model", exist_ok=True
-            )
-            api.upload_file(
-                path_or_fileobj=self.model_path,
-                path_in_repo="model.pt",
-                repo_id=self.hf_repo_name,
-                repo_type="model",
-            )
+            if HF_DO_UPLOAD == True:
+                logging.info(f"Uploading model to Hugging Face: {self.hf_repo_name}")
+                api = HfApi()
+                api.create_repo(
+                    self.hf_repo_name, private=True, repo_type="model", exist_ok=True
+                )
+                api.upload_file(
+                    path_or_fileobj=self.model_path,
+                    path_in_repo="model.pt",
+                    repo_id=self.hf_repo_name,
+                    repo_type="model",
+                )
 
         else:
             logging.info(f"Model {self.model_path} already trained.")
