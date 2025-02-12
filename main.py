@@ -136,7 +136,7 @@ def workflow_anomaly_detection(
         elif run_config["mode"] == "inference":
             ano_dec.run_inference()
         else:
-            logging.error(f"Mode {run_config["mode"]} not suported.")
+            logging.error(f"Mode {run_config['mode']} not suported.")
     except Exception as e:
         logging.error(f"Error in Anomaly Detection: {e}")
         wandb_exit_code = 1
@@ -208,16 +208,16 @@ def workflow_auto_labeling(
             config=run_config,
         )
         if run_config["mode"] == "train":
-            logging.info(f"Training model {run_config["model_name"]}")
+            logging.info(f"Training model {run_config['model_name']}")
             detector.train(hf_dataset)
             detector.inference()
         elif run_config["mode"] == "inference":
-            logging.info(f"Running inference for model {run_config["model_name"]}")
+            logging.info(f"Running inference for model {run_config['model_name']}")
             detector.inference()
         else:
-            logging.error(f"Mode {run_config["mode"]} is not supported.")
+            logging.error(f"Mode {run_config['mode']} is not supported.")
     except Exception as e:
-        logging.error(f"An error occurred with model {run_config["model_name"]}: {e}")
+        logging.error(f"An error occurred with model {run_config['model_name']}: {e}")
         wandb_exit_code = 1
 
     finally:
