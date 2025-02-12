@@ -191,7 +191,7 @@ def workflow_embedding_selection(
 
 
 def workflow_auto_labeling(
-    dataset, dataset_info, hf_dataset, mode, run_config, wandb_activate=True
+    dataset, dataset_info, hf_dataset, run_config, wandb_activate=True
 ):
     try:
         wandb_exit_code = 0
@@ -207,13 +207,15 @@ def workflow_auto_labeling(
             dataset=dataset,
             config=run_config,
         )
-        if mode == "train":
+        if run_config["mode"] == "train":
+            logging.info(f"Training model {run_config["model_name"]}")
             detector.train(hf_dataset)
             detector.inference(hf_dataset)
-        elif mode == "inference":
+        elif run_config["mode"] == "inference":
+            logging.info(f"Running inference for model {run_config["model_name"]}")
             detector.inference(hf_dataset)
         else:
-            logging.error(f"Mode {mode} is not supported.")
+            logging.error(f"Mode {run_config["mode"]} is not supported.")
     except Exception as e:
         logging.error(f"An error occurred with model {run_config["model_name"]}: {e}")
         wandb_exit_code = 1
@@ -463,7 +465,6 @@ class WorkflowExecutor:
 
                     # Config
                     config_autolabel = WORKFLOWS["auto_labeling"]
-                    mode = config_autolabel["mode"]
                     selected_model_source = config_autolabel["model_source"]
 
                     if selected_model_source == "hf_models_objectdetection":
@@ -483,7 +484,9 @@ class WorkflowExecutor:
                             pbar := tqdm(hf_models, desc="Auto Labeling Models")
                         ):
                             # Status Update
-                            pbar.set_description(f"Training model {MODEL_NAME}")
+                            pbar.set_description(
+                                f"Processing Hugging Face model {MODEL_NAME}"
+                            )
 
                             # Config
                             config_model = config_autolabel[
@@ -491,6 +494,7 @@ class WorkflowExecutor:
                             ][MODEL_NAME]
 
                             run_config = {
+                                "mode": config_autolabel["mode"],
                                 "model_name": MODEL_NAME,
                                 "v51_dataset_name": self.selected_dataset,
                                 "epochs": config_autolabel["epochs"],
@@ -515,7 +519,6 @@ class WorkflowExecutor:
                                 self.dataset,
                                 self.dataset_info,
                                 hf_dataset,
-                                mode,
                                 run_config,
                             )
 
