@@ -874,7 +874,8 @@ class HuggingFaceObjectDetection:
             data["pixel_mask"] = torch.stack([x["pixel_mask"] for x in batch])
         return data
 
-    def train(self, hf_dataset):
+    def train(self, hf_dataset, overwrite_output=True):
+        torch.cuda.empty_cache()
         img_size_target = self.config.get("image_size", None)
         if img_size_target is None:
             image_processor = AutoProcessor.from_pretrained(
@@ -934,9 +935,15 @@ class HuggingFaceObjectDetection:
                 "Hugging Face AutoModel does not support " + str(type(hf_model_config))
             )
 
+        if overwrite_output == True:
+            logging.warning(
+                f"Training will overwrite existing results in {self.model_root}"
+            )
+
         training_args = TrainingArguments(
             run_name=self.model_name,
             output_dir=self.model_root,
+            overwrite_output_dir=overwrite_output,
             num_train_epochs=self.config["epochs"],
             fp16=True,
             per_device_train_batch_size=self.config["batch_size"],
@@ -987,7 +994,7 @@ class HuggingFaceObjectDetection:
         logging.info(f"Model training completed. Evaluation results: {metrics}")
 
     def inference(self, detection_threshold=0.2, load_from_hf=True):
-
+        torch.cuda.empty_cache()
         # Load trained model from Hugging Face
         load_from_hf_successful = None
         if load_from_hf:
@@ -1005,12 +1012,44 @@ class HuggingFaceObjectDetection:
                 )
         if load_from_hf == False or load_from_hf_successful == False:
             try:
-                logging.info(f"Loading model from disk: {self.model_root}")
-                image_processor = AutoProcessor.from_pretrained(self.model_root)
-                model = AutoModelForObjectDetection.from_pretrained(self.model_root)
+                # Select folder in self.model_root that include 'checkpoint-'
+                checkpoint_dirs = [
+                    d
+                    for d in os.listdir(self.model_root)
+                    if "checkpoint-" in d
+                    and os.path.isdir(os.path.join(self.model_root, d))
+                ]
+
+                if not checkpoint_dirs:
+                    logging.error(
+                        f"No checkpoint directory found in {self.model_root}!"
+                    )
+                    model_path = None
+                else:
+                    # Sort by modification time (latest first)
+                    checkpoint_dirs.sort(
+                        key=lambda d: os.path.getmtime(
+                            os.path.join(self.model_root, d)
+                        ),
+                        reverse=True,
+                    )
+
+                    if len(checkpoint_dirs) > 1:
+                        logging.warning(
+                            f"Multiple checkpoint directories found: {checkpoint_dirs}. Selecting the latest one: {checkpoint_dirs[0]}."
+                        )
+
+                    selected_checkpoint = checkpoint_dirs[0]
+                    logging.info(
+                        f"Loading model from disk: {self.model_root}/{selected_checkpoint}"
+                    )
+                    model_path = os.path.join(self.model_root, selected_checkpoint)
+
+                image_processor = AutoProcessor.from_pretrained(model_path)
+                model = AutoModelForObjectDetection.from_pretrained(model_path)
             except Exception as e:
                 logging.error(
-                    f"Model {self.model_name} could not be loaded from folder {self.model_root}. Inference not possible."
+                    f"Model {self.model_name} could not be loaded from folder {self.model_root}/{selected_checkpoint}. Inference not possible."
                 )
 
         device, _, _ = get_backend()
