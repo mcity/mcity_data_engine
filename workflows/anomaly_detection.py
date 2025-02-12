@@ -49,8 +49,8 @@ class Anodec:
         self.model_name = self.config["model_name"]
         self.image_size = self.config["image_size"]
         self.batch_size = self.config["batch_size"]
-        self.tensorboard_output = tensorboard_output
-        self.anomalib_output_root = anomalib_output_root
+        self.tensorboard_output = os.path.abspath(tensorboard_output)
+        self.anomalib_output_root = os.path.abspath(anomalib_output_root)
         self.model_path = os.path.join(
             anomalib_output_root,
             self.model_name,
@@ -58,9 +58,10 @@ class Anodec:
             "weights/torch/model.pt",
         )
 
-        data_root = self.config["data_root"]
-        dataset_folder_ano_dec_masks = f"{self.dataset_name}_anomaly_detection_masks/"
+        data_root = os.path.abspath(self.config["data_root"])
+        dataset_folder_ano_dec_masks = f"{self.dataset.name}_masks/"
         filepath_masks = os.path.join(data_root, dataset_folder_ano_dec_masks)
+
         filepath_train = self.normal_data.take(1).first().filepath
         filepath_val = self.abnormal_data.take(1).first().filepath
 
@@ -107,6 +108,7 @@ class Anodec:
             # Add mask groundtruth
             base_filename = sample.filename
             mask_filename = os.path.basename(base_filename).replace(".jpg", ".png")
+
             mask_path = os.path.join(self.mask_dir, mask_filename)
             logging.debug(f"Assigned mask {mask_path} to sample {base_filename}")
 

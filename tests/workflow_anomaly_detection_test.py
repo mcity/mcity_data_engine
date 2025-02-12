@@ -17,24 +17,27 @@ def dataset_v51():
         dataset = load_from_hub(
             repo_id=dataset_name_hub, max_samples=50, name=dataset_name
         )
+        dataset = _post_process_dataset(dataset)
     except:
         dataset = fo.load_dataset(dataset_name)
     assert dataset is not None, "Failed to load or create the FiftyOne dataset"
 
-    dataset = _post_process_dataset(dataset)
     return dataset
 
 
 def test_anomaly_detection_train(dataset_v51):
 
-    prep_config = {"location": "cam3", "rare_classes": ["Bus"]}
+    prep_config = {
+        "location": "cam3",
+        "rare_classes": ["Bus"],
+    }
 
     data_preparer = AnomalyDetectionDataPreparation(
         dataset_v51, "fisheye8k", config=prep_config
     )
     run_config = {
         "model_name": "Padim",
-        "image_size": [265, 265],
+        "image_size": [32, 32],
         "batch_size": 1,
         "epochs": 1,
         "early_stop_patience": 1,
@@ -61,5 +64,7 @@ def test_anomaly_detection_train(dataset_v51):
         "pred_anomaly_Padim", F("label") == "anomaly"
     )
     n_samples_selected = len(view_anomalies)
-    print(f"{n_samples_selected} samples with anomalies found")
+    print(
+        f"{n_samples_selected} samples anomalies found that were assessed by anomaly detection."
+    )
     assert n_samples_selected != 0, "No samples were selected through anomaly detection"
