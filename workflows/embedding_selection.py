@@ -21,7 +21,7 @@ https://docs.voxel51.com/brain.html
 """
 
 BRAIN_TAXONOMY = {
-    "field": "brain_selection",
+    "field": "embedding_selection",
     "value_compute_representativeness": "representativeness_center",
     "value_find_unique": "greedy_center",
     "value_compute_uniqueness": "deterministic_center",
