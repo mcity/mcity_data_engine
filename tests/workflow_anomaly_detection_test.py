@@ -43,7 +43,6 @@ def test_anomaly_detection_train(dataset_v51):
     }
 
     eval_metrics = ["AUPR", "AUROC"]
-
     dataset_info = {"name": "fisheye8k"}
 
     workflow_anomaly_detection(
@@ -55,6 +54,9 @@ def test_anomaly_detection_train(dataset_v51):
     )
 
     # Select all samples that are considered anomalous
+    print(
+        f"Sample fields in dataset: {data_preparer.dataset_ano_dec.get_field_schema()}"
+    )
     view_anomalies = data_preparer.dataset_ano_dec.filter_labels(
         "pred_anomaly_Padim", F("label") == "anomaly"
     )
