@@ -84,7 +84,7 @@ class Anodec:
         except:
             pass
 
-    def create_datamodule(self, transform=None):
+    def create_datamodule(self, transform):
         """
         Create and setup a data module for anomaly detection.
 
@@ -100,10 +100,9 @@ class Anodec:
         Returns:
             None
         """
-        if transform is None:
-            transform = Compose([Resize(self.image_size, antialias=True)])
 
         # Symlink the images and masks to the directory Anomalib expects.
+        logging.info("Preparing images and masks for Anomalib")
         for sample in self.abnormal_data.iter_samples(progress=True, autosave=True):
             # Add mask groundtruth
             base_filename = sample.filename
@@ -165,7 +164,7 @@ class Anodec:
                     f"Unlinking of {os.path.join(self.mask_dir, new_filename)} failed: {e}"
                 )
 
-    def train_and_export_model(self, transform=None):
+    def train_and_export_model(self):
         """
         Trains an anomaly detection model using Anomalib’s Engine class, exports the model,
         and returns the model “inferencer” object. The inferencer object is used to make predictions on new images.
@@ -180,6 +179,12 @@ class Anodec:
 
         MAX_EPOCHS = self.config["epochs"]
         PATIENCE = self.config["early_stop_patience"]
+
+        # Resize image if defined in config
+        if self.image_size is not None:
+            transform = Compose([Resize(self.image_size, antialias=True)])
+        else:
+            transform = None
 
         self.create_datamodule(transform=transform)
         if not os.path.exists(self.model_path):
