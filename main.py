@@ -210,10 +210,10 @@ def workflow_auto_labeling(
         if run_config["mode"] == "train":
             logging.info(f"Training model {run_config["model_name"]}")
             detector.train(hf_dataset)
-            detector.inference(hf_dataset)
+            detector.inference()
         elif run_config["mode"] == "inference":
             logging.info(f"Running inference for model {run_config["model_name"]}")
-            detector.inference(hf_dataset)
+            detector.inference()
         else:
             logging.error(f"Mode {run_config["mode"]} is not supported.")
     except Exception as e:

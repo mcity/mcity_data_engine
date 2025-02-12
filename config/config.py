@@ -205,11 +205,11 @@ WORKFLOWS = {
         ],
     },
     "ensemble_exploration": {
-        "field_includes": "pred_zsod_",
+        "field_includes": "pred_zsod_",  # V51 field used for detections, "pred_zsod_" default for zero-shot object detection models
         "agreement_threshold": 3,  # Threshold for n models necessary for agreement between models
         "iou_threshold": 0.5,  # Threshold for IoU between bboxes to consider them as overlapping
         "max_bbox_size": 0.01,  # Value between [0,1] for the max size of considered bboxes
-        "positive_classes": [  # Example for Vulnerable Road Users. Must be subset of available classes in the detections.
+        "positive_classes": [  # Classes to consider, must be subset of available classes in the detections. Example for Vulnerable Road Users.
             "skater",
             "child",
             "bicycle",
@@ -233,7 +233,7 @@ WORKFLOWS = {
 
 ACCEPTED_SPLITS = {"train", "val", "test"}
 HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
-HF_DO_UPLOAD = True
+HF_DO_UPLOAD = False
 
 cpu_count = os.cpu_count()
 NUM_WORKERS = 32 if cpu_count > 32 else cpu_count
