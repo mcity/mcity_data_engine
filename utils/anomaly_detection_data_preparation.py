@@ -11,11 +11,13 @@ from utils.selector import select_by_class
 
 
 class AnomalyDetectionDataPreparation:
-    def __init__(self, dataset, dataset_name, config=None):
+    def __init__(
+        self, dataset, dataset_name, export_root="output/datasets/", config=None
+    ):
         self.dataset = dataset
         self.dataset_ano_dec = None
         self.dataset_name = dataset_name
-        self.export_root = "output/datasets/"
+        self.export_root = export_root
         if config is not None:
             # Allow custom config for testing
             self.config = config
@@ -41,11 +43,14 @@ class AnomalyDetectionDataPreparation:
             return None
 
     def fisheye8k(self):
-        dataset_name_ano_dec = f"{self.dataset_name}_anomaly_detection"
+        logging.info(
+            f"Running anomaly detection data preparation for dataset {self.dataset.name}"
+        )
+        dataset_name_ano_dec = f"{self.dataset.name}_anomaly_detection"
 
         if dataset_name_ano_dec in fo.list_datasets():
             logging.info(
-                f"Dataset {self.dataset_name} was already prepared for anomaly detection."
+                f"Dataset {self.dataset.name} was already prepared for anomaly detection."
             )
             self.dataset_ano_dec = fo.load_dataset(dataset_name_ano_dec)
         else:
