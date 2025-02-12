@@ -15,7 +15,7 @@ def dataset_v51():
     dataset_name = "fisheye8k_v51_anomaly_test"
     try:
         dataset = load_from_hub(
-            repo_id=dataset_name_hub, max_samples=50, name=dataset_name
+            repo_id=dataset_name_hub, max_samples=30, name=dataset_name
         )
         dataset = _post_process_dataset(dataset)
     except:
