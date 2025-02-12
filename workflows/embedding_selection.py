@@ -13,7 +13,7 @@ from huggingface_hub import HfApi, hf_hub_download
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from config.config import GLOBAL_SEED, HF_ROOT, NUM_WORKERS
+from config.config import GLOBAL_SEED, HF_DO_UPLOAD, HF_ROOT, NUM_WORKERS
 
 """
 Implementing Voxel51 brain methods.
@@ -154,22 +154,25 @@ class EmbeddingSelection:
                     pickle.dump(self.embeddings_model, f)
 
                 # Upload embeddings to Hugging Face
-                api = HfApi()
+                if HF_DO_UPLOAD == True:
+                    logging.info(
+                        f"Uploading embeddings to Hugging Face: {self.hf_repo_name}"
+                    )
+                    api = HfApi()
+                    api.create_repo(
+                        self.hf_repo_name,
+                        private=True,
+                        repo_type="model",
+                        exist_ok=True,
+                    )
 
-                logging.info(
-                    f"Uploading embeddings to Hugging Face: {self.hf_repo_name}"
-                )
-                api.create_repo(
-                    self.hf_repo_name, private=True, repo_type="model", exist_ok=True
-                )
-
-                model_name = f"{self.model_name_key}.pkl"
-                api.upload_file(
-                    path_or_fileobj=embedding_file_name,
-                    path_in_repo=model_name,
-                    repo_id=self.hf_repo_name,
-                    repo_type="model",
-                )
+                    model_name = f"{self.model_name_key}.pkl"
+                    api.upload_file(
+                        path_or_fileobj=embedding_file_name,
+                        path_in_repo=model_name,
+                        repo_id=self.hf_repo_name,
+                        repo_type="model",
+                    )
 
             if mode not in ["load", "compute"]:
                 logging.error(f"Mode {mode} is not supported.")

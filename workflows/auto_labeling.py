@@ -33,13 +33,10 @@ from transformers import (
     EarlyStoppingCallback,
     Trainer,
     TrainingArguments,
-    pipeline,
 )
-from transformers.pipelines.pt_utils import KeyDataset
 
-from config.config import GLOBAL_SEED, HF_ROOT, NUM_WORKERS, WORKFLOWS
+from config.config import GLOBAL_SEED, HF_DO_UPLOAD, HF_ROOT, NUM_WORKERS, WORKFLOWS
 from datasets import Split
-from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.logging import configure_logging
 
 
@@ -960,7 +957,7 @@ class HuggingFaceObjectDetection:
             save_safetensors=False,
             hub_model_id=self.hf_hub_model_id,
             hub_private_repo=True,
-            push_to_hub=True,  # Login needed: huggingface-cli login
+            push_to_hub=HF_DO_UPLOAD,
             seed=GLOBAL_SEED,
             data_seed=GLOBAL_SEED,
         )
