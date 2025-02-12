@@ -15,7 +15,7 @@ def dataset_v51():
     dataset_name = "fisheye8k_v51_brain_test"
     try:
         dataset = load_from_hub(
-            repo_id=dataset_name_hub, max_samples=200, name=dataset_name
+            repo_id=dataset_name_hub, max_samples=100, name=dataset_name
         )
     except:
         dataset = fo.load_dataset(dataset_name)
