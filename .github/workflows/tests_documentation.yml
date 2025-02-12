@@ -20,7 +20,7 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Remove unnecessary files
       run: |
@@ -50,7 +50,7 @@ jobs:
     - name: Test with pytest
       env: # Or as an environment variable
         HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      run: pytest --ignore custom_models/
+      run: pytest -s --ignore custom_models/
 
     - name: Documentation with pdoc
       run: pdoc ./*.py ./utils/*.py -o docs
