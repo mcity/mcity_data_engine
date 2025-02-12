@@ -980,7 +980,8 @@ class HuggingFaceObjectDetection:
 
         logging.info(f"Starting training of model {self.model_name}.")
         trainer.train()
-        trainer.push_to_hub()
+        if HF_DO_UPLOAD:
+            trainer.push_to_hub()
 
         metrics = trainer.evaluate(eval_dataset=hf_dataset[Split.TEST])
         logging.info(f"Model training completed. Evaluation results: {metrics}")
