@@ -212,6 +212,7 @@ def workflow_auto_labeling(
             config=run_config,
         )
         SUPPORTED_MODES = ["train", "inference"]
+
         # Check if all selected modes are supported
         for mode in run_config["mode"]:
             if mode not in SUPPORTED_MODES:
@@ -449,9 +450,9 @@ class WorkflowExecutor:
                             "image_size": anomalib_image_models[MODEL_NAME].get(
                                 "image_size", None
                             ),
-                            "batch_size": anomalib_image_models[MODEL_NAME][
-                                "batch_size"
-                            ],
+                            "batch_size": anomalib_image_models[MODEL_NAME].get(
+                                "batch_size", 1
+                            ),
                             "epochs": ano_dec_config["epochs"],
                             "early_stop_patience": ano_dec_config[
                                 "early_stop_patience"
@@ -478,14 +479,13 @@ class WorkflowExecutor:
                     ]
 
                     # Check if all selected modes are supported
+                    config_autolabel = WORKFLOWS["auto_labeling"]
                     selected_model_source = config_autolabel["model_source"]
                     for model_source in selected_model_source:
                         if model_source not in SUPPORTED_MODEL_SOURCES:
                             logging.error(
                                 f"Selected model source {model_source} is not supported."
                             )
-
-                    config_autolabel = WORKFLOWS["auto_labeling"]
 
                     if SUPPORTED_MODEL_SOURCES[0] in selected_model_source:
                         hf_models = config_autolabel["hf_models_objectdetection"]
@@ -527,7 +527,7 @@ class WorkflowExecutor:
                                 "learning_rate": config_autolabel["learning_rate"],
                                 "weight_decay": config_autolabel["weight_decay"],
                                 "max_grad_norm": config_autolabel["max_grad_norm"],
-                                "batch_size": config_model["batch_size"],
+                                "batch_size": config_model.get("batch_size", 1),
                                 "image_size": config_model.get("image_size", None),
                                 "n_worker_dataloader": config_autolabel[
                                     "n_worker_dataloader"
