@@ -29,7 +29,23 @@ def test_brain(dataset_v51):
     dataset_info["name"] = (
         "fisheye8k_v51_brain_test"  # Update with test name for local tests where both exist
     )
-    workflow_embedding_selection(dataset_v51, dataset_info, MODEL_NAME)
+
+    config = {
+        "mode": "train",
+        "parameters": {
+            "compute_representativeness": 0.99,
+            "compute_unique_images_greedy": 0.01,
+            "compute_unique_images_deterministic": 0.99,
+            "compute_similar_images": 0.03,
+            "neighbour_count": 3,
+        },
+    }
+
+    wandb_activate = False
+
+    workflow_embedding_selection(
+        dataset_v51, dataset_info, MODEL_NAME, config, wandb_activate
+    )
 
     # Check number of selected samples
     results_field = BRAIN_TAXONOMY["field"]
