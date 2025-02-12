@@ -985,49 +985,32 @@ class HuggingFaceObjectDetection:
         metrics = trainer.evaluate(eval_dataset=hf_dataset[Split.TEST])
         logging.info(f"Model training completed. Evaluation results: {metrics}")
 
-    def inference(self, detection_threshold=0.2):
+    def inference(self, detection_threshold=0.2, load_from_hf=True):
 
         # Load trained model from Hugging Face
-        logging.info(f"Loading model from Hugging Face: {self.hf_hub_model_id}")
-        image_processor = AutoProcessor.from_pretrained(self.hf_hub_model_id)
-        model = AutoModelForObjectDetection.from_pretrained(self.hf_hub_model_id)
-
-        img_size_target = self.config.get("image_size", None)
-        if img_size_target is None:
-            image_processor = AutoProcessor.from_pretrained(
-                self.hf_hub_model_id,
-                do_resize=False,
-                do_pad=True,
-                use_fast=True,
-                do_convert_annotations=self.do_convert_annotations,
-            )
-        else:
-            image_processor = AutoProcessor.from_pretrained(
-                self.hf_hub_model_id,
-                do_resize=True,
-                size={
-                    "max_height": img_size_target[1],
-                    "max_width": img_size_target[0],
-                },
-                do_pad=True,
-                pad_size={"height": img_size_target[1], "width": img_size_target[0]},
-                use_fast=True,
-                do_convert_annotations=self.do_convert_annotations,
-            )
-
-        hf_model_config = AutoConfig.from_pretrained(self.model_name)
-        if type(hf_model_config) in AutoModelForObjectDetection._model_mapping:
-            model = AutoModelForObjectDetection.from_pretrained(
-                self.hf_hub_model_id,
-                id2label=self.id2label,
-                label2id=self.label2id,
-                ignore_mismatched_sizes=True,
-            )
-        else:
-            model = None
-            logging.error(
-                "Hugging Face AutoModel does not support " + str(type(hf_model_config))
-            )
+        load_from_hf_successful = None
+        if load_from_hf:
+            try:
+                logging.info(f"Loading model from Hugging Face: {self.hf_hub_model_id}")
+                image_processor = AutoProcessor.from_pretrained(self.hf_hub_model_id)
+                model = AutoModelForObjectDetection.from_pretrained(
+                    self.hf_hub_model_id
+                )
+                load_from_hf_successful = True
+            except Exception as e:
+                load_from_hf_successful = False
+                logging.warning(
+                    f"Model {self.model_name} could not be loaded from Hugging Face {self.hf_hub_model_id}. Attempting load from disk."
+                )
+        if load_from_hf == False or load_from_hf_successful == False:
+            try:
+                logging.info(f"Loading model from disk: {self.model_root}")
+                image_processor = AutoProcessor.from_pretrained(self.model_root)
+                model = AutoModelForObjectDetection.from_pretrained(self.model_root)
+            except Exception as e:
+                logging.error(
+                    f"Model {self.model_name} could not be loaded from folder {self.model_root}. Inference not possible."
+                )
 
         device, _, _ = get_backend()
         model = model.to(device)
