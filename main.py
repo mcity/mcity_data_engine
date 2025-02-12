@@ -130,14 +130,17 @@ def workflow_anomaly_detection(
             tensorboard_output=log_dir,
         )
         SUPPORTED_MODES = ["train", "inference"]
+        # Check if all selected modes are supported
+        for mode in run_config["mode"]:
+            if mode not in SUPPORTED_MODES:
+                logging.error(f"Selected mode {mode} is not supported.")
         if SUPPORTED_MODES[0] in run_config["mode"]:
             ano_dec.train_and_export_model()
             ano_dec.run_inference()
             ano_dec.eval_v51()
         if SUPPORTED_MODES[1] in run_config["mode"]:
             ano_dec.run_inference()
-        if run_config["mode"] not in SUPPORTED_MODES:
-            logging.error(f"Mode {run_config['mode']} not suported.")
+
     except Exception as e:
         logging.error(f"Error in Anomaly Detection: {e}")
         wandb_exit_code = 1
@@ -209,14 +212,17 @@ def workflow_auto_labeling(
             config=run_config,
         )
         SUPPORTED_MODES = ["train", "inference"]
+        # Check if all selected modes are supported
+        for mode in run_config["mode"]:
+            if mode not in SUPPORTED_MODES:
+                logging.error(f"Selected mode {mode} is not supported.")
         if SUPPORTED_MODES[0] in run_config["mode"]:
             logging.info(f"Training model {run_config['model_name']}")
             detector.train(hf_dataset)
         if SUPPORTED_MODES[1] in run_config["mode"]:
             logging.info(f"Running inference for model {run_config['model_name']}")
             detector.inference()
-        if run_config["mode"] not in SUPPORTED_MODES:
-            logging.error(f"Mode {run_config['mode']} is not supported.")
+
     except Exception as e:
         logging.error(f"An error occurred with model {run_config['model_name']}: {e}")
         wandb_exit_code = 1
@@ -470,8 +476,16 @@ class WorkflowExecutor:
                         "custom_codetr",
                         "ultralytics",
                     ]
-                    config_autolabel = WORKFLOWS["auto_labeling"]
+
+                    # Check if all selected modes are supported
                     selected_model_source = config_autolabel["model_source"]
+                    for model_source in selected_model_source:
+                        if model_source not in SUPPORTED_MODEL_SOURCES:
+                            logging.error(
+                                f"Selected model source {model_source} is not supported."
+                            )
+
+                    config_autolabel = WORKFLOWS["auto_labeling"]
 
                     if SUPPORTED_MODEL_SOURCES[0] in selected_model_source:
                         hf_models = config_autolabel["hf_models_objectdetection"]
@@ -564,10 +578,6 @@ class WorkflowExecutor:
                             workflow_auto_labeling_custom_codetr(
                                 self.dataset_info, run_config
                             )
-                    else:
-                        logging.error(
-                            f"Selected model source {selected_model_source} is not supported."
-                        )
 
                 elif workflow == "auto_labeling_zero_shot":
                     workflow_zero_shot_object_detection(self.dataset, self.dataset_info)
