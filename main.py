@@ -12,9 +12,9 @@ if IGNORE_FUTURE_WARNINGS:
 
 import fiftyone as fo
 import torch.multiprocessing as mp
+import wandb
 from tqdm import tqdm
 
-import wandb
 from config.config import (
     SELECTED_DATASET,
     SELECTED_WORKFLOW,
@@ -136,7 +136,7 @@ def workflow_anomaly_detection(
         elif run_config["mode"] == "inference":
             ano_dec.run_inference()
         else:
-            logging.error(f"Mode {run_config["mode"]} not suported.")
+            logging.error(f"Mode {run_config['mode']} not suported.")
     except Exception as e:
         logging.error(f"Error in Anomaly Detection: {e}")
         wandb_exit_code = 1
@@ -191,7 +191,7 @@ def workflow_embedding_selection(
 
 
 def workflow_auto_labeling(
-    dataset, dataset_info, hf_dataset, mode, run_config, wandb_activate=True
+    dataset, dataset_info, hf_dataset, run_config, wandb_activate=True
 ):
     try:
         wandb_exit_code = 0
@@ -207,15 +207,17 @@ def workflow_auto_labeling(
             dataset=dataset,
             config=run_config,
         )
-        if mode == "train":
+        if run_config["mode"] == "train":
+            logging.info(f"Training model {run_config['model_name']}")
             detector.train(hf_dataset)
-            detector.inference(hf_dataset)
-        elif mode == "inference":
-            detector.inference(hf_dataset)
+            detector.inference()
+        elif run_config["mode"] == "inference":
+            logging.info(f"Running inference for model {run_config['model_name']}")
+            detector.inference()
         else:
-            logging.error(f"Mode {mode} is not supported.")
+            logging.error(f"Mode {run_config['mode']} is not supported.")
     except Exception as e:
-        logging.error(f"An error occurred with model {run_config["model_name"]}: {e}")
+        logging.error(f"An error occurred with model {run_config['model_name']}: {e}")
         wandb_exit_code = 1
 
     finally:
@@ -463,7 +465,6 @@ class WorkflowExecutor:
 
                     # Config
                     config_autolabel = WORKFLOWS["auto_labeling"]
-                    mode = config_autolabel["mode"]
                     selected_model_source = config_autolabel["model_source"]
 
                     if selected_model_source == "hf_models_objectdetection":
@@ -483,7 +484,9 @@ class WorkflowExecutor:
                             pbar := tqdm(hf_models, desc="Auto Labeling Models")
                         ):
                             # Status Update
-                            pbar.set_description(f"Training model {MODEL_NAME}")
+                            pbar.set_description(
+                                f"Processing Hugging Face model {MODEL_NAME}"
+                            )
 
                             # Config
                             config_model = config_autolabel[
@@ -491,6 +494,7 @@ class WorkflowExecutor:
                             ][MODEL_NAME]
 
                             run_config = {
+                                "mode": config_autolabel["mode"],
                                 "model_name": MODEL_NAME,
                                 "v51_dataset_name": self.selected_dataset,
                                 "epochs": config_autolabel["epochs"],
@@ -504,7 +508,7 @@ class WorkflowExecutor:
                                 "weight_decay": config_autolabel["weight_decay"],
                                 "max_grad_norm": config_autolabel["max_grad_norm"],
                                 "batch_size": config_model["batch_size"],
-                                "image_size": config_model["image_size"],
+                                "image_size": config_model.get("image_size", None),
                                 "n_worker_dataloader": config_autolabel[
                                     "n_worker_dataloader"
                                 ],
@@ -515,7 +519,6 @@ class WorkflowExecutor:
                                 self.dataset,
                                 self.dataset_info,
                                 hf_dataset,
-                                mode,
                                 run_config,
                             )
 

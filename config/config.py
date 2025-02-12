@@ -52,10 +52,10 @@ WORKFLOWS = {
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
             "Padim": {"batch_size": 1, "image_size": [960, 960]},
             "EfficientAd": {"batch_size": 1, "image_size": [960, 960]},
-            "Draem": {"batch_size": 1, "image_size": [960, 960]},
+            # "Draem": {"batch_size": 1, "image_size": [960, 960]},
             "Cfa": {"batch_size": 1, "image_size": [960, 960]},
             "Cflow": {"batch_size": 1, "image_size": [960, 960]},
-            "Csflow": {"batch_size": 1, "image_size": [960, 960]},
+            # "Csflow": {"batch_size": 1, "image_size": [960, 960]},    # Node fc1_0 error
             "Dfm": {"batch_size": 1, "image_size": [960, 960]},
             "Dsr": {"batch_size": 1, "image_size": [960, 960]},
             "Fastflow": {"batch_size": 1, "image_size": [960, 960]},
@@ -87,45 +87,45 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": "train",  # "train" or "inference"
+        "mode": "inference",  # "train" or "inference"
         "model_source": "hf_models_objectdetection",  # Pick from one of the options below (hf_models_objectdetection, custom_codetr, ultralytics)
         "n_worker_dataloader": 3,
-        "epochs": 30,
+        "epochs": 1,
         "early_stop_patience": 5,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
         "weight_decay": 0.0001,
         "max_grad_norm": 0.01,
         "hf_models_objectdetection": {
-            # "microsoft/conditional-detr-resnet-50": {"batch_size": 1},
+            "microsoft/conditional-detr-resnet-50": {"batch_size": 1},
             # "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
             # "facebook/detr-resnet-50": {"batch_size": 1},
-            "facebook/detr-resnet-50-dc5": {"batch_size": 1, "image_size": [960, 960]},
-            "facebook/detr-resnet-101": {"batch_size": 1, "image_size": [960, 960]},
-            "facebook/detr-resnet-101-dc5": {"batch_size": 1, "image_size": [960, 960]},
+            # "facebook/detr-resnet-50-dc5": {"batch_size": 1, "image_size": [960, 960]},
+            # "facebook/detr-resnet-101": {"batch_size": 1, "image_size": [960, 960]},
+            # "facebook/detr-resnet-101-dc5": {"batch_size": 1, "image_size": [960, 960]},
             # "facebook/deformable-detr-detic": {"batch_size": 1},
             # "facebook/deformable-detr-box-supervised": {"batch_size": 1},
             # "SenseTime/deformable-detr": {"batch_size": 1},
-            "SenseTime/deformable-detr-with-box-refine-two-stage": {
-                "batch_size": 1,
-                "image_size": [960, 960],
-            },
+            # "SenseTime/deformable-detr-with-box-refine-two-stage": {
+            #    "batch_size": 1,
+            #    "image_size": [960, 960],
+            # },
             # "SenseTime/deformable-detr-with-box-refine": {"batch_size": 1},
             # "PekingU/rtdetr_r50vd": {"batch_size": 1},
             # "PekingU/rtdetr_r50vd_coco_o365": {"batch_size": 1},
-            "jozhang97/deta-swin-large": {
-                "batch_size": 1,
-                "image_size": [960, 960],
-            },  # Ranks best on HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
-            "jozhang97/deta-swin-large-o365": {
-                "batch_size": 1,
-                "image_size": [960, 960],
-            },
-            "jozhang97/deta-resnet-50": {"batch_size": 1, "image_size": [960, 960]},
-            "jozhang97/deta-resnet-50-24-epochs": {
-                "batch_size": 1,
-                "image_size": [960, 960],
-            },
+            # "jozhang97/deta-swin-large": {
+            #    "batch_size": 1,
+            #    "image_size": [960, 960],
+            # },  # Ranks best on HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
+            # "jozhang97/deta-swin-large-o365": {
+            #    "batch_size": 1,
+            #    "image_size": [960, 960],
+            # },
+            # "jozhang97/deta-resnet-50": {"batch_size": 1, "image_size": [960, 960]},
+            # "jozhang97/deta-resnet-50-24-epochs": {
+            #   "batch_size": 1,
+            #   "image_size": [960, 960],
+            # },
             # "hustvl/yolos-base": {"batch_size": 1},
         },
         "custom_codetr": {
@@ -147,29 +147,29 @@ WORKFLOWS = {
         "hf_models_zeroshot_objectdetection": {
             # dataset_chunks: Number of chunks to split the dataset into for parallel processing       # batch_size
             "omlab/omdet-turbo-swin-tiny-hf": {
-                "batch_size": 180,
+                "batch_size": 64,
                 "n_dataset_chunks": 1,
             },  # RTX 4090: 64 ; H 100: 128
             "IDEA-Research/grounding-dino-tiny": {
-                "batch_size": 32,
+                "batch_size": 8,
                 "n_dataset_chunks": 1,
             },  # RTX 4090: 8 ;  H 100: 32
             # "IDEA-Research/grounding-dino-base": {"batch_size": 8, "n_dataset_chunks": 1},            # RTX 4090: 8 ;  H 100: ?
             # "google/owlvit-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},                   # RTX 4090: 8 ;  H 100: ?
             # "google/owlvit-base-patch32": {"batch_size": 8, "n_dataset_chunks": 1},                   # RTX 4090: 8 ;  H 100: ?
             "google/owlvit-large-patch14": {
-                "batch_size": 24,
+                "batch_size": 4,
                 "n_dataset_chunks": 8,
             },  # RTX 4090: 4 ;  H 100: 16
             # "google/owlv2-base-patch16": {"batch_size": 32, "n_dataset_chunks": 1},                    # RTX 4090: 8 ;  H 100: 32
             # "google/owlv2-base-patch16-ensemble": {"batch_size": 8, "n_dataset_chunks": 1},           # RTX 4090: 8 ;  H 100: ?
             "google/owlv2-base-patch16-finetuned": {
-                "batch_size": 32,
+                "batch_size": 8,
                 "n_dataset_chunks": 8,
             },  # RTX 4090: 8 ;  H 100: 16
             # "google/owlv2-large-patch14": {"batch_size": 8, "n_dataset_chunks": 8},                   # RTX 4090: 2 ;  H 100: 8
             "google/owlv2-large-patch14-ensemble": {
-                "batch_size": 12,
+                "batch_size": 2,
                 "n_dataset_chunks": 8,
             },  # RTX 4090: 2 ;  H 100: 8
             # "google/owlv2-large-patch14-finetuned": {"batch_size": 2, "n_dataset_chunks": },          # RTX 4090: 2 ;  H 100: ?
@@ -205,11 +205,11 @@ WORKFLOWS = {
         ],
     },
     "ensemble_exploration": {
-        "field_includes": "pred_zsod_",
+        "field_includes": "pred_zsod_",  # V51 field used for detections, "pred_zsod_" default for zero-shot object detection models
         "agreement_threshold": 3,  # Threshold for n models necessary for agreement between models
         "iou_threshold": 0.5,  # Threshold for IoU between bboxes to consider them as overlapping
         "max_bbox_size": 0.01,  # Value between [0,1] for the max size of considered bboxes
-        "positive_classes": [  # Example for Vulnerable Road Users. Must be subset of available classes in the detections.
+        "positive_classes": [  # Classes to consider, must be subset of available classes in the detections. Example for Vulnerable Road Users.
             "skater",
             "child",
             "bicycle",
@@ -233,7 +233,7 @@ WORKFLOWS = {
 
 ACCEPTED_SPLITS = {"train", "val", "test"}
 HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
-
+HF_DO_UPLOAD = False
 
 cpu_count = os.cpu_count()
 NUM_WORKERS = 32 if cpu_count > 32 else cpu_count
