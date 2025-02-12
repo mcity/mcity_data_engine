@@ -768,6 +768,7 @@ class HuggingFaceObjectDetection:
         self.model_name = config["model_name"]
         self.model_name_key = re.sub(r"[\W-]+", "_", self.model_name)
         self.dataset_name = config["v51_dataset_name"]
+        self.do_convert_annotations = True  # HF can convert (top_left_x, top_left_y, bottom_right_x, bottom_right_y) in abs. coordinates to (x_min, y_min, width, height) in rel. coordinates https://github.com/huggingface/transformers/blob/v4.48.2/src/transformers/models/conditional_detr/image_processing_conditional_detr.py#L1497
 
         self.detections_root = os.path.join(
             output_detections_path, self.dataset_name, self.model_name_key
@@ -789,7 +790,6 @@ class HuggingFaceObjectDetection:
         self,
         examples,
         image_processor,
-        do_convert_annotations: bool,
         return_pixel_mask=False,
     ):
         """Apply format annotations in COCO format for object detection task"""
@@ -813,7 +813,7 @@ class HuggingFaceObjectDetection:
                 # DETR expects COCO (top_left_x, top_left_y, width, height) in absolute coordinates if 'do_convert_annotations == True'
                 # DETR expects YOLO (center_x, center_y, width, height) in relative coordinates between [0,1] if 'do_convert_annotations == False'
 
-                if do_convert_annotations == False:
+                if self.do_convert_annotations == False:
                     x, y, w, h = bbox
                     img_height, img_width = image_np.shape[:2]
                     center_x = (x + w / 2) / img_width
@@ -828,7 +828,7 @@ class HuggingFaceObjectDetection:
                     ), f"Invalid bbox: {bbox}"
 
                     logging.debug(
-                        f"Converted {[x, y, w, h]} to {[center_x, center_y, width, height]} with 'do_convert_annotations' = {do_convert_annotations}"
+                        f"Converted {[x, y, w, h]} to {[center_x, center_y, width, height]} with 'do_convert_annotations' = {self.do_convert_annotations}"
                     )
 
                 coco_annotation = {
@@ -878,8 +878,6 @@ class HuggingFaceObjectDetection:
         return data
 
     def train(self, hf_dataset):
-        do_convert_annotations = True  # HF can convert (top_left_x, top_left_y, bottom_right_x, bottom_right_y) in abs. coordinates to (x_min, y_min, width, height) in rel. coordinates https://github.com/huggingface/transformers/blob/v4.48.2/src/transformers/models/conditional_detr/image_processing_conditional_detr.py#L1497
-
         img_size_target = self.config.get("image_size", None)
         if img_size_target is None:
             image_processor = AutoProcessor.from_pretrained(
@@ -887,7 +885,7 @@ class HuggingFaceObjectDetection:
                 do_resize=False,
                 do_pad=True,
                 use_fast=True,
-                do_convert_annotations=do_convert_annotations,
+                do_convert_annotations=self.do_convert_annotations,
             )
         else:
             logging.warning(f"Resizing images to target size {img_size_target}.")
@@ -901,7 +899,7 @@ class HuggingFaceObjectDetection:
                 do_pad=True,
                 pad_size={"height": img_size_target[1], "width": img_size_target[0]},
                 use_fast=True,
-                do_convert_annotations=do_convert_annotations,
+                do_convert_annotations=self.do_convert_annotations,
             )
 
         hf_model_config = AutoConfig.from_pretrained(self.model_name)
@@ -909,13 +907,11 @@ class HuggingFaceObjectDetection:
             self.transform_batch,
             # transform=train_augment_and_transform,
             image_processor=image_processor,
-            do_convert_annotations=do_convert_annotations,
         )
         val_test_transform_batch = partial(
             self.transform_batch,
             # transform=validation_transform,
             image_processor=image_processor,
-            do_convert_annotations=do_convert_annotations,
         )
 
         hf_dataset[Split.TRAIN] = hf_dataset[Split.TRAIN].with_transform(
@@ -995,8 +991,46 @@ class HuggingFaceObjectDetection:
     def inference(self, detection_threshold=0.2):
 
         # Load trained model from Hugging Face
+        logging.info(f"Loading model from Hugging Face: {self.hf_hub_model_id}")
         image_processor = AutoProcessor.from_pretrained(self.hf_hub_model_id)
         model = AutoModelForObjectDetection.from_pretrained(self.hf_hub_model_id)
+
+        img_size_target = self.config.get("image_size", None)
+        if img_size_target is None:
+            image_processor = AutoProcessor.from_pretrained(
+                self.hf_hub_model_id,
+                do_resize=False,
+                do_pad=True,
+                use_fast=True,
+                do_convert_annotations=self.do_convert_annotations,
+            )
+        else:
+            image_processor = AutoProcessor.from_pretrained(
+                self.hf_hub_model_id,
+                do_resize=True,
+                size={
+                    "max_height": img_size_target[1],
+                    "max_width": img_size_target[0],
+                },
+                do_pad=True,
+                pad_size={"height": img_size_target[1], "width": img_size_target[0]},
+                use_fast=True,
+                do_convert_annotations=self.do_convert_annotations,
+            )
+
+        hf_model_config = AutoConfig.from_pretrained(self.model_name)
+        if type(hf_model_config) in AutoModelForObjectDetection._model_mapping:
+            model = AutoModelForObjectDetection.from_pretrained(
+                self.hf_hub_model_id,
+                id2label=self.id2label,
+                label2id=self.label2id,
+                ignore_mismatched_sizes=True,
+            )
+        else:
+            model = None
+            logging.error(
+                "Hugging Face AutoModel does not support " + str(type(hf_model_config))
+            )
 
         device, _, _ = get_backend()
         model = model.to(device)
@@ -1014,10 +1048,12 @@ class HuggingFaceObjectDetection:
                 image = Image.open(img_filepath)
                 inputs = image_processor(images=[image], return_tensors="pt")
                 outputs = model(**inputs.to(device))
+                logging.error(f"Inference complete: {outputs}")
                 target_sizes = torch.tensor([[image.size[1], image.size[0]]])
                 results = image_processor.post_process_object_detection(
                     outputs, threshold=detection_threshold, target_sizes=target_sizes
                 )[0]
+                logging.error(f"Post-processing complete: {results}")
 
                 detections = []
                 for score, label, box in zip(
