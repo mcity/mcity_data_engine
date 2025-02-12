@@ -90,9 +90,9 @@ WORKFLOWS = {
         "mode": ["train", "inference"],  # "train" and "inference" supported
         "model_source": [
             "hf_models_objectdetection"
-        ],  # Pick from one of the options below (hf_models_objectdetection, custom_codetr, ultralytics)
+        ],  # "hf_models_objectdetection" and "custom_codetr" and "ultralytics" supported
         "n_worker_dataloader": 3,
-        "epochs": 1,
+        "epochs": 2,
         "early_stop_patience": 5,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -105,16 +105,23 @@ WORKFLOWS = {
             "facebook/detr-resnet-50-dc5": {"batch_size": 1, "image_size": [960, 960]},
             "facebook/detr-resnet-101": {"batch_size": 1, "image_size": [960, 960]},
             "facebook/detr-resnet-101-dc5": {"batch_size": 1, "image_size": [960, 960]},
-            "facebook/deformable-detr-detic": {"batch_size": 1},
-            "facebook/deformable-detr-box-supervised": {"batch_size": 1},
-            "SenseTime/deformable-detr": {"batch_size": 1},
+            "facebook/deformable-detr-detic": {
+                "batch_size": 1,
+                "image_size": [960, 960],
+            },
+            "facebook/deformable-detr-box-supervised": {
+                "batch_size": 1,
+                "image_size": [960, 960],
+            },
+            "SenseTime/deformable-detr": {"batch_size": 1, "image_size": [960, 960]},
             "SenseTime/deformable-detr-with-box-refine-two-stage": {
                 "batch_size": 1,
                 "image_size": [960, 960],
             },
-            "SenseTime/deformable-detr-with-box-refine": {"batch_size": 1},
-            "PekingU/rtdetr_r50vd": {"batch_size": 1},
-            "PekingU/rtdetr_r50vd_coco_o365": {"batch_size": 1},
+            "SenseTime/deformable-detr-with-box-refine": {
+                "batch_size": 1,
+                "image_size": [960, 960],
+            },
             "jozhang97/deta-swin-large": {
                 "batch_size": 1,
                 "image_size": [960, 960],
@@ -129,6 +136,8 @@ WORKFLOWS = {
                 "image_size": [960, 960],
             },
             "hustvl/yolos-base": {"batch_size": 1},
+            # "PekingU/rtdetr_r50vd": {},              # Tensor size mismatch error
+            # "PekingU/rtdetr_r50vd_coco_o365": {},    # Tensor size mismatch error
         },
         "custom_codetr": {
             "train_model": True,  # Set false if model file should be loaded without training
