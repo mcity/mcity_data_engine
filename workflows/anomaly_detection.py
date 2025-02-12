@@ -271,7 +271,8 @@ class Anodec:
                     local_dir=download_dir,
                 )
         except Exception as e:
-            logging.error(f"Failed to load or download model: {str(e)}")
+            logging.error(f"Failed to load or download model: {str(e)}.")
+            return False
         device = "cuda" if torch.cuda.is_available() else "cpu"
         inferencer = TorchInferencer(path=os.path.join(file_path), device=device)
         self.inferencer = inferencer
