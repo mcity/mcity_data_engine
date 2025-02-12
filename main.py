@@ -12,9 +12,9 @@ if IGNORE_FUTURE_WARNINGS:
 
 import fiftyone as fo
 import torch.multiprocessing as mp
-import wandb
 from tqdm import tqdm
 
+import wandb
 from config.config import (
     SELECTED_DATASET,
     SELECTED_WORKFLOW,
@@ -437,9 +437,9 @@ class WorkflowExecutor:
                         # Config
                         run_config = {
                             "model_name": MODEL_NAME,
-                            "image_size": anomalib_image_models[MODEL_NAME][
-                                "image_size"
-                            ],
+                            "image_size": anomalib_image_models[MODEL_NAME].get(
+                                "image_size", None
+                            ),
                             "batch_size": anomalib_image_models[MODEL_NAME][
                                 "batch_size"
                             ],
