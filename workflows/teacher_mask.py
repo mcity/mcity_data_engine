@@ -66,7 +66,7 @@ class MaskTeacher:
 
         logging.info("Semantic segmentation completed for all models.")
 
-    def inference_depth_estimation(self, dataset, model_name, label_field, prompt_field=None, max_samples=2):
+    def inference_depth_estimation(self, dataset, model_name, label_field, prompt_field=None):
         logging.info(f"Starting depth estimation for model {model_name}")
 
         image_processor = AutoImageProcessor.from_pretrained(model_name)
@@ -95,13 +95,11 @@ class MaskTeacher:
             data.save()
 
         for idx, data in enumerate(dataset.iter_samples(autosave=True, progress=True)):
-            if idx >= max_samples:
-                break  # Stop after `max_samples` images
             apply_depth_model(data, model, image_processor, label_field)
 
         logging.info("Depth estimation completed successfully!")
 
-    def _run_depth_estimation(self, max_samples=2):
+    def _run_depth_estimation(self):
         if self.model_name in ["dpt", "depth_anything", "glpn", "zoe_depth"]:
             logging.info(f"Loading depth model: {self.model_name}")
 
@@ -116,8 +114,8 @@ class MaskTeacher:
                 label_field_with_prompt = f"pred_{model_name_clear}_prompt_{prompt_field}" if prompt_field else None
 
                 if prompt_field:
-                    self.inference_depth_estimation(self.dataset, depth_model, label_field_with_prompt, prompt_field, max_samples)
+                    self.inference_depth_estimation(self.dataset, depth_model, label_field_with_prompt, prompt_field)
                 else: 
-                    self.inference_depth_estimation(self.dataset, depth_model, label_field_no_prompt, max_samples)
+                    self.inference_depth_estimation(self.dataset, depth_model, label_field_no_prompt)
 
         logging.info("Depth estimation completed for all models.")
