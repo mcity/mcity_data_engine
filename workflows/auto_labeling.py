@@ -1000,7 +1000,7 @@ class HuggingFaceObjectDetection:
             except Exception as e:
                 load_from_hf_successful = False
                 logging.warning(
-                    f"Model {self.model_name} could not be loaded from Hugging Face {self.hf_hub_model_id}. Attempting load from disk."
+                    f"Model {self.model_name} could not be loaded from Hugging Face {self.hf_hub_model_id}. Attempting loading from disk."
                 )
         if load_from_hf == False or load_from_hf_successful == False:
             try:
@@ -1013,6 +1013,7 @@ class HuggingFaceObjectDetection:
                 )
 
         device, _, _ = get_backend()
+        logging.info(f"Using device {device} for inference.")
         model = model.to(device)
         model.eval()
 
@@ -1028,12 +1029,11 @@ class HuggingFaceObjectDetection:
                 image = Image.open(img_filepath)
                 inputs = image_processor(images=[image], return_tensors="pt")
                 outputs = model(**inputs.to(device))
-                logging.error(f"Inference complete: {outputs}")
                 target_sizes = torch.tensor([[image.size[1], image.size[0]]])
+
                 results = image_processor.post_process_object_detection(
                     outputs, threshold=detection_threshold, target_sizes=target_sizes
                 )[0]
-                logging.error(f"Post-processing complete: {results}")
 
                 detections = []
                 for score, label, box in zip(
