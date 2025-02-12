@@ -958,10 +958,10 @@ class HuggingFaceObjectDetection:
             load_best_model_at_end=True,
             eval_strategy="epoch",
             save_strategy="best",
-            save_total_limit=1,  # Possible that two checkpoints are saved: the last one and the best one (if they are different)
+            save_total_limit=1,
             remove_unused_columns=False,
             eval_do_concat_batches=False,
-            save_safetensors=False,
+            save_safetensors=False,  # Does not work with all models
             hub_model_id=self.hf_hub_model_id,
             hub_private_repo=True,
             push_to_hub=HF_DO_UPLOAD,
