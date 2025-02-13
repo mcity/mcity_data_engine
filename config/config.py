@@ -1,7 +1,7 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["auto_labeling"]
+SELECTED_WORKFLOW = ["embedding_selection"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -21,7 +21,7 @@ WORKFLOWS = {
         "selected_dataset_overwrite": True,
     },
     "embedding_selection": {
-        "mode": "compute",  # "compute" or "load"
+        "mode": "load",  # "compute" or "load"
         "parameters": {
             "compute_representativeness": 0.99,
             "compute_unique_images_greedy": 0.01,
