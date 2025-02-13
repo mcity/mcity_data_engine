@@ -206,88 +206,41 @@ def workflow_ensemble_exploration():
     pass
 
 def workflow_class_mapping(dataset, dataset_info):
-    """Execute class mapping workflow with interactive-style output"""
+    """
+    Execute class mapping workflow by delegating all processing to ClassMapper.
+    """
     config = WORKFLOWS["class_mapping"]
-    models = config["models"]
-    threshold = config["thresholds"]["confidence"]
-    candidate_labels = config["candidate_labels"]
+    model_source = config["model_source"]  # Fetch selected model source.
+    models = config.get(model_source, [])   # Get models under the selected source.
 
-    print("\nClass Mapping Workflow")
-    print("Available Models:")
-    for idx, model in enumerate(models, 1):
-        print(f"{idx}: {model}")
-
-    # Select model (could be config-driven instead of interactive)
-    model_choice = 0  # Default to first model, or implement selection logic
-    model_name = models[model_choice]
-    print(f"\nRunning model: {model_name}")
-
-    # Initialize mapper
-    mapper = ClassMapper(
-        dataset=dataset,
-        model_name=model_name,
-        config=config
-    )
-
-    # Load the model before processing - THIS IS THE KEY FIX
-    try:
-        mapper.load_model()
-    except Exception as e:
-        logging.error(f"Failed to load model: {e}")
+    if not models:
+        logging.error(f"No models found for the selected source: {model_source}")
         return False
 
-    # Add real-time print handler
-    class PrintLogger:
-        def __init__(self):
-            self.count = 0
+    model_name = models[0]  # Use the pre-selected model from config.
+    print("\nClass Mapping Workflow")
+    print(f"Selected Model Source: {model_source}")
+    print(f"Running model: {model_name}")
 
-        def log(self, tag, confidence):
-            self.count += 1
-            print(f"Tag added: {tag} (Confidence: {confidence:.2f})")
+    # Initialize the mapper and run the mapping process with wandb logging enabled.
+    mapper = ClassMapper(dataset, model_name, config)
+    try:
+        stats = mapper.run_mapping(interactive=True, wandb_logging=True)
+    except Exception as e:
+        logging.error(f"Error during mapping: {e}")
+        return False
 
-    print_logger = PrintLogger()
-
-    # Process dataset with progress bar
-    with tqdm(total=len(dataset), desc="Processing samples") as pbar:
-        for sample in dataset.iter_samples(progress=True, autosave=True):
-            try:
-                image = Image.open(sample.filepath)
-                detections = sample["ground_truth"]
-
-                for det in detections.detections:
-                    old_label = det.label
-                    if old_label not in candidate_labels:
-                        continue
-
-                    # Process detection
-                    label_candidates = candidate_labels[old_label]
-                    predicted_label, confidence = mapper.process_detection(
-                        image, det, label_candidates
-                    )
-
-                    # Check and apply changes
-                    if confidence > threshold and old_label != predicted_label:
-                        tag = f"new_class_{mapper.model_name}_{predicted_label}"
-                        if tag not in det.tags:
-                            det.tags.append(tag)
-                            print_logger.log(tag, confidence)
-
-                pbar.update(1)
-            except Exception as e:
-                logging.error(f"Error processing sample {sample.id}: {str(e)}")
-                continue
-
-    # Get final stats
-    stats = mapper.stats
+    # Display final statistics.
     total_vehicles = stats["total_processed"]
-
-    print("\nVehicle Classification Results:")
-    for cls, count in stats["class_counts"].items():
+    print("\nVehicle Classification Results (Parent Classes):")
+    for parent, count in stats["parent_class_counts"].items():
         percentage = (count / total_vehicles) * 100 if total_vehicles > 0 else 0
-        print(f"{cls}: {count} vehicles ({percentage:.1f}%)")
+        print(f"{parent}: {count} vehicles processed ({percentage:.1f}%)")
 
-    print(f"\nTotal vehicles processed: {total_vehicles}")
-    print(f"Total tags added: {print_logger.count}")
+    print("\nTag Addition Results (Child Tags):")
+    print(f"Total new tags added: {stats['changes_made']}")
+    for child, tag_count in stats["tags_added_per_category"].items():
+        print(f"{child} tags added: {tag_count}")
 
     return True
 
@@ -538,7 +491,22 @@ class WorkflowExecutor:
                     wandb_run.finish(exit_code=0)
 
                 elif workflow == "class_mapping":
-                    workflow_class_mapping(self.dataset, self.dataset_info)
+                    wandb_exit_code = 0
+                    try:
+                        # Initialize a wandb run for class mapping
+                        wandb_run, log_dir = wandb_init(
+                            run_name="class_mapping",
+                            project_name="Class Mapping",
+                            dataset_name=self.selected_dataset,
+                            config=WORKFLOWS["class_mapping"]
+                        )
+                        # Run the class mapping workflow
+                        workflow_class_mapping(self.dataset, self.dataset_info)
+                    except Exception as e:
+                        logging.error(f"Error in class_mapping workflow: {e}")
+                        wandb_exit_code = 1
+                    finally:
+                        wandb_close(wandb_run, wandb_exit_code)
 
                 else:
                     logging.error(

@@ -187,10 +187,14 @@ WORKFLOWS = {
     },
     "ensemble_exploration": {},
     "class_mapping": {
-        "models": [
+        "model_source": "hf_models_zeroshot_classification",  # Pick from one of the options below hf_models_zeroshot_classification
+        "hf_models_zeroshot_classification": [
             "Salesforce/blip2-itm-vit-g",
-            "openai/clip-vit-large-patch14",
-            "google/siglip-so400m-patch14-384"
+            #"openai/clip-vit-large-patch14",
+            #"google/siglip-so400m-patch14-384",
+            #"kakaobrain/align-base",
+            #"BAAI/AltCLIP",
+            #"CIDAS/clipseg-rd64-refined"
         ],
         "thresholds": {
             "confidence": 0.2
