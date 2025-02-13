@@ -12,6 +12,8 @@ from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.dataset_loader import get_split
 
 fisheye8k_gt_field = "detections"
+max_samples = 50
+batch_size = 4
 
 
 @pytest.fixture
@@ -21,7 +23,7 @@ def dataset_v51():
     dataset_name = "fisheye8k_pytest"
     try:
         dataset = load_from_hub(
-            repo_id=dataset_name_hub, max_samples=50, name=dataset_name
+            repo_id=dataset_name_hub, max_samples=max_samples, name=dataset_name
         )
         # Ensure that all splits are represented (normally Data Engine takes care of that)
         for sample in dataset.iter_samples(progress=True, autosave=True):
@@ -38,7 +40,7 @@ def dataset_v51_no_splits_no_detections():
     dataset_name = "fisheye8k_pytest_raw"
     try:
         dataset = load_from_hub(
-            repo_id=dataset_name_hub, max_samples=50, name=dataset_name
+            repo_id=dataset_name_hub, max_samples=max_samples, name=dataset_name
         )
         # Remove all tags
         for sample in dataset.iter_samples(progress=True, autosave=True):
@@ -76,7 +78,7 @@ def torch_dataset(dataset_v51):
 
 def test_torch_dataset_length(torch_dataset):
     """Test the length of the torch dataset."""
-    assert len(torch_dataset) == 100
+    assert len(torch_dataset) == max_samples
 
 
 @pytest.mark.parametrize("index", [0, 1, 2])
@@ -93,8 +95,9 @@ def test_torch_dataset_getitem(torch_dataset, index):
 
 def test_torch_dataset_getitem_invalid_index(torch_dataset):
     """Test getting an item with an invalid index from the torch dataset."""
+    test_index = max_samples * 10
     with pytest.raises(IndexError):
-        torch_dataset[1000]
+        torch_dataset[test_index]
 
 
 def test_torch_dataset_getitems(torch_dataset):
@@ -108,8 +111,10 @@ def test_torch_dataset_getitems(torch_dataset):
 
 def test_torch_dataset_getitems_invalid_indices(torch_dataset):
     """Test getting multiple items with invalid indices from the torch dataset."""
+    test_index_1 = max_samples * 10
+    test_index_2 = test_index_1 + 1
     with pytest.raises(IndexError):
-        torch_dataset.__getitems__([1000, 1001])
+        torch_dataset.__getitems__([test_index_1, test_index_2])
 
 
 def test_torch_dataset_get_classes(torch_dataset):
@@ -140,7 +145,7 @@ def dataloader(torch_dataset):
     """Fixture to create a DataLoader instance."""
     return DataLoader(
         torch_dataset,
-        batch_size=4,
+        batch_size=batch_size,
         collate_fn=lambda batch: list(zip(*batch)),
         shuffle=True,
     )
@@ -148,15 +153,15 @@ def dataloader(torch_dataset):
 
 def test_dataloader_length(dataloader, torch_dataset):
     """Test the length of the dataloader."""
-    assert len(dataloader) == (len(torch_dataset) + 3) // 4
+    assert len(dataloader) == (len(torch_dataset) + 3) // batch_size
 
 
 def test_dataloader_batch(dataloader):
     """Test getting a batch from the dataloader."""
     for batch in dataloader:
         imgs, targets = batch
-        assert len(imgs) == 4
-        assert len(targets) == 4
+        assert len(imgs) == batch_size
+        assert len(targets) == batch_size
         for img, target in zip(imgs, targets):
             assert isinstance(img, torch.Tensor)
             assert "bbox" in target
@@ -215,7 +220,7 @@ def test_hf_dataset_dataloader(converter_torch_hf):
         if split in hf_dataset:
             dataloader = DataLoader(
                 hf_dataset[split],
-                batch_size=4,
+                batch_size=batch_size,
                 collate_fn=lambda batch: (
                     [item["image_path"] for item in batch],
                     [item["objects"] for item in batch],
