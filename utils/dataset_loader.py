@@ -57,6 +57,8 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
                 logging.warning(
                     f"Dataset size was reduced from {len(dataset)} to {len(combined_view)} samples."
                 )
+                # FIXME Returning a view instead of a dataset introduces problems
+                # Return a dataset, maybe name it {dataset.name}-{len(view)}
                 return combined_view, dataset_info
 
     else:
