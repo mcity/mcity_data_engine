@@ -245,7 +245,9 @@ class Anodec:
                 )
 
         else:
-            logging.info(f"Model {self.model_path} already trained.")
+            logging.warning(
+                f"Skipping model {self.model_name}, training results are already in {self.model_path}."
+            )
 
     def validate_model(self):
         # Test model
@@ -278,6 +280,7 @@ class Anodec:
         except Exception as e:
             logging.error(f"Failed to load or download model: {str(e)}.")
             return False
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
         inferencer = TorchInferencer(path=os.path.join(file_path), device=device)
         self.inferencer = inferencer
