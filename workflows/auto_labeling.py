@@ -20,7 +20,6 @@ import numpy as np
 import psutil
 import torch
 import torch.multiprocessing as mp
-import wandb
 from accelerate.test_utils.testing import get_backend
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
@@ -36,6 +35,7 @@ from transformers import (
     TrainingArguments,
 )
 
+import wandb
 from config.config import GLOBAL_SEED, HF_DO_UPLOAD, HF_ROOT, NUM_WORKERS, WORKFLOWS
 from datasets import Split
 from utils.logging import configure_logging
@@ -176,7 +176,7 @@ class ZeroShotObjectDetection:
             else:
                 models_splits_dict[model_name] = value
 
-        print(f"Models to be run: {models_splits_dict}")
+        logging.info(f"Models to be run: {models_splits_dict}")
         return models_splits_dict
 
     # Worker functions
