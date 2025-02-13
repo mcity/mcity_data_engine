@@ -1,7 +1,7 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["embedding_selection"]
+SELECTED_WORKFLOW = ["anomaly_detection"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -14,11 +14,13 @@ PERSISTENT = True  # If V51 database is stored
 # Workflows and associated parameters
 WORKFLOWS = {
     "aws_download": {
-        "bucket": "mcity-data-engine",
-        "prefix": "",
-        "download_path": "output/datasets/annarbor_rolling",
-        "test_run": True,
-        "selected_dataset_overwrite": True,
+        "mcity": {
+            "bucket": "mcity-data-engine",
+            "prefix": "",
+            "download_path": "output/datasets/annarbor_rolling",
+            "test_run": True,
+            "selected_dataset_overwrite": True,
+        }
     },
     "embedding_selection": {
         "mode": "load",  # "compute" or "load"
@@ -44,7 +46,7 @@ WORKFLOWS = {
         ],
     },
     "anomaly_detection": {
-        "mode": ["train", "inference"],  # "train" and "inference" supported
+        "mode": ["inference"],  # "train" and "inference" supported
         "epochs": 36,
         "early_stop_patience": 5,
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
