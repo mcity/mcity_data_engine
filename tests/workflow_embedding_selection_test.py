@@ -1,3 +1,5 @@
+import os
+
 import fiftyone as fo
 import pytest
 from fiftyone import ViewField as F
@@ -5,7 +7,13 @@ from fiftyone.utils.huggingface import load_from_hub
 
 from main import workflow_embedding_selection
 from utils.dataset_loader import load_dataset_info
+from utils.logging import configure_logging
 from workflows.embedding_selection import BRAIN_TAXONOMY
+
+
+@pytest.fixture(autouse=True)
+def setup_logging():
+    configure_logging()
 
 
 @pytest.fixture
@@ -23,15 +31,31 @@ def dataset_v51():
     return dataset
 
 
-def test_brain(dataset_v51):
+@pytest.mark.parametrize("mode", ["compute", "load", "load_hf"])
+def test_embedding_selection(dataset_v51, mode):
+
     MODEL_NAME = "mobilenet-v2-imagenet-torch"
+    selected_mode = mode
+    if mode == "load_hf":
+        local_folder = "./output/embeddings/fisheye8k/"
+        model_name_key = MODEL_NAME.replace("-", "_")
+        for filename in os.listdir(local_folder):
+            if model_name_key in filename:
+                file_path = os.path.join(local_folder, filename)
+                try:
+                    os.remove(file_path)
+                    print(f"Deleted: {file_path}")
+                except OSError as e:
+                    print(f"Error deleting {file_path}: {e}")
+        selected_mode = "load"
+
     dataset_info = load_dataset_info("fisheye8k")  # Use loader for actual dataset
     dataset_info["name"] = (
         "fisheye8k_v51_brain_test"  # Update with test name for local tests where both exist
     )
 
     config = {
-        "mode": "train",
+        "mode": selected_mode,
         "parameters": {
             "compute_representativeness": 0.99,
             "compute_unique_images_greedy": 0.01,
@@ -51,7 +75,7 @@ def test_brain(dataset_v51):
     results_field = BRAIN_TAXONOMY["field"]
     n_samples_selected = 0
     for key in BRAIN_TAXONOMY:
-        if "value" in key:
+        if "value_" in key:
             value = BRAIN_TAXONOMY[key]
             view_result = dataset_v51.match(F(results_field) == value)
             n_samples = len(view_result)
