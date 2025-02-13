@@ -264,8 +264,10 @@ class Anodec:
         try:
             if os.path.exists(self.model_path):
                 file_path = self.model_path
+                logging.info(
+                    f"Loading model {self.hf_repo_name} from disk: {self.model_path}"
+                )
             else:
-
                 download_dir = self.model_path.replace("model.pt", "")
                 logging.info(
                     f"Downloading model {self.hf_repo_name} from Hugging Face to {download_dir}"
@@ -287,13 +289,14 @@ class Anodec:
             image = read_image(sample.filepath, as_tensor=True)
             output = self.inferencer.predict(image)
 
-            # Classification
+            # Storing results in Voxel51 dataset
+            # Sample Classifiction
             conf = output.pred_score
             anomaly = "normal" if conf < threshold else "anomaly"
             sample[f"pred_anomaly_score_{self.model_name}"] = conf
             sample[f"pred_anomaly_{self.model_name}"] = fo.Classification(label=anomaly)
 
-            # Segmentation
+            # Mask Segmentation
             sample[f"pred_anomaly_map_{self.model_name}"] = fo.Heatmap(
                 map=output.anomaly_map
             )
