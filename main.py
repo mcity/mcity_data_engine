@@ -424,7 +424,7 @@ class WorkflowExecutor:
                     parameter_group = "mcity"
                     parameters = WORKFLOWS["aws_download"].get(parameter_group, None)
                     if parameter_group == "mcity":
-                        dataset, dataset_name = workflow_aws_download()
+                        dataset, dataset_name = workflow_aws_download(parameters)
                     else:
                         logging.error(
                             f"The parameter group {parameter_group} is not supported. As AWS are highly specific, please provide a separate set of parameters and a workflow."
