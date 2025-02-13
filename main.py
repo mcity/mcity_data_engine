@@ -55,58 +55,56 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-def workflow_aws_download(wandb_activate=True, parameter_group="mcity"):
+def workflow_aws_download(parameters, wandb_activate=True):
+    dataset = None
+    dataset_name = None
+    wandb_exit_code = 0
+    files_to_be_downloaded = 0
     try:
-        dataset = None
-        dataset_name = None
-        wandb_exit_code = 0
+        # Config
+        bucket = parameters["bucket"]
+        prefix = parameters["prefix"]
+        download_path = parameters["download_path"]
+        test_run = parameters["test_run"]
 
-        parameters = WORKFLOWS["aws_download"].get(parameter_group, None)
+        # Logging
+        now = datetime.datetime.now()
+        datetime_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+        log_dir = f"logs/tensorboard/aws_{datetime_str}"
 
-        if parameters == "mcity":
-            # Config
-            bucket = parameters["bucket"]
-            prefix = parameters["prefix"]
-            download_path = parameters["download_path"]
-            test_run = parameters["test_run"]
+        dataset_name = f"annarbor_rolling_{datetime_str}"
 
-            # Logging
-            now = datetime.datetime.now()
-            datetime_str = now.strftime("%Y-%m-%d_%H-%M-%S")
-            log_dir = f"logs/tensorboard/aws_{datetime_str}"
+        # Weights and Biases
+        wandb_run = wandb_init(
+            run_name=dataset_name,
+            project_name="AWS Download",
+            dataset_name=dataset_name,
+            log_dir=log_dir,
+            wandb_activate=wandb_activate,
+        )
 
-            dataset_name = f"annarbor_rolling_{datetime_str}"
+        # Workflow
+        aws_downloader = AwsDownloader(
+            bucket=bucket,
+            prefix=prefix,
+            download_path=download_path,
+            test_run=test_run,
+        )
 
-            # Weights and Biases
-            wandb_run = wandb_init(
-                run_name=dataset_name,
-                project_name="AWS Download",
-                dataset_name=dataset_name,
-                log_dir=log_dir,
-                wandb_activate=wandb_activate,
-            )
+        (
+            sub_folder,
+            files,
+            files_to_be_downloaded,
+            DOWNLOAD_NUMBER_SUCCESS,
+            DOWNLOAD_SIZE_SUCCESS,
+        ) = aws_downloader.download_files(log_dir=log_dir)
 
-            # Workflow
-            aws_downloader = AwsDownloader(
-                bucket=bucket,
-                prefix=prefix,
-                download_path=download_path,
-                test_run=test_run,
-            )
-
-            sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = (
-                aws_downloader.download_files(log_dir=log_dir)
-            )
-            dataset = aws_downloader.decode_data(
-                sub_folder=sub_folder,
-                files=files,
-                log_dir=log_dir,
-                dataset_name=dataset_name,
-            )
-        else:
-            logging.error(
-                f"The parameter group {parameter_group} is not supported. As AWS are highly specific, please provide a separate set of parameters and a workflow."
-            )
+        dataset = aws_downloader.decode_data(
+            sub_folder=sub_folder,
+            files=files,
+            log_dir=log_dir,
+            dataset_name=dataset_name,
+        )
 
     except Exception as e:
         logging.error(f"AWS Download and Extraction failed: {e}")
@@ -115,7 +113,7 @@ def workflow_aws_download(wandb_activate=True, parameter_group="mcity"):
     finally:
         wandb_close(wandb_run, wandb_exit_code)
 
-    return dataset, dataset_name
+    return dataset, dataset_name, files_to_be_downloaded
 
 
 def workflow_anomaly_detection(
@@ -423,7 +421,14 @@ class WorkflowExecutor:
                 cleanup_memory()  # Clean before each workflow
 
                 if workflow == "aws_download":
-                    dataset, dataset_name = workflow_aws_download()
+                    parameter_group = "mcity"
+                    parameters = WORKFLOWS["aws_download"].get(parameter_group, None)
+                    if parameter_group == "mcity":
+                        dataset, dataset_name = workflow_aws_download()
+                    else:
+                        logging.error(
+                            f"The parameter group {parameter_group} is not supported. As AWS are highly specific, please provide a separate set of parameters and a workflow."
+                        )
 
                     # Select downloaded dataset for further workflows if configured
                     if dataset is not None:

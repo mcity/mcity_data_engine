@@ -268,7 +268,6 @@ class AwsDownloader:
             logging.error(
                 f"Test run: No data downloaded. Set 'test_run': False in the config. Aborting."
             )
-            return False
 
         # Check if all files were downloaded properly
         DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = False, False
@@ -332,7 +331,13 @@ class AwsDownloader:
 
         writer.close()
 
-        return sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS
+        return (
+            sub_folder,
+            files,
+            files_to_be_downloaded,
+            DOWNLOAD_NUMBER_SUCCESS,
+            DOWNLOAD_SIZE_SUCCESS,
+        )
 
     # Decode data with multiple workers
     def decode_data(
