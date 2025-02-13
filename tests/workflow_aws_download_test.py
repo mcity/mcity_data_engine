@@ -1,7 +1,13 @@
 import pytest
 
+import config.config
 from main import workflow_aws_download
 from utils.logging import configure_logging
+
+
+@pytest.fixture(autouse=True)
+def deactivate_hf_sync():
+    config.config.HF_DO_UPLOAD = False
 
 
 @pytest.fixture(autouse=True)
