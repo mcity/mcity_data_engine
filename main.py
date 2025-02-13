@@ -6,6 +6,8 @@ import time
 import warnings
 from typing import Dict, List
 
+import torch
+
 IGNORE_FUTURE_WARNINGS = True
 if IGNORE_FUTURE_WARNINGS:
     warnings.simplefilter("ignore", category=FutureWarning)
@@ -142,7 +144,9 @@ def workflow_anomaly_detection(
             ano_dec.run_inference()
 
     except Exception as e:
-        logging.error(f"Error in Anomaly Detection: {e}")
+        logging.error(
+            f"Error in Anomaly Detection for model {run_config['model_name']}: {e}"
+        )
         wandb_exit_code = 1
     finally:
         wandb_close(wandb_run=wandb_run, exit_code=wandb_exit_code)
@@ -372,6 +376,7 @@ class WorkflowExecutor:
                 f"Running workflow {workflow} for dataset {self.selected_dataset}"
             )
             try:
+                torch.cuda.empty_cache()
                 if workflow == "aws_download":
                     dataset, dataset_name = workflow_aws_download()
 
@@ -624,8 +629,8 @@ def main():
     logging.info(f"Launching Voxel51 session for dataset {dataset.name}:")
 
     # Dataset stats
-    logging.info(dataset)
-    fo.pprint(dataset.stats(include_media=True))
+    logging.debug(dataset)
+    logging.debug(dataset.stats(include_media=True))
 
     # V51 UI launch
     session = fo.launch_app(
