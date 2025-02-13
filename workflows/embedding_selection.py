@@ -5,9 +5,9 @@ import re
 import time
 from pathlib import Path
 
+import fiftyone as fo
 import fiftyone.brain as fob
 import fiftyone.zoo as foz
-import numpy as np
 from fiftyone import ViewField as F
 from huggingface_hub import HfApi, hf_hub_download
 from torch.utils.tensorboard import SummaryWriter
@@ -29,6 +29,7 @@ BRAIN_TAXONOMY = {
     "value_compute_uniqueness_neighbour": "deterministic_neighbour",
     "value_compute_representativeness_neighbour": "representativeness_neighbour",
     "field_model": "embedding_selection_model",
+    "field_count": "embedding_selection_count",
 }
 
 
@@ -76,6 +77,26 @@ class EmbeddingSelection:
         self.hf_repo_name = (
             f"{HF_ROOT}/{self.dataset_name}_embedding_{self.model_name_key}"
         )
+
+        # Add fields to dataset
+        self.dataset.add_sample_field(BRAIN_TAXONOMY["field"], fo.StringField)
+        self.dataset.add_sample_field(BRAIN_TAXONOMY["field_model"], fo.StringField)
+        self.dataset.add_sample_field(
+            BRAIN_TAXONOMY["field_count"], fo.FloatField
+        )  # Float instead of Int for visualization in US
+
+        # Init count for samples only once. Is intilized with None by add_sample_field
+        test_sample = self.dataset.take(1)
+        if test_sample[BRAIN_TAXONOMY["field_count"]] is None:
+            self.dataset.set_values(BRAIN_TAXONOMY["field_count"], 0)
+
+        # Determine if model was already used for selection
+        self.model_already_used = False
+        dataset_schema = self.dataset.get_field_schema()
+        if BRAIN_TAXONOMY["field_model"] in dataset_schema:
+            field_values = set(self.dataset.values(BRAIN_TAXONOMY["field_model"]))
+            if self.model_name_key in field_values:
+                self.model_already_used = True
 
     def __del__(self):
         self.steps -= 1  # +1 after every function, need to decrement for final step
@@ -309,6 +330,7 @@ class EmbeddingSelection:
         start_time = time.time()
         field = BRAIN_TAXONOMY["field"]
         field_model = BRAIN_TAXONOMY["field_model"]
+        field_count = BRAIN_TAXONOMY["field_count"]
         value = BRAIN_TAXONOMY["value_compute_representativeness"]
         methods_cluster_center = ["cluster-center", "cluster-center-downweight"]
 
@@ -338,8 +360,12 @@ class EmbeddingSelection:
             # view = self.dataset.match(F(key) >= quant_threshold)
             view = self.dataset.match(F(method_key) >= threshold)
             for sample in view.iter_samples(progress=True, autosave=True):
-                sample[field] = value
-                sample[field_model] = self.model_name_key
+                if sample[field] is None:
+                    sample[field] = value
+                    sample[field_model] = self.model_name_key
+                    sample[field_count] += 1
+                else:
+                    sample[field_count] += 1
         end_time = time.time()
         duration = end_time - start_time
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
@@ -374,6 +400,7 @@ class EmbeddingSelection:
         num_of_unique = perct_unique * sample_count
         field = BRAIN_TAXONOMY["field"]
         field_model = BRAIN_TAXONOMY["field_model"]
+        field_count = BRAIN_TAXONOMY["field_count"]
         value = BRAIN_TAXONOMY["value_find_unique"]
 
         # Check if any sample has the label label_unique:
@@ -390,9 +417,14 @@ class EmbeddingSelection:
                 self.similarities.unique_ids, desc="Tagging unique images"
             ):
                 sample = self.dataset[unique_id]
-                sample[field] = value
-                sample[field_model] = self.model_name_key
+                if sample[field] is None:
+                    sample[field] = value
+                    sample[field_model] = self.model_name_key
+                    sample[field_count] += 1
+                else:
+                    sample[field_count] += 1
                 sample.save()
+
         end_time = time.time()
         duration = end_time - start_time
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
@@ -420,6 +452,7 @@ class EmbeddingSelection:
         start_time = time.time()
         field = BRAIN_TAXONOMY["field"]
         field_model = BRAIN_TAXONOMY["field_model"]
+        field_count = BRAIN_TAXONOMY["field_count"]
         value = BRAIN_TAXONOMY["value_compute_uniqueness"]
 
         fob.compute_uniqueness(
@@ -433,8 +466,12 @@ class EmbeddingSelection:
         # view = self.dataset.match(F(key) >= quant_threshold)
         view = self.dataset.match(F(self.uniqueness_key) >= threshold)
         for sample in view.iter_samples(progress=True, autosave=True):
-            sample[field] = value
-            sample[field_model] = self.model_name_key
+            if sample[field] is None:
+                sample[field] = value
+                sample[field_model] = self.model_name_key
+                sample[field_count] += 1
+            else:
+                sample[field_count] += 1
         end_time = time.time()
         duration = end_time - start_time
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
@@ -469,6 +506,7 @@ class EmbeddingSelection:
         start_time = time.time()
         field = BRAIN_TAXONOMY["field"]
         field_model = BRAIN_TAXONOMY["field_model"]
+        field_count = BRAIN_TAXONOMY["field_count"]
         field_neighbour_distance = "distance"
 
         value_find_unique = BRAIN_TAXONOMY["value_find_unique"]
@@ -532,13 +570,15 @@ class EmbeddingSelection:
                     )
                     for sample_neighbour in view:
                         distance = sample_neighbour[field_neighbour_distance]
-                        if (
-                            distance < dist_threshold
-                            and sample_neighbour[field] == None
-                        ):
-                            sample_neighbour[field] = value
-                            sample_neighbour[field_model] = self.model_name_key
+                        if distance < dist_threshold:
+                            if sample_neighbour[field] is None:
+                                sample_neighbour[field] = value
+                                sample_neighbour[field_model] = self.model_name_key
+                                sample_neighbour[field_count] += 1
+                            else:
+                                sample_neighbour[field_count] += 1
                             sample_neighbour.save()
+
         end_time = time.time()
         duration = end_time - start_time
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
