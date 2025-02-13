@@ -82,7 +82,7 @@ WORKFLOWS = {
         "learning_rate": 5e-05,
         "weight_decay": 0.0001,
         "max_grad_norm": 0.01,
-        "hf_models_objectdetection": {
+        "hf_models_objectdetection": {  # HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
             "microsoft/conditional-detr-resnet-50": {"batch_size": 1},
             "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
             "facebook/detr-resnet-50": {"batch_size": 1},
@@ -109,7 +109,7 @@ WORKFLOWS = {
             "jozhang97/deta-swin-large": {
                 "batch_size": 1,
                 "image_size": [960, 960],
-            },  # Ranks best on HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
+            },
             "jozhang97/deta-swin-large-o365": {
                 "batch_size": 1,
                 "image_size": [960, 960],
@@ -120,12 +120,6 @@ WORKFLOWS = {
                 "image_size": [960, 960],
             },
             "hustvl/yolos-base": {"batch_size": 1},
-            "PekingU/rtdetr_r50vd": {
-                "batch_size": 2
-            },  # Tensor size mismatch error, maybe due to batch_size=1 https://discuss.huggingface.co/t/potential-bug-in-the-rt-detr-v2-fine-tune-script/139774
-            "PekingU/rtdetr_r50vd_coco_o365": {
-                "batch_size": 2
-            },  # Tensor size mismatch error
         },
         "custom_codetr": {
             "train_model": True,  # Set false if model file should be loaded without training
