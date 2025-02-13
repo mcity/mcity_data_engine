@@ -111,7 +111,7 @@ def workflow_aws_download(parameters, wandb_activate=True):
         wandb_exit_code = 1
 
     finally:
-        wandb_close(wandb_run, wandb_exit_code)
+        wandb_close(wandb_exit_code)
 
     return dataset, dataset_name, files_to_be_downloaded
 
@@ -156,7 +156,7 @@ def workflow_anomaly_detection(
         )
         wandb_exit_code = 1
     finally:
-        wandb_close(wandb_run=wandb_run, exit_code=wandb_exit_code)
+        wandb_close(exit_code=wandb_exit_code)
 
     return True
 
@@ -207,7 +207,7 @@ def workflow_embedding_selection(
         logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
         wandb_exit_code = 1
     finally:
-        wandb_close(wandb_run, wandb_exit_code)
+        wandb_close(wandb_exit_code)
 
     return True
 
@@ -247,7 +247,7 @@ def workflow_auto_labeling(
         wandb_exit_code = 1
 
     finally:
-        wandb_close(wandb_run, wandb_exit_code)
+        wandb_close(wandb_exit_code)
 
     return True
 
@@ -294,7 +294,7 @@ def workflow_auto_labeling_custom_codetr(
         logging.error(f"Error during CoDETR training: {e}")
         wandb_exit_code = 1
     finally:
-        wandb_close(wandb_run, wandb_exit_code)
+        wandb_close(wandb_exit_code)
 
     return True
 
@@ -360,7 +360,7 @@ def workflow_ensemble_exploration(
         wandb_exit_code = 1
 
     finally:
-        wandb_close(wandb_run, wandb_exit_code)
+        wandb_close(wandb_exit_code)
 
     return True
 
@@ -657,7 +657,7 @@ class WorkflowExecutor:
 
             except Exception as e:
                 logging.error(f"Workflow {workflow}: An error occurred: {e}")
-                wandb_close(wandb_run, exit_code=1)
+                wandb_close(exit_code=1)
                 cleanup_memory()  # Clean up even after failure
 
         return True
