@@ -42,13 +42,13 @@ def wandb_init(
     return wandb_run, log_dir
 
 
-def wandb_close(wandb_run=None, exit_code=0):
+def wandb_close(exit_code=0):
 
     try:
         logging.info(f"Closing Weights and Biases run with exit_code {exit_code}")
         wandb.finish(exit_code=exit_code)
     except:
-        logging.warning(f"WandB run {wandb_run} could not be finished")
+        logging.warning(f"WandB run could not be finished")
     try:
         wandb.tensorboard.unpatch()
     except:
