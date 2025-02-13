@@ -12,9 +12,10 @@ IGNORE_FUTURE_WARNINGS = True
 if IGNORE_FUTURE_WARNINGS:
     warnings.simplefilter("ignore", category=FutureWarning)
 
+import gc
+
 import fiftyone as fo
 import torch.multiprocessing as mp
-import wandb
 from tqdm import tqdm
 
 from config.config import (
@@ -47,7 +48,8 @@ wandb_run = None  # Init globally to make sure it is available
 def signal_handler(sig, frame):
     logging.error("You pressed Ctrl+C!")
     try:
-        wandb.finish()
+        wandb_close(exit_code=1)
+        cleanup_memory()
     except:
         pass
     sys.exit(0)
@@ -351,6 +353,30 @@ def workflow_ensemble_exploration(
     return True
 
 
+def cleanup_memory():
+    logging.info("Starting memoy cleanup")
+    """Clean up memory after workflow execution"""
+    # Clear CUDA cache
+    if torch.cuda.is_available():
+        logging.info("Empty CUDA cache")
+        torch.cuda.empty_cache()
+
+    # Force garbage collection
+    gc.collect()
+
+    # Clear any leftover tensors
+    for obj in gc.get_objects():
+        try:
+            if torch.is_tensor(obj):
+                logging.info(f"Delete torch object {obj}.")
+                del obj
+        except:
+            pass
+
+    # Final garbage collection
+    gc.collect()
+
+
 class WorkflowExecutor:
     def __init__(
         self,
@@ -376,7 +402,8 @@ class WorkflowExecutor:
                 f"Running workflow {workflow} for dataset {self.selected_dataset}"
             )
             try:
-                torch.cuda.empty_cache()
+                cleanup_memory()  # Clean before each workflow
+
                 if workflow == "aws_download":
                     dataset, dataset_name = workflow_aws_download()
 
@@ -602,9 +629,13 @@ class WorkflowExecutor:
                     )
                     return False
 
+                cleanup_memory()  # Clean after each workflow
+                logging.info(f"Completed workflow {workflow} and cleaned up memory")
+
             except Exception as e:
                 logging.error(f"Workflow {workflow}: An error occurred: {e}")
                 wandb_close(wandb_run, exit_code=1)
+                cleanup_memory()  # Clean up even after failure
 
         return True
 
