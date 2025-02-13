@@ -4,11 +4,11 @@ import logging
 
 import fiftyone.utils.coco as fouc
 import torch
-from datasets import Dataset, Split
 from torch.multiprocessing import Manager
 from torchvision.io import decode_image
 from tqdm import tqdm
 
+from datasets import Dataset, Split
 from utils.dataset_loader import get_split
 
 

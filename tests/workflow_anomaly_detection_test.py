@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 
@@ -6,10 +7,16 @@ import pytest
 from fiftyone import ViewField as F
 from fiftyone.utils.huggingface import load_from_hub
 
+import config.config
 from main import workflow_anomaly_detection
 from utils.anomaly_detection_data_preparation import AnomalyDetectionDataPreparation
 from utils.dataset_loader import _post_process_dataset
 from utils.logging import configure_logging
+
+
+@pytest.fixture(autouse=True)
+def deactivate_hf_sync():
+    config.config.HF_DO_UPLOAD = False
 
 
 @pytest.fixture(autouse=True)
@@ -97,9 +104,9 @@ def test_anomaly_detection_inference(dataset_v51, load_local):
         if os.path.exists(local_folder):
             try:
                 shutil.rmtree(local_folder)
-                print(f"Deleted local weights folder: {local_folder}")
+                logging.warning(f"Deleted local weights folder: {local_folder}")
             except Exception as e:
-                print(f"Error deleting local weights folder: {e}")
+                logging.error(f"Error deleting local weights folder: {e}")
 
     prep_config = {
         "location": "cam3",
@@ -126,7 +133,7 @@ def test_anomaly_detection_inference(dataset_v51, load_local):
     results_field = "pred_anomaly_Padim"
     try:
         data_preparer.dataset_ano_dec.delete_sample_field(results_field)
-        print(f"Removed field {results_field} from dataset.")
+        logging.warning(f"Removed field {results_field} from dataset.")
     except:
         pass
 
@@ -139,14 +146,14 @@ def test_anomaly_detection_inference(dataset_v51, load_local):
     )
 
     # Select all samples that are considered anomalous
-    print(
+    logging.info(
         f"Sample fields in dataset: {data_preparer.dataset_ano_dec.get_field_schema()}"
     )
     view_anomalies = data_preparer.dataset_ano_dec.filter_labels(
         results_field, F("label") == "anomaly"
     )
     n_samples_selected = len(view_anomalies)
-    print(
+    logging.info(
         f"{n_samples_selected} samples anomalies found that were assessed by anomaly detection."
     )
 

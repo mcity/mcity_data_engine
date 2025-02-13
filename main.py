@@ -212,18 +212,18 @@ def workflow_embedding_selection(
     return True
 
 
-def workflow_auto_labeling(
-    dataset, dataset_info, hf_dataset, run_config, wandb_activate=True
-):
+def workflow_auto_labeling(dataset, hf_dataset, run_config, wandb_activate=True):
     try:
         wandb_exit_code = 0
         wandb_run = wandb_init(
             run_name=run_config["model_name"],
             project_name="Auto Labeling Hugging Face",
-            dataset_name=dataset_info["name"],
+            dataset_name=run_config["v51_dataset_name"],
             config=run_config,
             wandb_activate=wandb_activate,
         )
+
+        logging.error
 
         detector = HuggingFaceObjectDetection(
             dataset=dataset,
@@ -424,7 +424,7 @@ class WorkflowExecutor:
                     parameter_group = "mcity"
                     parameters = WORKFLOWS["aws_download"].get(parameter_group, None)
                     if parameter_group == "mcity":
-                        dataset, dataset_name = workflow_aws_download()
+                        dataset, dataset_name = workflow_aws_download(parameters)
                     else:
                         logging.error(
                             f"The parameter group {parameter_group} is not supported. As AWS are highly specific, please provide a separate set of parameters and a workflow."
@@ -541,7 +541,6 @@ class WorkflowExecutor:
                             logging.error(
                                 f"Selected model source {model_source} is not supported."
                             )
-
                     if SUPPORTED_MODEL_SOURCES[0] in selected_model_source:
                         hf_models = config_autolabel["hf_models_objectdetection"]
 
@@ -592,7 +591,6 @@ class WorkflowExecutor:
                             # Workflow
                             workflow_auto_labeling(
                                 self.dataset,
-                                self.dataset_info,
                                 hf_dataset,
                                 run_config,
                             )
@@ -680,7 +678,7 @@ def main():
     # Launch V51 session
     dataset.reload()
     dataset.save()
-    logging.info(f"Launching Voxel51 session for dataset {dataset.name}:")
+    logging.info(f"Launching Voxel51 session for dataset {dataset_info["name"]}:")
 
     # Dataset stats
     logging.debug(dataset)

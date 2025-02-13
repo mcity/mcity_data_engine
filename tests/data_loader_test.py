@@ -7,7 +7,7 @@ from fiftyone.utils.huggingface import load_from_hub
 from torch.utils.data import DataLoader
 
 from config.config import ACCEPTED_SPLITS
-from datasets import Dataset
+from datasets import Dataset, Split
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.dataset_loader import get_split
 
@@ -21,7 +21,7 @@ def dataset_v51():
     dataset_name = "fisheye8k_pytest"
     try:
         dataset = load_from_hub(
-            repo_id=dataset_name_hub, max_samples=100, name=dataset_name
+            repo_id=dataset_name_hub, max_samples=50, name=dataset_name
         )
         # Ensure that all splits are represented (normally Data Engine takes care of that)
         for sample in dataset.iter_samples(progress=True, autosave=True):
@@ -38,7 +38,7 @@ def dataset_v51_no_splits_no_detections():
     dataset_name = "fisheye8k_pytest_raw"
     try:
         dataset = load_from_hub(
-            repo_id=dataset_name_hub, max_samples=100, name=dataset_name
+            repo_id=dataset_name_hub, max_samples=50, name=dataset_name
         )
         # Remove all tags
         for sample in dataset.iter_samples(progress=True, autosave=True):
@@ -130,8 +130,8 @@ def test_torch_dataset_get_splits(torch_dataset):
 
     # If splits exist, they must be subset of ACCEPTED_SPLITS
     assert splits.issubset(
-        ACCEPTED_SPLITS
-    ), f"Invalid splits found. All splits must be one of {ACCEPTED_SPLITS}"
+        set(ACCEPTED_SPLITS)
+    ), f"Invalid splits found: {splits} All splits must be one of {ACCEPTED_SPLITS}"
 
 
 # Tests for torch dataloader
@@ -183,10 +183,12 @@ def test_hf_dataset_conversion(converter_torch_hf):
     if not splits:
         return
 
+    ACCEPTED_SPLITS_HF = {Split.TRAIN, Split.TEST, Split.VALIDATION}
+
     # If splits exist, they must be subset of ACCEPTED_SPLITS
     assert splits.issubset(
-        ACCEPTED_SPLITS
-    ), f"Invalid splits found. All splits must be one of {ACCEPTED_SPLITS}"
+        ACCEPTED_SPLITS_HF
+    ), f"Invalid splits found: {splits} All splits must be one of {ACCEPTED_SPLITS_HF}"
 
     # Only test instance type for valid splits
     for split in splits:

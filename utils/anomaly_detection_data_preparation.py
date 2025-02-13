@@ -44,13 +44,13 @@ class AnomalyDetectionDataPreparation:
 
     def fisheye8k(self):
         logging.info(
-            f"Running anomaly detection data preparation for dataset {self.dataset.name}"
+            f"Running anomaly detection data preparation for dataset {self.dataset_name}"
         )
-        dataset_name_ano_dec = f"{self.dataset.name}_anomaly_detection"
+        dataset_name_ano_dec = f"{self.dataset_name}_anomaly_detection"
 
         if dataset_name_ano_dec in fo.list_datasets():
             logging.info(
-                f"Dataset {self.dataset.name} was already prepared for anomaly detection."
+                f"Dataset {self.dataset_name} was already prepared for anomaly detection."
             )
             self.dataset_ano_dec = fo.load_dataset(dataset_name_ano_dec)
         else:

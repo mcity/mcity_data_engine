@@ -5,6 +5,8 @@ import re
 
 import wandb
 
+from config.config import WANDB_ACTIVE
+
 
 def wandb_init(
     run_name,
@@ -27,7 +29,7 @@ def wandb_init(
     wandb.tensorboard.patch(root_logdir=log_dir)
 
     wandb_run = None
-    if wandb_activate:
+    if wandb_activate and WANDB_ACTIVE:
         wandb_run = wandb.init(
             name=run_name,
             sync_tensorboard=sync_tensorboard,
@@ -37,6 +39,10 @@ def wandb_init(
         )
         logging.info(
             f"Launched Weights and Biases run {wandb_run} with config {config}"
+        )
+    else:
+        logging.warning(
+            "WandB run was not initialized. Set 'wandb_activate' and WANDB_ACTIVE to True."
         )
 
     return wandb_run, log_dir

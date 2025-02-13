@@ -57,6 +57,8 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
                 logging.warning(
                     f"Dataset size was reduced from {len(dataset)} to {len(combined_view)} samples."
                 )
+                # FIXME Returning a view instead of a dataset introduces problems
+                # Return a dataset, maybe name it {dataset.name}-{len(view)}
                 return combined_view, dataset_info
 
     else:
@@ -155,6 +157,10 @@ def _align_splits(dataset):
         ) = _separate_split(dataset, current_split="test", new_split="val")
         logging.warning(
             f"Dataset had no 'val' split. Split {n_samples_current_split} 'test' into {n_samples_current_split_changed} 'val' and {n_samples_new_split} 'test'."
+        )
+    if "train" in splits and "test" not in splits and "val" not in splits:
+        logging.error(
+            "Found 'train' split, but 'test' and 'val' splits are missing. Training will fail."
         )
 
     # Logging of available splits
