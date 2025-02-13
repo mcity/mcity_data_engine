@@ -21,7 +21,7 @@ WORKFLOWS = {
         "selected_dataset_overwrite": True,
     },
     "embedding_selection": {
-        "mode": "compute",  # "compute" or "load"
+        "mode": "load",  # "compute" or "load"
         "parameters": {
             "compute_representativeness": 0.99,
             "compute_unique_images_greedy": 0.01,

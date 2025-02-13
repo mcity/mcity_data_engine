@@ -61,6 +61,7 @@ jobs:
     - name: Pull request for updated documentation
       uses: peter-evans/create-pull-request@v7
       with:
+        base: main
         title: '[pdoc] Updated documentation'
         commit-message: Update documentation
         delete-branch: true
