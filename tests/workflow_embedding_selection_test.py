@@ -37,7 +37,7 @@ def test_embedding_selection(dataset_v51, mode):
     MODEL_NAME = "mobilenet-v2-imagenet-torch"
     selected_mode = mode
     if mode == "load_hf":
-        local_folder = "./output/embeddings/fisheye8k/"
+        local_folder = "./output/embeddings/fisheye8k_v51_brain_test/"
         model_name_key = MODEL_NAME.replace("-", "_")
         for filename in os.listdir(local_folder):
             if model_name_key in filename:
