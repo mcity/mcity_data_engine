@@ -16,7 +16,7 @@ def wandb_init(
     log_dir_root="logs/tensorboard/",
     log_dir=None,
     sync_tensorboard=True,
-    wandb_activate_local=True,
+    wandb_activate=True,
 ):
     # Logging dir
     if log_dir is None:
@@ -29,7 +29,7 @@ def wandb_init(
     wandb.tensorboard.patch(root_logdir=log_dir)
 
     wandb_run = None
-    if wandb_activate_local and WANDB_ACTIVE:
+    if wandb_activate and WANDB_ACTIVE:
         wandb_run = wandb.init(
             name=run_name,
             sync_tensorboard=sync_tensorboard,
