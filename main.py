@@ -55,17 +55,17 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-def workflow_aws_download(wandb_activate=True):
+def workflow_aws_download(parameters, wandb_activate=True):
+    dataset = None
+    dataset_name = None
+    wandb_exit_code = 0
+    files_to_be_downloaded = 0
     try:
-        dataset = None
-        dataset_name = None
-        wandb_exit_code = 0
-
         # Config
-        bucket = WORKFLOWS["aws_download"]["bucket"]
-        prefix = WORKFLOWS["aws_download"]["prefix"]
-        download_path = WORKFLOWS["aws_download"]["download_path"]
-        test_run = WORKFLOWS["aws_download"]["test_run"]
+        bucket = parameters["bucket"]
+        prefix = parameters["prefix"]
+        download_path = parameters["download_path"]
+        test_run = parameters["test_run"]
 
         # Logging
         now = datetime.datetime.now()
@@ -91,9 +91,14 @@ def workflow_aws_download(wandb_activate=True):
             test_run=test_run,
         )
 
-        sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = (
-            aws_downloader.download_files(log_dir=log_dir)
-        )
+        (
+            sub_folder,
+            files,
+            files_to_be_downloaded,
+            DOWNLOAD_NUMBER_SUCCESS,
+            DOWNLOAD_SIZE_SUCCESS,
+        ) = aws_downloader.download_files(log_dir=log_dir)
+
         dataset = aws_downloader.decode_data(
             sub_folder=sub_folder,
             files=files,
@@ -106,9 +111,9 @@ def workflow_aws_download(wandb_activate=True):
         wandb_exit_code = 1
 
     finally:
-        wandb_close(wandb_run, wandb_exit_code)
+        wandb_close(wandb_exit_code)
 
-    return dataset, dataset_name
+    return dataset, dataset_name, files_to_be_downloaded
 
 
 def workflow_anomaly_detection(
@@ -151,7 +156,7 @@ def workflow_anomaly_detection(
         )
         wandb_exit_code = 1
     finally:
-        wandb_close(wandb_run=wandb_run, exit_code=wandb_exit_code)
+        wandb_close(exit_code=wandb_exit_code)
 
     return True
 
@@ -202,7 +207,7 @@ def workflow_embedding_selection(
         logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
         wandb_exit_code = 1
     finally:
-        wandb_close(wandb_run, wandb_exit_code)
+        wandb_close(wandb_exit_code)
 
     return True
 
@@ -242,7 +247,7 @@ def workflow_auto_labeling(
         wandb_exit_code = 1
 
     finally:
-        wandb_close(wandb_run, wandb_exit_code)
+        wandb_close(wandb_exit_code)
 
     return True
 
@@ -289,7 +294,7 @@ def workflow_auto_labeling_custom_codetr(
         logging.error(f"Error during CoDETR training: {e}")
         wandb_exit_code = 1
     finally:
-        wandb_close(wandb_run, wandb_exit_code)
+        wandb_close(wandb_exit_code)
 
     return True
 
@@ -355,7 +360,7 @@ def workflow_ensemble_exploration(
         wandb_exit_code = 1
 
     finally:
-        wandb_close(wandb_run, wandb_exit_code)
+        wandb_close(wandb_exit_code)
 
     return True
 
@@ -416,7 +421,14 @@ class WorkflowExecutor:
                 cleanup_memory()  # Clean before each workflow
 
                 if workflow == "aws_download":
-                    dataset, dataset_name = workflow_aws_download()
+                    parameter_group = "mcity"
+                    parameters = WORKFLOWS["aws_download"].get(parameter_group, None)
+                    if parameter_group == "mcity":
+                        dataset, dataset_name = workflow_aws_download()
+                    else:
+                        logging.error(
+                            f"The parameter group {parameter_group} is not supported. As AWS are highly specific, please provide a separate set of parameters and a workflow."
+                        )
 
                     # Select downloaded dataset for further workflows if configured
                     if dataset is not None:
@@ -645,7 +657,7 @@ class WorkflowExecutor:
 
             except Exception as e:
                 logging.error(f"Workflow {workflow}: An error occurred: {e}")
-                wandb_close(wandb_run, exit_code=1)
+                wandb_close(exit_code=1)
                 cleanup_memory()  # Clean up even after failure
 
         return True

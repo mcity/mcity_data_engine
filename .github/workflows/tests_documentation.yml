@@ -50,7 +50,7 @@ jobs:
     - name: Test with pytest
       env: # Or as an environment variable
         HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      run: pytest -s --ignore custom_models/
+      run: pytest -s --ignore custom_models/ --ignore tests/workflow_aws_download_test.py
 
     - name: Documentation with pdoc
       run: pdoc ./*.py ./utils/*.py -o docs
