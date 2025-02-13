@@ -23,7 +23,7 @@ def dataset_v51():
     dataset_name = "fisheye8k_v51_brain_test"
     try:
         dataset = load_from_hub(
-        repo_id=dataset_name_hub, max_samples=50, name=dataset_name
+            repo_id=dataset_name_hub, max_samples=50, name=dataset_name
         )
     except:
         dataset = fo.load_dataset(dataset_name)
@@ -37,7 +37,7 @@ def test_embedding_selection(dataset_v51, mode):
     MODEL_NAME = "mobilenet-v2-imagenet-torch"
     selected_mode = mode
     if mode == "load_hf":
-        local_folder = "./output/embeddings/fisheye8k/"
+        local_folder = "./output/embeddings/fisheye8k_v51_brain_test/"
         model_name_key = MODEL_NAME.replace("-", "_")
         for filename in os.listdir(local_folder):
             if model_name_key in filename:
