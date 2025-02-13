@@ -28,6 +28,7 @@ BRAIN_TAXONOMY = {
     "value_find_unique_neighbour": "greedy_neighbour",
     "value_compute_uniqueness_neighbour": "deterministic_neighbour",
     "value_compute_representativeness_neighbour": "representativeness_neighbour",
+    "field_model": "embedding_selection_model",
 }
 
 
@@ -307,6 +308,7 @@ class EmbeddingSelection:
 
         start_time = time.time()
         field = BRAIN_TAXONOMY["field"]
+        field_model = BRAIN_TAXONOMY["field_model"]
         value = BRAIN_TAXONOMY["value_compute_representativeness"]
         methods_cluster_center = ["cluster-center", "cluster-center-downweight"]
 
@@ -335,9 +337,9 @@ class EmbeddingSelection:
             # quant_threshold = self.dataset.quantiles(key, threshold)
             # view = self.dataset.match(F(key) >= quant_threshold)
             view = self.dataset.match(F(method_key) >= threshold)
-            # TODO Speed up with values() and set_values()
             for sample in view.iter_samples(progress=True, autosave=True):
                 sample[field] = value
+                sample[field_model] = self.model_name_key
         end_time = time.time()
         duration = end_time - start_time
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
@@ -371,6 +373,7 @@ class EmbeddingSelection:
         sample_count = len(self.dataset.view())
         num_of_unique = perct_unique * sample_count
         field = BRAIN_TAXONOMY["field"]
+        field_model = BRAIN_TAXONOMY["field_model"]
         value = BRAIN_TAXONOMY["value_find_unique"]
 
         # Check if any sample has the label label_unique:
@@ -388,6 +391,7 @@ class EmbeddingSelection:
             ):
                 sample = self.dataset[unique_id]
                 sample[field] = value
+                sample[field_model] = self.model_name_key
                 sample.save()
         end_time = time.time()
         duration = end_time - start_time
@@ -415,6 +419,7 @@ class EmbeddingSelection:
 
         start_time = time.time()
         field = BRAIN_TAXONOMY["field"]
+        field_model = BRAIN_TAXONOMY["field_model"]
         value = BRAIN_TAXONOMY["value_compute_uniqueness"]
 
         fob.compute_uniqueness(
@@ -429,6 +434,7 @@ class EmbeddingSelection:
         view = self.dataset.match(F(self.uniqueness_key) >= threshold)
         for sample in view.iter_samples(progress=True, autosave=True):
             sample[field] = value
+            sample[field_model] = self.model_name_key
         end_time = time.time()
         duration = end_time - start_time
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
@@ -462,6 +468,7 @@ class EmbeddingSelection:
         """
         start_time = time.time()
         field = BRAIN_TAXONOMY["field"]
+        field_model = BRAIN_TAXONOMY["field_model"]
         field_neighbour_distance = "distance"
 
         value_find_unique = BRAIN_TAXONOMY["value_find_unique"]
@@ -530,6 +537,7 @@ class EmbeddingSelection:
                             and sample_neighbour[field] == None
                         ):
                             sample_neighbour[field] = value
+                            sample_neighbour[field_model] = self.model_name_key
                             sample_neighbour.save()
         end_time = time.time()
         duration = end_time - start_time
