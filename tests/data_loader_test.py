@@ -185,8 +185,8 @@ def test_hf_dataset_conversion(converter_torch_hf):
 
     # If splits exist, they must be subset of ACCEPTED_SPLITS
     assert splits.issubset(
-        ACCEPTED_SPLITS
-    ), f"Invalid splits found. All splits must be one of {ACCEPTED_SPLITS}"
+        set(ACCEPTED_SPLITS)
+    ), f"Invalid splits found: {splits} All splits must be one of {ACCEPTED_SPLITS}"
 
     # Only test instance type for valid splits
     for split in splits:
