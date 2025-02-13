@@ -590,7 +590,6 @@ class WorkflowExecutor:
                             # Workflow
                             workflow_auto_labeling(
                                 self.dataset,
-                                self.dataset_info,
                                 hf_dataset,
                                 run_config,
                             )
