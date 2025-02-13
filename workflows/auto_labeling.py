@@ -20,6 +20,7 @@ import numpy as np
 import psutil
 import torch
 import torch.multiprocessing as mp
+import wandb
 from accelerate.test_utils.testing import get_backend
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
@@ -35,8 +36,14 @@ from transformers import (
     TrainingArguments,
 )
 
-import wandb
-from config.config import GLOBAL_SEED, HF_DO_UPLOAD, HF_ROOT, NUM_WORKERS, WORKFLOWS
+from config.config import (
+    GLOBAL_SEED,
+    HF_DO_UPLOAD,
+    HF_ROOT,
+    NUM_WORKERS,
+    WANDB_ACTIVE,
+    WORKFLOWS,
+)
 from datasets import Split
 from utils.logging import configure_logging
 
@@ -190,11 +197,12 @@ class ZeroShotObjectDetection:
             self.tensorboard_root, self.dataset_name, experiment_name
         )
         wandb.tensorboard.patch(root_logdir=log_directory)
-        wandb.init(
-            name=f"queue_size_monitor_{os.getpid()}",
-            job_type="inference",
-            project="Zero Shot Object Detection",
-        )
+        if WANDB_ACTIVE:
+            wandb.init(
+                name=f"queue_size_monitor_{os.getpid()}",
+                job_type="inference",
+                project="Zero Shot Object Detection",
+            )
         writer = SummaryWriter(log_dir=log_directory)
 
         step = 0
@@ -253,11 +261,12 @@ class ZeroShotObjectDetection:
             self.tensorboard_root, self.dataset_name, experiment_name
         )
         wandb.tensorboard.patch(root_logdir=log_directory)
-        wandb.init(
-            name=f"post_process_{os.getpid()}",
-            job_type="inference",
-            project="Zero Shot Object Detection",
-        )
+        if WANDB_ACTIVE:
+            wandb.init(
+                name=f"post_process_{os.getpid()}",
+                job_type="inference",
+                project="Zero Shot Object Detection",
+            )
         writer = SummaryWriter(log_dir=log_directory)
         n_processed_images = 0
 
@@ -507,12 +516,13 @@ class ZeroShotObjectDetection:
             experiment_name = f"{model_name}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{device}"
             log_directory = os.path.join(root_log_dir, dataset_name, experiment_name)
             wandb.tensorboard.patch(root_logdir=log_directory)
-            wandb.init(
-                name=f"{model_name}_{device}",
-                job_type="inference",
-                project="Zero Shot Object Detection",
-                config=metadata,
-            )
+            if WANDB_ACTIVE:
+                wandb.init(
+                    name=f"{model_name}_{device}",
+                    job_type="inference",
+                    project="Zero Shot Object Detection",
+                    config=metadata,
+                )
             writer = SummaryWriter(log_dir=log_directory)
 
             # Inference Loop
@@ -570,13 +580,19 @@ class ZeroShotObjectDetection:
                     signal.alarm(0)  # Cancel the alarm
 
             # Flawless execution
-            wandb.finish(exit_code=0)
+            wandb_exit_code = 0
 
         except Exception as e:
+            wandb_exit_code = 1
             run_successful = False
-            wandb.finish(exit_code=1)
             logging.error(f"Error in Process {os.getpid()}: {e}")
         finally:
+            try:
+                wandb.finish(exit_code=wandb_exit_code)
+            except:
+                pass
+
+            # Explicit removal from device
             del (
                 processor,
                 model,
@@ -584,7 +600,8 @@ class ZeroShotObjectDetection:
                 outputs,
                 result,
                 dataloader,
-            )  # Explicit removal from device
+            )
+
             torch.cuda.empty_cache()
             wandb.tensorboard.unpatch()
             if writer:
