@@ -259,8 +259,8 @@ class Anodec:
         try:
             if os.path.exists(self.model_path):
                 file_path = self.model_path
+                logging.info(f"Loading model {self.model_name} from disk: {file_path}")
             else:
-
                 download_dir = self.model_path.replace("model.pt", "")
                 logging.info(
                     f"Downloading model {self.hf_repo_name} from Hugging Face to {download_dir}"
