@@ -1,4 +1,6 @@
+import logging
 import os
+import shutil
 
 import fiftyone as fo
 import pytest
@@ -8,6 +10,12 @@ from fiftyone.utils.huggingface import load_from_hub
 from main import workflow_anomaly_detection
 from utils.anomaly_detection_data_preparation import AnomalyDetectionDataPreparation
 from utils.dataset_loader import _post_process_dataset
+from utils.logging import configure_logging
+
+
+@pytest.fixture(autouse=True)
+def setup_logging():
+    configure_logging()
 
 
 @pytest.fixture
@@ -45,7 +53,7 @@ def test_anomaly_detection_train(dataset_v51):
         "epochs": 1,
         "early_stop_patience": 1,
         "data_root": data_preparer.export_root,
-        "mode": "train",
+        "mode": ["train"],
     }
 
     eval_metrics = ["AUPR", "AUROC"]
@@ -81,7 +89,19 @@ def test_anomaly_detection_train(dataset_v51):
     assert n_samples_selected != 0, "No samples were selected through anomaly detection"
 
 
-def test_anomaly_detection_inference(dataset_v51):
+@pytest.mark.parametrize("load_local", [True, False])
+def test_anomaly_detection_inference(dataset_v51, load_local):
+
+    if load_local == False:
+        # Delete local weights if they exist so they get downloaded from Hugging Face
+        local_folder = "./output/models/anomalib/Padim/fisheye8k"
+        if os.path.exists(local_folder):
+            try:
+                shutil.rmtree(local_folder)
+                print(f"Deleted local weights folder: {local_folder}")
+            except Exception as e:
+                print(f"Error deleting local weights folder: {e}")
+
     prep_config = {
         "location": "cam3",
         "rare_classes": ["Bus"],
@@ -97,7 +117,7 @@ def test_anomaly_detection_inference(dataset_v51):
         "epochs": 1,
         "early_stop_patience": 1,
         "data_root": data_preparer.export_root,
-        "mode": "inference",
+        "mode": ["inference"],
     }
 
     eval_metrics = ["AUPR", "AUROC"]
@@ -130,4 +150,5 @@ def test_anomaly_detection_inference(dataset_v51):
     print(
         f"{n_samples_selected} samples anomalies found that were assessed by anomaly detection."
     )
+
     assert n_samples_selected != 0, "No samples were selected through anomaly detection"
