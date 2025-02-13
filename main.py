@@ -212,15 +212,13 @@ def workflow_embedding_selection(
     return True
 
 
-def workflow_auto_labeling(
-    dataset, dataset_info, hf_dataset, run_config, wandb_activate=True
-):
+def workflow_auto_labeling(dataset, hf_dataset, run_config, wandb_activate=True):
     try:
         wandb_exit_code = 0
         wandb_run = wandb_init(
             run_name=run_config["model_name"],
             project_name="Auto Labeling Hugging Face",
-            dataset_name=dataset_info["name"],
+            dataset_name=dataset.name,
             config=run_config,
             wandb_activate=wandb_activate,
         )
