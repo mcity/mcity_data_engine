@@ -130,8 +130,8 @@ def test_torch_dataset_get_splits(torch_dataset):
 
     # If splits exist, they must be subset of ACCEPTED_SPLITS
     assert splits.issubset(
-        ACCEPTED_SPLITS
-    ), f"Invalid splits found. All splits must be one of {ACCEPTED_SPLITS}"
+        set(ACCEPTED_SPLITS)
+    ), f"Invalid splits found: {splits} All splits must be one of {ACCEPTED_SPLITS}"
 
 
 # Tests for torch dataloader
