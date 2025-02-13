@@ -6,10 +6,16 @@ import pytest
 from fiftyone import ViewField as F
 from fiftyone.utils.huggingface import load_from_hub
 
+import config.config
 from main import workflow_anomaly_detection
 from utils.anomaly_detection_data_preparation import AnomalyDetectionDataPreparation
 from utils.dataset_loader import _post_process_dataset
 from utils.logging import configure_logging
+
+
+@pytest.fixture(autouse=True)
+def deactivate_hf_sync():
+    config.config.HF_DO_UPLOAD = False
 
 
 @pytest.fixture(autouse=True)
