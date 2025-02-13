@@ -20,7 +20,9 @@ def test_aws_download(selected_dataset_overwrite):
         "selected_dataset_overwrite": selected_dataset_overwrite,
     }
 
-    dataset, dataset_name, files_to_be_downloaded = workflow_aws_download(config)
+    dataset, dataset_name, files_to_be_downloaded = workflow_aws_download(
+        config, wandb_activate=False
+    )
 
     if len(dataset) == 0 and config["test_run"] == True:
         assert files_to_be_downloaded != 0, "No files found in AWS bucket"
