@@ -6,13 +6,16 @@ import time
 import warnings
 from typing import Dict, List
 
+import torch
+
 IGNORE_FUTURE_WARNINGS = True
 if IGNORE_FUTURE_WARNINGS:
     warnings.simplefilter("ignore", category=FutureWarning)
 
+import gc
+
 import fiftyone as fo
 import torch.multiprocessing as mp
-import wandb
 from tqdm import tqdm
 
 from config.config import (
@@ -45,7 +48,8 @@ wandb_run = None  # Init globally to make sure it is available
 def signal_handler(sig, frame):
     logging.error("You pressed Ctrl+C!")
     try:
-        wandb.finish()
+        wandb_close(exit_code=1)
+        cleanup_memory()
     except:
         pass
     sys.exit(0)
@@ -142,7 +146,9 @@ def workflow_anomaly_detection(
             ano_dec.run_inference()
 
     except Exception as e:
-        logging.error(f"Error in Anomaly Detection: {e}")
+        logging.error(
+            f"Error in Anomaly Detection for model {run_config['model_name']}: {e}"
+        )
         wandb_exit_code = 1
     finally:
         wandb_close(wandb_run=wandb_run, exit_code=wandb_exit_code)
@@ -165,25 +171,32 @@ def workflow_embedding_selection(
         embedding_selector = EmbeddingSelection(
             dataset, dataset_info, MODEL_NAME, log_dir
         )
-        embedding_selector.compute_embeddings(config["mode"])
-        embedding_selector.compute_similarity()
 
-        # Find representative and unique samples as center points for further selections
-        thresholds = config["parameters"]
-        embedding_selector.compute_representativeness(
-            thresholds["compute_representativeness"]
-        )
-        embedding_selector.compute_unique_images_greedy(
-            thresholds["compute_unique_images_greedy"]
-        )
-        embedding_selector.compute_unique_images_deterministic(
-            thresholds["compute_unique_images_deterministic"]
-        )
+        if embedding_selector.model_already_used == False:
 
-        # Select samples similar to the center points to enlarge the dataset
-        embedding_selector.compute_similar_images(
-            thresholds["compute_similar_images"], thresholds["neighbour_count"]
-        )
+            embedding_selector.compute_embeddings(config["mode"])
+            embedding_selector.compute_similarity()
+
+            # Find representative and unique samples as center points for further selections
+            thresholds = config["parameters"]
+            embedding_selector.compute_representativeness(
+                thresholds["compute_representativeness"]
+            )
+            embedding_selector.compute_unique_images_greedy(
+                thresholds["compute_unique_images_greedy"]
+            )
+            embedding_selector.compute_unique_images_deterministic(
+                thresholds["compute_unique_images_deterministic"]
+            )
+
+            # Select samples similar to the center points to enlarge the dataset
+            embedding_selector.compute_similar_images(
+                thresholds["compute_similar_images"], thresholds["neighbour_count"]
+            )
+        else:
+            logging.warning(
+                f"Skipping model {embedding_selector.model_name_key}. It was already used for sample selection."
+            )
 
     except Exception as e:
         logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
@@ -347,6 +360,34 @@ def workflow_ensemble_exploration(
     return True
 
 
+def cleanup_memory():
+    logging.info("Starting memory cleanup")
+    """Clean up memory after workflow execution"""
+    # Clear CUDA cache
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    # Force garbage collection
+    gc.collect()
+
+    # Clear any leftover tensors
+    n_deleted_torch_objects = 0
+    for obj in tqdm(
+        gc.get_objects(), desc="Deleting objects from Python Garbage Collector"
+    ):
+        try:
+            if torch.is_tensor(obj):
+                del obj
+                n_deleted_torch_objects += 1
+        except:
+            pass
+
+    logging.info(f"Deleted {n_deleted_torch_objects} torch objects")
+
+    # Final garbage collection
+    gc.collect()
+
+
 class WorkflowExecutor:
     def __init__(
         self,
@@ -372,6 +413,8 @@ class WorkflowExecutor:
                 f"Running workflow {workflow} for dataset {self.selected_dataset}"
             )
             try:
+                cleanup_memory()  # Clean before each workflow
+
                 if workflow == "aws_download":
                     dataset, dataset_name = workflow_aws_download()
 
@@ -597,9 +640,13 @@ class WorkflowExecutor:
                     )
                     return False
 
+                cleanup_memory()  # Clean after each workflow
+                logging.info(f"Completed workflow {workflow} and cleaned up memory")
+
             except Exception as e:
                 logging.error(f"Workflow {workflow}: An error occurred: {e}")
                 wandb_close(wandb_run, exit_code=1)
+                cleanup_memory()  # Clean up even after failure
 
         return True
 
@@ -624,8 +671,8 @@ def main():
     logging.info(f"Launching Voxel51 session for dataset {dataset.name}:")
 
     # Dataset stats
-    logging.info(dataset)
-    fo.pprint(dataset.stats(include_media=True))
+    logging.debug(dataset)
+    logging.debug(dataset.stats(include_media=True))
 
     # V51 UI launch
     session = fo.launch_app(

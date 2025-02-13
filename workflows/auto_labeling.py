@@ -144,8 +144,8 @@ class ZeroShotObjectDetection:
             )  # od for Object Detection
             # Check if data already stored in V51 dataset
             if pred_key in dataset_schema:
-                logging.info(
-                    f"Model {model_name} predictions already stored in Voxel51 dataset."
+                logging.warning(
+                    f"Skipping model {model_name}. Predictions already stored in Voxel51 dataset."
                 )
             # Check if data already stored on disk
             elif os.path.isdir(os.path.join(self.detections_root, model_name_key)):
