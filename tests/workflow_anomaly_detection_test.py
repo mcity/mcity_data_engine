@@ -1,3 +1,5 @@
+import os
+
 import fiftyone as fo
 import pytest
 from fiftyone import ViewField as F
@@ -79,7 +81,6 @@ def test_anomaly_detection_train(dataset_v51):
 
 
 def test_anomaly_detection_inference(dataset_v51):
-
     results_field = "pred_anomaly_Padim"
     try:
         dataset_v51.delete_sample_field(results_field)
