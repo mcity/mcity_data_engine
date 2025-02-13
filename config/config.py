@@ -230,9 +230,10 @@ WORKFLOWS = {
     },
 }
 
-ACCEPTED_SPLITS = {"train", "val", "test"}
+ACCEPTED_SPLITS = ["train", "val", "test"]
 HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
 HF_DO_UPLOAD = True
+WANDB_ACTIVE = True
 
 cpu_count = os.cpu_count()
 NUM_WORKERS = 32 if cpu_count > 32 else cpu_count
