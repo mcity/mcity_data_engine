@@ -171,25 +171,32 @@ def workflow_embedding_selection(
         embedding_selector = EmbeddingSelection(
             dataset, dataset_info, MODEL_NAME, log_dir
         )
-        embedding_selector.compute_embeddings(config["mode"])
-        embedding_selector.compute_similarity()
 
-        # Find representative and unique samples as center points for further selections
-        thresholds = config["parameters"]
-        embedding_selector.compute_representativeness(
-            thresholds["compute_representativeness"]
-        )
-        embedding_selector.compute_unique_images_greedy(
-            thresholds["compute_unique_images_greedy"]
-        )
-        embedding_selector.compute_unique_images_deterministic(
-            thresholds["compute_unique_images_deterministic"]
-        )
+        if embedding_selector.model_already_used == False:
 
-        # Select samples similar to the center points to enlarge the dataset
-        embedding_selector.compute_similar_images(
-            thresholds["compute_similar_images"], thresholds["neighbour_count"]
-        )
+            embedding_selector.compute_embeddings(config["mode"])
+            embedding_selector.compute_similarity()
+
+            # Find representative and unique samples as center points for further selections
+            thresholds = config["parameters"]
+            embedding_selector.compute_representativeness(
+                thresholds["compute_representativeness"]
+            )
+            embedding_selector.compute_unique_images_greedy(
+                thresholds["compute_unique_images_greedy"]
+            )
+            embedding_selector.compute_unique_images_deterministic(
+                thresholds["compute_unique_images_deterministic"]
+            )
+
+            # Select samples similar to the center points to enlarge the dataset
+            embedding_selector.compute_similar_images(
+                thresholds["compute_similar_images"], thresholds["neighbour_count"]
+            )
+        else:
+            logging.warning(
+                f"Skipping model {embedding_selector.model_name_key}. It was already used for sample selection."
+            )
 
     except Exception as e:
         logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
@@ -354,24 +361,28 @@ def workflow_ensemble_exploration(
 
 
 def cleanup_memory():
-    logging.info("Starting memoy cleanup")
+    logging.info("Starting memory cleanup")
     """Clean up memory after workflow execution"""
     # Clear CUDA cache
     if torch.cuda.is_available():
-        logging.info("Empty CUDA cache")
         torch.cuda.empty_cache()
 
     # Force garbage collection
     gc.collect()
 
     # Clear any leftover tensors
-    for obj in gc.get_objects():
+    n_deleted_torch_objects = 0
+    for obj in tqdm(
+        gc.get_objects(), desc="Deleting objects from Python Garbage Collector"
+    ):
         try:
             if torch.is_tensor(obj):
-                logging.info(f"Delete torch object {obj}.")
                 del obj
+                n_deleted_torch_objects += 1
         except:
             pass
+
+    logging.info(f"Deleted {n_deleted_torch_objects} torch objects")
 
     # Final garbage collection
     gc.collect()
