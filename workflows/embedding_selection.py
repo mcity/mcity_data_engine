@@ -86,9 +86,11 @@ class EmbeddingSelection:
         )  # Float instead of Int for visualization in US
 
         # Init count for samples only once. Is intilized with None by add_sample_field
-        test_sample = self.dataset.take(1)
+        test_sample = self.dataset.first()
         if test_sample[BRAIN_TAXONOMY["field_count"]] is None:
-            self.dataset.set_values(BRAIN_TAXONOMY["field_count"], 0)
+            logging.info("Setting all selection counts to 0")
+            zeros = [0] * len(self.dataset)  # Needs to be an iterablr
+            self.dataset.set_values(BRAIN_TAXONOMY["field_count"], zeros, progress=True)
 
         # Determine if model was already used for selection
         self.model_already_used = False
