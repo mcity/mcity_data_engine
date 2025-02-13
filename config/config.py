@@ -1,12 +1,12 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["anomaly_detection"]
+SELECTED_WORKFLOW = ["auto_labeling"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
     "name": "fisheye8k",
-    "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
+    "n_samples": 200,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
 PERSISTENT = True  # If V51 database is stored
@@ -32,9 +32,9 @@ WORKFLOWS = {
             "neighbour_count": 3,
         },
         "embedding_models": [  # Select from V51 "Embeddings" models https://docs.voxel51.com/model_zoo/models.html
-            # "clip-vit-base32-torch",
-            # "open-clip-torch",
-            # "dinov2-vits14-torch",
+            "clip-vit-base32-torch",
+            "open-clip-torch",
+            "dinov2-vits14-torch",
             "dinov2-vits14-reg-torch",
             "mobilenet-v2-imagenet-torch",
             "resnet152-imagenet-torch",
@@ -46,7 +46,7 @@ WORKFLOWS = {
         ],
     },
     "anomaly_detection": {
-        "mode": ["inference"],  # "train" and "inference" supported
+        "mode": ["train"],  # "train" and "inference" supported
         "epochs": 36,
         "early_stop_patience": 5,
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
@@ -76,7 +76,7 @@ WORKFLOWS = {
             "hf_models_objectdetection"
         ],  # "hf_models_objectdetection" and "custom_codetr" and "ultralytics" supported
         "n_worker_dataloader": 3,
-        "epochs": 36,
+        "epochs": 1,
         "early_stop_patience": 5,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -230,14 +230,20 @@ WORKFLOWS = {
     },
 }
 
+# Global settings
 ACCEPTED_SPLITS = ["train", "val", "test"]
-HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
-HF_DO_UPLOAD = True
-WANDB_ACTIVE = True
-
 cpu_count = os.cpu_count()
 NUM_WORKERS = 32 if cpu_count > 32 else cpu_count
 GLOBAL_SEED = 0
+
+# Hugging Face Config
+HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
+HF_DO_UPLOAD = False
+
+# Weights and Biases Config
+WANDB_ACTIVE = True
+
+# Voxel51 Config
 V51_ADDRESS = "localhost"
 V51_PORT = 5151
 V51_REMOTE = True

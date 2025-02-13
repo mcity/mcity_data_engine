@@ -218,10 +218,12 @@ def workflow_auto_labeling(dataset, hf_dataset, run_config, wandb_activate=True)
         wandb_run = wandb_init(
             run_name=run_config["model_name"],
             project_name="Auto Labeling Hugging Face",
-            dataset_name=dataset.name,
+            dataset_name=run_config["v51_dataset_name"],
             config=run_config,
             wandb_activate=wandb_activate,
         )
+
+        logging.error
 
         detector = HuggingFaceObjectDetection(
             dataset=dataset,
@@ -539,7 +541,6 @@ class WorkflowExecutor:
                             logging.error(
                                 f"Selected model source {model_source} is not supported."
                             )
-
                     if SUPPORTED_MODEL_SOURCES[0] in selected_model_source:
                         hf_models = config_autolabel["hf_models_objectdetection"]
 
@@ -677,7 +678,7 @@ def main():
     # Launch V51 session
     dataset.reload()
     dataset.save()
-    logging.info(f"Launching Voxel51 session for dataset {dataset.name}:")
+    logging.info(f"Launching Voxel51 session for dataset {dataset_info["name"]}:")
 
     # Dataset stats
     logging.debug(dataset)
