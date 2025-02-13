@@ -59,7 +59,7 @@ class Anodec:
         )
 
         data_root = os.path.abspath(self.config["data_root"])
-        dataset_folder_ano_dec_masks = f"{self.dataset_name}_masks/"
+        dataset_folder_ano_dec_masks = f"{self.dataset_name}_anomaly_detection_masks/"
         filepath_masks = os.path.join(data_root, dataset_folder_ano_dec_masks)
 
         filepath_train = self.normal_data.take(1).first().filepath

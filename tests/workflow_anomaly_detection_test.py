@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 
@@ -103,9 +104,9 @@ def test_anomaly_detection_inference(dataset_v51, load_local):
         if os.path.exists(local_folder):
             try:
                 shutil.rmtree(local_folder)
-                print(f"Deleted local weights folder: {local_folder}")
+                logging.warning(f"Deleted local weights folder: {local_folder}")
             except Exception as e:
-                print(f"Error deleting local weights folder: {e}")
+                logging.error(f"Error deleting local weights folder: {e}")
 
     prep_config = {
         "location": "cam3",
@@ -132,7 +133,7 @@ def test_anomaly_detection_inference(dataset_v51, load_local):
     results_field = "pred_anomaly_Padim"
     try:
         data_preparer.dataset_ano_dec.delete_sample_field(results_field)
-        print(f"Removed field {results_field} from dataset.")
+        logging.warning(f"Removed field {results_field} from dataset.")
     except:
         pass
 
@@ -145,14 +146,14 @@ def test_anomaly_detection_inference(dataset_v51, load_local):
     )
 
     # Select all samples that are considered anomalous
-    print(
+    logging.info(
         f"Sample fields in dataset: {data_preparer.dataset_ano_dec.get_field_schema()}"
     )
     view_anomalies = data_preparer.dataset_ano_dec.filter_labels(
         results_field, F("label") == "anomaly"
     )
     n_samples_selected = len(view_anomalies)
-    print(
+    logging.info(
         f"{n_samples_selected} samples anomalies found that were assessed by anomaly detection."
     )
 
