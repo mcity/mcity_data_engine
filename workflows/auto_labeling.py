@@ -348,9 +348,13 @@ class ZeroShotObjectDetection:
         max_n_cpus = len(cpu_cores)
         torch.set_num_threads(max_n_cpus)
 
-        # Set GPU
-        logging.info(f"GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)}")
-        device = torch.device(f"cuda:{gpu_id}")
+        # Set device
+        if torch.cuda.is_available() and gpu_id < torch.cuda.device_count():
+            logging.info(f"GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)}")
+            device = torch.device(f"cuda:{gpu_id}")
+        else:
+            logging.warning(f"GPU {gpu_id} is not available. Falling back to CPU.")
+            device = torch.device("cpu")
 
         run_successful = None
         with torch.cuda.device(gpu_id):
