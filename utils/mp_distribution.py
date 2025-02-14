@@ -30,7 +30,7 @@ class Distributer:
                 If nvidia-smi is not available or fails, returns an empty list.
         """
         if not torch.cuda.is_available():
-            logging.warning("CUDA is not available - skipping GPU compute mode check")
+            logging.warning("CUDA is not available. Skipping GPU compute mode check")
             return []
 
         try:
@@ -129,6 +129,11 @@ class ZeroShotDistributer(Distributer):
         n_runs = len(runs)
 
         logging.info(f"Running with multiprocessing on {self.n_gpus} GPUs.")
+        if self.n_gpus == 0:
+            logging.warning(
+                "No GPU detected. Attempting to launch 1 inference process on the CPU."
+            )
+            self.n_gpus = 1
         n_parallel_processes = min(self.n_gpus, n_runs)
 
         n_post_processing_workers = int(n_post_worker * n_parallel_processes)
