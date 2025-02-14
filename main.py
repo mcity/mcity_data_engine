@@ -336,6 +336,10 @@ def workflow_zero_shot_object_detection(dataset, dataset_info, config):
             "All zero shot models already have predictions stored in the dataset."
         )
 
+    # To make new fields available to follow-up processes
+    dataset.reload()
+    dataset.save()
+
     return True
 
 
