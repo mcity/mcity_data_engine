@@ -27,7 +27,6 @@ def dataset_v51():
         dataset = load_from_hub(
             repo_id=dataset_name_hub, max_samples=2, name=dataset_name
         )
-        dataset.persistent = True
     except:
         dataset = fo.load_dataset(dataset_name)
     return dataset
