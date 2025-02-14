@@ -42,7 +42,7 @@ from workflows.aws_download import AwsDownloader
 from workflows.embedding_selection import EmbeddingSelection
 from workflows.ensemble_exploration import EnsembleExploration
 from workflows.class_mapping import ClassMapper
-
+from torch.utils.tensorboard import SummaryWriter
 
 def signal_handler(sig, frame):
     logging.error("You pressed Ctrl+C!")
@@ -205,6 +205,7 @@ def workflow_zero_shot_object_detection(dataset, dataset_info):
 def workflow_ensemble_exploration():
     pass
 
+
 def workflow_class_mapping(dataset, dataset_info):
     """
     Execute class mapping workflow by delegating all processing to ClassMapper.
@@ -220,15 +221,24 @@ def workflow_class_mapping(dataset, dataset_info):
     model_name = models[0]  # Use the pre-selected model from config.
     print("\nClass Mapping Workflow")
     print(f"Selected Model Source: {model_source}")
-    print(f"Running model: {model_name}")
+    #print(f"Running model: {model_name}")
 
     # Initialize the mapper and run the mapping process with wandb logging enabled.
-    mapper = ClassMapper(dataset, model_name, config)
-    try:
-        stats = mapper.run_mapping(interactive=True, wandb_logging=True)
-    except Exception as e:
-        logging.error(f"Error during mapping: {e}")
-        return False
+    for model_name in models:
+        print(f"\nRunning model: {model_name}")
+        mapper = ClassMapper(dataset, model_name, config)
+        try:
+            stats = mapper.run_mapping(interactive=True, wandb_logging=True)
+        except Exception as e:
+            logging.error(f"Error during mapping with model {model_name}: {e}")
+            continue
+
+    #mapper = ClassMapper(dataset, model_name, config)
+    #try:
+    #    stats = mapper.run_mapping(interactive=True, wandb_logging=True)
+    #except Exception as e:
+    #    logging.error(f"Error during mapping: {e}")
+    #    return False
 
     # Display final statistics.
     total_vehicles = stats["total_processed"]
