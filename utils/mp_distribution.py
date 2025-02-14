@@ -27,18 +27,23 @@ class Distributer:
 
         Returns:
             list: A list of strings where each string represents the compute mode of a GPU.
-                  If an error occurs while running the `nvidia-smi` command, an empty list is returned.
-
-        Raises:
-            subprocess.CalledProcessError: If the `nvidia-smi` command fails to execute.
+                If nvidia-smi is not available or fails, returns an empty list.
         """
+        if not torch.cuda.is_available():
+            logging.warning("CUDA is not available - skipping GPU compute mode check")
+            return []
+
         try:
-            result = subprocess.run(["nvidia-smi", "--query-gpu=compute_mode", "--format=csv,noheader"],
-                                    capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=compute_mode", "--format=csv,noheader"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
             modes = result.stdout.strip().split("\n")
             return modes
-        except subprocess.CalledProcessError as e:
-            logging.error("Error running nvidia-smi:", e)
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            logging.warning(f"Could not check GPU compute modes: {e}")
             return []
 
     def distribute_cpu_cores(self, cpu_cores, n_processes):
@@ -69,7 +74,7 @@ class Distributer:
 
 class ZeroShotDistributer(Distributer):
     def __init__(self, config, n_samples, dataset_info, detector):
-        super().__init__()      # Call the parent class's __init__ method
+        super().__init__()  # Call the parent class's __init__ method
         self.config = config
         self.n_samples = n_samples
         self.dataset_info = dataset_info
@@ -82,7 +87,6 @@ class ZeroShotDistributer(Distributer):
 
         runs = []
         run_id = 0
-
 
         for model_name in models_dict:
             batch_size = models_dict[model_name]["batch_size"]
@@ -100,20 +104,21 @@ class ZeroShotDistributer(Distributer):
                     is_subset = False
                 else:
                     is_subset = True
-                    chunk_size += (leftover_samples if split_id == n_chunks - 1 else 0)
+                    chunk_size += leftover_samples if split_id == n_chunks - 1 else 0
                     chunk_index_end = chunk_index_start + chunk_size
 
                 # Add entry to runs
-                runs.append({
+                runs.append(
+                    {
                         "run_id": run_id,
                         "model_name": model_name,
                         "is_subset": is_subset,
                         "chunk_index_start": chunk_index_start,
                         "chunk_index_end": chunk_index_end,
                         "batch_size": batch_size,
-                        "dataset_name": dataset_name
-                    })
-
+                        "dataset_name": dataset_name,
+                    }
+                )
 
                 # Update start index for next chunk
                 if n_chunks > 1:
@@ -131,15 +136,25 @@ class ZeroShotDistributer(Distributer):
 
         # Create results queues, max one per GPU
         result_queues = []
-        max_queue_size = 3                                      # Balance between flexibility and available GPU memory for inference (data stays on GPU for post-processing)
+        max_queue_size = 3  # Balance between flexibility and available GPU memory for inference (data stays on GPU for post-processing)
         for index in range(n_parallel_processes):
-            results_queue = mp.Queue(maxsize=max_queue_size)    # Ensure that no GPU memory overflow occurs
+            results_queue = mp.Queue(
+                maxsize=max_queue_size
+            )  # Ensure that no GPU memory overflow occurs
             result_queues.append(results_queue)
 
         # Dedicated worker that continuously measures the lengths of the result queues
         result_queues_sizes = mp.Manager().list([0] * n_parallel_processes)
-        largest_queue_index = mp.Value('i', -1)
-        size_updater = mp.Process(target=self.detector.update_queue_sizes_worker, args=(result_queues, result_queues_sizes, largest_queue_index, max_queue_size))
+        largest_queue_index = mp.Value("i", -1)
+        size_updater = mp.Process(
+            target=self.detector.update_queue_sizes_worker,
+            args=(
+                result_queues,
+                result_queues_sizes,
+                largest_queue_index,
+                max_queue_size,
+            ),
+        )
         size_updater.start()
 
         # Create queue with all planned runs
@@ -149,40 +164,66 @@ class ZeroShotDistributer(Distributer):
             task_queue.put(run_metadata)
 
         # Flags for synchronizations
-        inference_finished = mp.Value('b', False)
-        post_processing_finished = mp.Value('b', False)
+        inference_finished = mp.Value("b", False)
+        post_processing_finished = mp.Value("b", False)
 
         # Distribute CPU cores
         if (n_parallel_processes + n_post_processing_workers) > len(self.cpu_cores):
-            logging.error(f"Launching {n_parallel_processes + n_post_processing_workers} processes with only {len(self.cpu_cores)} CPU cores.")
+            logging.error(
+                f"Launching {n_parallel_processes + n_post_processing_workers} processes with only {len(self.cpu_cores)} CPU cores."
+            )
 
         cpu_cores_post_processing = self.cpu_cores[:n_post_processing_workers]
         cpu_cores_inference = self.cpu_cores[n_post_processing_workers:]
-        cpu_cores_per_process = self.distribute_cpu_cores(cpu_cores_inference, n_parallel_processes)
+        cpu_cores_per_process = self.distribute_cpu_cores(
+            cpu_cores_inference, n_parallel_processes
+        )
 
         # Create post-processing worker processes
         post_processing_processes = []
         for i in range(n_post_processing_workers):
-            p = mp.Process(target=self.detector.process_outputs_worker, args=(result_queues, result_queues_sizes, largest_queue_index, inference_finished))
+            p = mp.Process(
+                target=self.detector.process_outputs_worker,
+                args=(
+                    result_queues,
+                    result_queues_sizes,
+                    largest_queue_index,
+                    inference_finished,
+                ),
+            )
             post_processing_processes.append(p)
             p.start()
             logging.info(f"Started post-processing worker {index}")
 
         # Create worker processes, max one per GPU
         inference_processes = []
-        gpu_worker_done_events = [mp.Event() for _ in range(n_parallel_processes)]  # Signals when a GPU worker is done
+        gpu_worker_done_events = [
+            mp.Event() for _ in range(n_parallel_processes)
+        ]  # Signals when a GPU worker is done
 
         for index in range(n_parallel_processes):
             gpu_id = index
             cpu_cores_for_run = cpu_cores_per_process[gpu_id]
             results_queue = result_queues[index]
             done_event = gpu_worker_done_events[index]
-            p = mp.Process(target=self.detector.gpu_worker, args=(gpu_id, cpu_cores_for_run, task_queue, results_queue, done_event, post_processing_finished))
+            p = mp.Process(
+                target=self.detector.gpu_worker,
+                args=(
+                    gpu_id,
+                    cpu_cores_for_run,
+                    task_queue,
+                    results_queue,
+                    done_event,
+                    post_processing_finished,
+                ),
+            )
             inference_processes.append(p)
             p.start()
             logging.info(f"Started inference worker {index} for GPU {gpu_id}")
 
-        logging.info(f"Started {len(post_processing_processes)} post-processing workers and {len(inference_processes)} GPU inference workers.")
+        logging.info(
+            f"Started {len(post_processing_processes)} post-processing workers and {len(inference_processes)} GPU inference workers."
+        )
 
         # Wait for all inference tasks to complete
         while not all(worker_event.is_set() for worker_event in gpu_worker_done_events):
