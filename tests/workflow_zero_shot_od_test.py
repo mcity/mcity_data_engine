@@ -4,7 +4,13 @@ import fiftyone as fo
 import pytest
 from fiftyone.utils.huggingface import load_from_hub
 
+import config.config
 from main import configure_logging, workflow_zero_shot_object_detection
+
+
+@pytest.fixture(autouse=True)
+def deactivate_wandb_sync():
+    config.config.WANDB_ACTIVE = False
 
 
 @pytest.fixture(autouse=True)
@@ -19,7 +25,7 @@ def dataset_v51():
     dataset_name = "fisheye8k_zero_shot_test"
     try:
         dataset = load_from_hub(
-            repo_id=dataset_name_hub, max_samples=1, name=dataset_name
+            repo_id=dataset_name_hub, max_samples=2, name=dataset_name
         )
     except:
         dataset = fo.load_dataset(dataset_name)
