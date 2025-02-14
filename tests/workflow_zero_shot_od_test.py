@@ -5,7 +5,11 @@ import pytest
 from fiftyone.utils.huggingface import load_from_hub
 
 import config.config
-from main import configure_logging, workflow_zero_shot_object_detection
+from main import (
+    configure_logging,
+    workflow_ensemble_exploration,
+    workflow_zero_shot_object_detection,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -29,6 +33,7 @@ def dataset_v51():
         )
     except:
         dataset = fo.load_dataset(dataset_name)
+    dataset.persistent = True
     return dataset
 
 
@@ -161,3 +166,63 @@ def test_zero_shot_inference(dataset_v51):
             f"Expected at least 1 detection, got {n_detections}"
         )
         logging.info(f"Found {n_detections} detections for model {field}")
+
+
+def test_ensemble_exploration(dataset_v51):
+
+    dataset_info = {
+        "name": "fisheye8k_zero_shot_test",
+        "v51_type": "FiftyOneDataset",
+        "splits": [],
+    }
+
+    run_config = {
+        "field_includes": "pred_zsod_",  # V51 field used for detections, "pred_zsod_" default for zero-shot object detection models
+        "agreement_threshold": 3,  # Threshold for n models necessary for agreement between models
+        "iou_threshold": 0.5,  # Threshold for IoU between bboxes to consider them as overlapping
+        "max_bbox_size": 0.01,  # Value between [0,1] for the max size of considered bboxes
+        "positive_classes": [  # Classes to consider, must be subset of available classes in the detections. Example for Vulnerable Road Users.
+            "skater",
+            "child",
+            "bicycle",
+            "bicyclist",
+            "cyclist",
+            "bike",
+            "rider",
+            "motorcycle",
+            "motorcyclist",
+            "pedestrian",
+            "person",
+            "walker",
+            "jogger",
+            "runner",
+            "skateboarder",
+            "scooter",
+            "delivery driver",
+        ],
+    }
+
+    workflow_ensemble_exploration(
+        dataset_v51, dataset_info, run_config, wandb_activate=False
+    )
+
+    fields_of_interest_include = "pred_zsod_"
+    dataset_fields = dataset_v51.get_field_schema()
+    fields_of_interest = [
+        field for field in dataset_fields if fields_of_interest_include in field
+    ]
+
+    n_unique_field = "n_unique_exploration"
+    for sample in dataset_v51.iter_samples(progress=True, autosave=False):
+        # Check if field was populated with unique instances
+        n_unique = sample[n_unique_field]
+        assert n_unique > 0, f"No unique instances found in sample {sample}"
+        n_samples_with_tags = 0
+        # Check if detections were tagged
+        for field in fields_of_interest:
+            detections = sample[field].detections
+            for detection in detections:
+                tags = detection.tags
+                if len(tags) > 0:
+                    n_samples_with_tags += 1
+        assert n_samples_with_tags > 0, "No samples with tags detected"
