@@ -40,7 +40,7 @@ from workflows.auto_labeling import (
 )
 from workflows.aws_download import AwsDownloader
 from workflows.embedding_selection import EmbeddingSelection
-from workflows.ensemble_exploration import EnsembleExploration
+from workflows.ensemble_selection import EnsembleSelection
 
 wandb_run = None  # Init globally to make sure it is available
 
@@ -343,23 +343,21 @@ def workflow_zero_shot_object_detection(dataset, dataset_info, config):
     return True
 
 
-def workflow_ensemble_exploration(
-    dataset, dataset_info, run_config, wandb_activate=True
-):
+def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activate=True):
     try:
         wandb_exit_code = 0
 
         wandb_run = wandb_init(
-            run_name="Ensemble Exploration",
-            project_name="Ensemble Exploration",
+            run_name="Selection by Ensemble",
+            project_name="Ensemble Selection",
             dataset_name=dataset_info["name"],
             config=run_config,
             wandb_activate=wandb_activate,
         )
-        explorer = EnsembleExploration(dataset, run_config)
-        explorer.ensemble_exploration()
+        ensemble_selecter = EnsembleSelection(dataset, run_config)
+        ensemble_selecter.ensemble_selection()
     except Exception as e:
-        logging.error(f"An error occured during Ensemble Exploration: {e}")
+        logging.error(f"An error occured during Ensemble Selection: {e}")
         wandb_exit_code = 1
 
     finally:
@@ -641,12 +639,12 @@ class WorkflowExecutor:
                         self.dataset, self.dataset_info, config
                     )
 
-                elif workflow == "ensemble_exploration":
+                elif workflow == "ensemble_selection":
                     # Config
-                    run_config = WORKFLOWS["ensemble_exploration"]
+                    run_config = WORKFLOWS["ensemble_selection"]
 
                     # Workflow
-                    workflow_ensemble_exploration(
+                    workflow_ensemble_selection(
                         self.dataset, self.dataset_info, run_config
                     )
 

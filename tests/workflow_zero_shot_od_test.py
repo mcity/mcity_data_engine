@@ -7,7 +7,7 @@ from fiftyone.utils.huggingface import load_from_hub
 import config.config
 from main import (
     configure_logging,
-    workflow_ensemble_exploration,
+    workflow_ensemble_selection,
     workflow_zero_shot_object_detection,
 )
 
@@ -168,7 +168,7 @@ def test_zero_shot_inference(dataset_v51):
         logging.info(f"Found {n_detections} detections for model {field}")
 
 
-def test_ensemble_exploration(dataset_v51):
+def test_ensemble_selection(dataset_v51):
 
     dataset_info = {
         "name": "fisheye8k_zero_shot_test",
@@ -202,7 +202,7 @@ def test_ensemble_exploration(dataset_v51):
         ],
     }
 
-    workflow_ensemble_exploration(
+    workflow_ensemble_selection(
         dataset_v51, dataset_info, run_config, wandb_activate=False
     )
 
@@ -212,7 +212,7 @@ def test_ensemble_exploration(dataset_v51):
         field for field in dataset_fields if fields_of_interest_include in field
     ]
 
-    n_unique_field = "n_unique_exploration"
+    n_unique_field = "n_unique_ensemble_selection"
     for sample in dataset_v51.iter_samples(progress=True, autosave=False):
         # Check if field was populated with unique instances
         n_unique = sample[n_unique_field]

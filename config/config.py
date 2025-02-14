@@ -1,12 +1,12 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["auto_labeling"]
+SELECTED_WORKFLOW = ["ensemble_selection"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
     "name": "fisheye8k",
-    "n_samples": 200,  # 'None' (full dataset) or 'int' (subset of the dataset)
+    "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
 PERSISTENT = True  # If V51 database is stored
@@ -197,7 +197,7 @@ WORKFLOWS = {
             "delivery driver",
         ],
     },
-    "ensemble_exploration": {
+    "ensemble_selection": {
         "field_includes": "pred_zsod_",  # V51 field used for detections, "pred_zsod_" default for zero-shot object detection models
         "agreement_threshold": 3,  # Threshold for n models necessary for agreement between models
         "iou_threshold": 0.5,  # Threshold for IoU between bboxes to consider them as overlapping
