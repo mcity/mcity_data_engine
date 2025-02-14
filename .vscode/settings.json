@@ -11,5 +11,10 @@
   "git.autofetch": true,
   "files.trimFinalNewlines": true,
   "files.trimTrailingWhitespace": true,
-  "notebook.formatOnSave.enabled": true
+  "notebook.formatOnSave.enabled": true,
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true
 }

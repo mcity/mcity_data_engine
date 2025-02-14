@@ -156,12 +156,28 @@ def test_dataloader_length(dataloader, torch_dataset):
     assert len(dataloader) == (len(torch_dataset) + 3) // batch_size
 
 
-def test_dataloader_batch(dataloader):
+def test_dataloader_batch(dataloader, torch_dataset):
     """Test getting a batch from the dataloader."""
+    total_samples = len(torch_dataset)
+    samples_processed = 0
+
     for batch in dataloader:
         imgs, targets = batch
-        assert len(imgs) == batch_size
-        assert len(targets) == batch_size
+        current_batch_size = len(imgs)
+
+        # For the last batch, size might be smaller
+        if samples_processed + batch_size > total_samples:
+            expected_size = total_samples - samples_processed
+            assert (
+                current_batch_size == expected_size
+            ), f"Last batch size should be {expected_size} but got {current_batch_size}"
+        else:
+            assert (
+                current_batch_size == batch_size
+            ), f"Batch size should be {batch_size} but got {current_batch_size}"
+
+        assert len(targets) == current_batch_size
+
         for img, target in zip(imgs, targets):
             assert isinstance(img, torch.Tensor)
             assert "bbox" in target
@@ -169,6 +185,13 @@ def test_dataloader_batch(dataloader):
             assert "image_id" in target
             assert "area" in target
             assert "iscrowd" in target
+
+        samples_processed += current_batch_size
+
+    # Verify we processed all samples
+    assert (
+        samples_processed == total_samples
+    ), f"Processed {samples_processed} samples but dataset has {total_samples}"
 
 
 # Tests for HF dataset
@@ -308,7 +331,8 @@ def test_detection_preservation(dataset_v51, torch_dataset, converter_torch_hf):
     # Convert to HF dataset and get sample
     hf_dataset = converter_torch_hf.convert()
     split = get_split(v51_sample)
-    hf_sample = hf_dataset[split][0]
+    split_mapping = {"train": Split.TRAIN, "val": Split.VALIDATION, "test": Split.TEST}
+    hf_sample = hf_dataset[split_mapping[split]][0]
 
     # Verify HF detection count matches
     assert len(hf_sample["objects"]["bbox"]) == v51_det_count
