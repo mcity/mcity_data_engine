@@ -71,10 +71,16 @@ class EnsembleExploration:
         pred_prefix = config["field_includes"]
         self.v51_agreement_tag = "detections_overlap"
 
+        logging.info(
+            f"Collecting detections of fields with prefix '{pred_prefix}'. Successful detections will be tagged with '{self.v51_agreement_tag}'."
+        )
+
         # Get V51 fields that store detection results
         self.v51_detection_fields = []
         dataset_schema = self.dataset.get_field_schema()
-        for field in dataset_schema:
+        for field in tqdm(
+            dataset_schema, desc="Collecting dataset fields with detections"
+        ):
             if pred_prefix in field:
                 self.v51_detection_fields.append(field)
 
