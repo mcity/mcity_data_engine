@@ -299,7 +299,7 @@ def workflow_auto_labeling_custom_codetr(
     return True
 
 
-def workflow_zero_shot_object_detection(dataset, dataset_info):
+def workflow_zero_shot_object_detection(dataset, dataset_info, config):
     # Set multiprocessing mode for CUDA multiprocessing
     try:
         mp.set_start_method("spawn", force=True)
@@ -313,7 +313,6 @@ def workflow_zero_shot_object_detection(dataset, dataset_info):
 
     # Zero-shot object detector models from Huggingface
     # Optimized for parallel multi-GPU inference, also supports single GPU
-    config = WORKFLOWS["auto_labeling_zero_shot"]
     dataset_torch = FiftyOneTorchDatasetCOCO(dataset)
     detector = ZeroShotObjectDetection(
         dataset_torch=dataset_torch, dataset_info=dataset_info, config=config
@@ -336,6 +335,10 @@ def workflow_zero_shot_object_detection(dataset, dataset_info):
         logging.info(
             "All zero shot models already have predictions stored in the dataset."
         )
+
+    # To make new fields available to follow-up processes
+    dataset.reload()
+    dataset.save()
 
     return True
 
@@ -633,7 +636,10 @@ class WorkflowExecutor:
                             )
 
                 elif workflow == "auto_labeling_zero_shot":
-                    workflow_zero_shot_object_detection(self.dataset, self.dataset_info)
+                    config = WORKFLOWS["auto_labeling_zero_shot"]
+                    workflow_zero_shot_object_detection(
+                        self.dataset, self.dataset_info, config
+                    )
 
                 elif workflow == "ensemble_exploration":
                     # Config

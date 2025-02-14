@@ -3,7 +3,6 @@ import datetime
 import json
 import os
 import re
-import shutil
 import time
 import traceback
 
@@ -13,7 +12,10 @@ from aws_stream_filter_framerate import SampleTimestamps
 from dotenv import load_dotenv
 from tqdm import tqdm
 
+from config.config import WANDB_ACTIVE
+
 load_dotenv()
+
 
 class AwsDownloader:
 
@@ -58,10 +60,14 @@ class AwsDownloader:
         self.run_name = f"data_engine_rolling_{formatted_start}_to_{formatted_end}"
 
         # Setup storage folders
-        self.data_target = os.path.join(storage_target_root, subfolder_data, self.run_name)
+        self.data_target = os.path.join(
+            storage_target_root, subfolder_data, self.run_name
+        )
         os.makedirs(self.data_target, exist_ok=True)
 
-        self.log_target = os.path.join(storage_target_root, subfolder_logs, self.run_name)
+        self.log_target = os.path.join(
+            storage_target_root, subfolder_logs, self.run_name
+        )
         os.makedirs(self.log_target, exist_ok=True)
 
         # Connect to AWS S3
@@ -78,11 +84,12 @@ class AwsDownloader:
         self.file_names, n_files_to_download = self._mcity_select_data(cameras_dict)
 
         # Tracking
-        wandb.init(
-            name=self.run_name,
-            job_type="download",
-            project="Data Engine Download",
-        )
+        if WANDB_ACTIVE == True:
+            wandb.init(
+                name=self.run_name,
+                job_type="download",
+                project="Pre-Processing in AWS",
+            )
 
         targets = []
         step = 0
@@ -91,7 +98,9 @@ class AwsDownloader:
                 for aws_source in cameras_dict[camera]["aws-sources"]:
                     bucket = aws_source.split("/", 1)[0]
                     for date in cameras_dict[camera]["aws-sources"][aws_source]:
-                        for file in cameras_dict[camera]["aws-sources"][aws_source][date]:
+                        for file in cameras_dict[camera]["aws-sources"][aws_source][
+                            date
+                        ]:
                             try:
                                 log_run = {}
 
@@ -112,8 +121,9 @@ class AwsDownloader:
                                 time_end = time.time()
                                 duration = time_end - time_start
                                 mb_per_s = file_size_mb / duration
-                                wandb.log({"download/mb_per_s": mb_per_s}, step)
-                                wandb.log({"download/s": duration}, step)
+                                if WANDB_ACTIVE:
+                                    wandb.log({"download/mb_per_s": mb_per_s}, step)
+                                    wandb.log({"download/s": duration}, step)
 
                                 # Sample data
                                 time_start = time.time()
@@ -123,7 +133,7 @@ class AwsDownloader:
                                 timestamps = sampler.get_timestamps()
 
                                 # We need at least 2 timestamps to calculate a framerate
-                                if (len(timestamps) >= 2):  
+                                if len(timestamps) >= 2:
                                     # Get framerate
                                     framerate_hz, timestamps, upper_bound_threshold = (
                                         sampler.get_framerate(timestamps, log_run)
@@ -148,8 +158,14 @@ class AwsDownloader:
                                         time_end = time.time()
                                         duration = time_end - time_start
                                         timestamps_per_s = len(timestamps) / duration
-                                        wandb.log({"sampling/timestamps_per_s": timestamps_per_s}, step)
-                                        wandb.log({"sampling/s": duration}, step)
+                                        if WANDB_ACTIVE:
+                                            wandb.log(
+                                                {
+                                                    "sampling/timestamps_per_s": timestamps_per_s
+                                                },
+                                                step,
+                                            )
+                                            wandb.log({"sampling/s": duration}, step)
 
                                         # Upload data
                                         time_start = time.time()
@@ -160,9 +176,11 @@ class AwsDownloader:
                                         time_end = time.time()
                                         duration = time_end - time_start
                                         mb_per_s = file_size_mb / duration
-                                        wandb.log({"upload/mb_per_s": mb_per_s}, step)
-                                        wandb.log({"upload/s": duration}, step)
-
+                                        if WANDB_ACTIVE:
+                                            wandb.log(
+                                                {"upload/mb_per_s": mb_per_s}, step
+                                            )
+                                            wandb.log({"upload/s": duration}, step)
 
                                     # Update log
                                     self.log_sampling[file] = log_run
@@ -179,30 +197,33 @@ class AwsDownloader:
                                 # Update progress bar
                                 step += 1
                                 pbar.update(1)
-                        
+
                             except Exception as e:
                                 print(f"Error in mcity_gridsmart_loader: {e}")
                                 print(traceback.format_exc())
 
         # Finish tracking
-        wandb.finish()
+        try:
+            wandb.finish()
+        except:
+            pass
         pbar.close()
 
         # Store download log
         name_log_download = "FileDownload"
         self.log_download["data"] = cameras_dict
-        log_name = (self.log_time + "_" + name_log_download).replace(
-            " ", "_"
-        ).replace(":", "_") + ".json"
+        log_name = (self.log_time + "_" + name_log_download).replace(" ", "_").replace(
+            ":", "_"
+        ) + ".json"
         log_file_path = os.path.join(self.log_target, log_name)
         with open(log_file_path, "w") as json_file:
             json.dump(self.log_download, json_file, indent=4)
 
         # Store sampling log
         name_log_sampling = "FileSampling"
-        log_name = (self.log_time + "_" + name_log_sampling).replace(
-            " ", "_"
-        ).replace(":", "_") + ".json"
+        log_name = (self.log_time + "_" + name_log_sampling).replace(" ", "_").replace(
+            ":", "_"
+        ) + ".json"
         log_file_path = os.path.join(self.log_target, log_name)
         with open(log_file_path, "w") as json_file:
             json.dump(self.log_sampling, json_file, indent=4)
