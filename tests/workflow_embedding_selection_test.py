@@ -22,6 +22,9 @@ def setup_logging():
     configure_logging()
 
 
+max_samples = 100
+
+
 @pytest.fixture
 def dataset_v51():
     """Fixture to load a FiftyOne dataset from the hub."""
@@ -29,7 +32,7 @@ def dataset_v51():
     dataset_name = "fisheye8k_v51_brain_test"
     try:
         dataset = load_from_hub(
-            repo_id=dataset_name_hub, max_samples=100, name=dataset_name
+            repo_id=dataset_name_hub, max_samples=max_samples, name=dataset_name
         )
     except:
         dataset = fo.load_dataset(dataset_name)
