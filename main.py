@@ -117,7 +117,12 @@ def workflow_aws_download(parameters, wandb_activate=True):
 
 
 def workflow_anomaly_detection(
-    dataset, dataset_info, eval_metrics, run_config, wandb_activate=True
+    dataset_normal,
+    dataset_ano_dec,
+    dataset_info,
+    eval_metrics,
+    run_config,
+    wandb_activate=True,
 ):
     try:
         # Weights and Biases
@@ -131,24 +136,32 @@ def workflow_anomaly_detection(
         )
 
         # Workflow
-        ano_dec = Anodec(
-            dataset=dataset,
-            eval_metrics=eval_metrics,
-            dataset_info=dataset_info,
-            config=run_config,
-            tensorboard_output=log_dir,
-        )
+
         SUPPORTED_MODES = ["train", "inference"]
         # Check if all selected modes are supported
         for mode in run_config["mode"]:
             if mode not in SUPPORTED_MODES:
                 logging.error(f"Selected mode {mode} is not supported.")
         if SUPPORTED_MODES[0] in run_config["mode"]:
+            ano_dec = Anodec(
+                dataset=dataset_ano_dec,
+                eval_metrics=eval_metrics,
+                dataset_info=dataset_info,
+                config=run_config,
+                tensorboard_output=log_dir,
+            )
             ano_dec.train_and_export_model()
-            ano_dec.run_inference()
+            ano_dec.run_inference(mode=SUPPORTED_MODES[0])
             ano_dec.eval_v51()
         if SUPPORTED_MODES[1] in run_config["mode"]:
-            ano_dec.run_inference()
+            ano_dec = Anodec(
+                dataset=dataset_normal,
+                eval_metrics=eval_metrics,
+                dataset_info=dataset_info,
+                config=run_config,
+                tensorboard_output=log_dir,
+            )
+            ano_dec.run_inference(mode=SUPPORTED_MODES[1])
 
     except Exception as e:
         logging.error(
@@ -485,14 +498,17 @@ class WorkflowExecutor:
                     anomalib_image_models = ano_dec_config["anomalib_image_models"]
                     eval_metrics = ano_dec_config["anomalib_eval_metrics"]
 
-                    try:
-                        data_preparer = AnomalyDetectionDataPreparation(
-                            self.dataset, self.selected_dataset
-                        )
-                    except Exception as e:
-                        logging.error(
-                            f"Error during data preparation for Anomaly Detection: {e}"
-                        )
+                    dataset_ano_dec = None
+                    if "train" in ano_dec_config["mode"]:
+                        try:
+                            data_preparer = AnomalyDetectionDataPreparation(
+                                self.dataset, self.selected_dataset
+                            )
+                            dataset_ano_dec = data_preparer.dataset_ano_dec
+                        except Exception as e:
+                            logging.error(
+                                f"Error during data preparation for Anomaly Detection: {e}"
+                            )
 
                     for MODEL_NAME in (
                         pbar := tqdm(anomalib_image_models, desc="Anomalib")
@@ -519,7 +535,8 @@ class WorkflowExecutor:
 
                         # Workflow
                         workflow_anomaly_detection(
-                            data_preparer.dataset_ano_dec,
+                            self.dataset,
+                            dataset_ano_dec,
                             self.dataset_info,
                             eval_metrics,
                             run_config,
