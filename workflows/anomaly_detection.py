@@ -54,17 +54,6 @@ class Anodec:
             "weights/torch/model.pt",
         )
 
-        data_root = os.path.abspath(self.config["data_root"])
-        dataset_folder_ano_dec_masks = f"{self.dataset_name}_anomaly_detection_masks/"
-        filepath_masks = os.path.join(data_root, dataset_folder_ano_dec_masks)
-
-        filepath_train = self.normal_data.take(1).first().filepath
-        filepath_val = self.abnormal_data.take(1).first().filepath
-
-        self.normal_dir = os.path.dirname(filepath_train)
-        self.abnormal_dir = os.path.dirname(filepath_val)
-        self.mask_dir = os.path.dirname(filepath_masks)
-
         self.hf_repo_name = f"{HF_ROOT}/{self.dataset_name}_anomalib_{self.model_name}"
 
         # Anomalib objects
@@ -177,6 +166,18 @@ class Anodec:
         MAX_EPOCHS = self.config["epochs"]
         PATIENCE = self.config["early_stop_patience"]
 
+        # Set folders
+        data_root = os.path.abspath(self.config["data_root"])
+        dataset_folder_ano_dec_masks = f"{self.dataset_name}_anomaly_detection_masks/"
+        filepath_masks = os.path.join(data_root, dataset_folder_ano_dec_masks)
+
+        filepath_train = self.normal_data.take(1).first().filepath
+        filepath_val = self.abnormal_data.take(1).first().filepath
+
+        self.normal_dir = os.path.dirname(filepath_train)
+        self.abnormal_dir = os.path.dirname(filepath_val)
+        self.mask_dir = os.path.dirname(filepath_masks)
+
         # Resize image if defined in config
         if self.image_size is not None:
             transform = Compose([Resize(self.image_size, antialias=True)])
@@ -258,7 +259,7 @@ class Anodec:
         else:
             logging.error(f"Engine '{self.engine}' not available.")
 
-    def run_inference(self, mode, threshold=0.5):
+    def run_inference(self, mode):
         logging.info(f"Running inference")
         try:
             if os.path.exists(self.model_path):
@@ -291,31 +292,31 @@ class Anodec:
             dataset = None
             logging.error(f"Mode {mode} is not suported during inference.")
 
+        field_pred_anomaly_score = f"pred_anomaly_score_{self.model_name}"
+        field_pred_anomaly_map = f"pred_anomaly_map_{self.model_name}"
+        field_pred_anomaly_mask = f"pred_anomaly_mask_{self.model_name}"
+
         for sample in dataset.iter_samples(autosave=True, progress=True):
 
-            image = read_image(sample.filepath, as_tensor=True)
-            output = self.inferencer.predict(image)
+            # Check if sample was already processed
+            try:
+                # Will fail if field is not available
+                current_anomaly_score = sample[field_pred_anomaly_score]
+                continue
+            except:
+                image = read_image(sample.filepath, as_tensor=True)
+                output = self.inferencer.predict(image)
 
-            # Storing results in Voxel51 dataset
-            # Sample Classifiction
-            conf = output.pred_score
-            anomaly = "normal" if conf < threshold else "anomaly"
-            sample[f"pred_anomaly_score_{self.model_name}"] = conf
-            sample[f"pred_anomaly_{self.model_name}"] = fo.Classification(label=anomaly)
-
-            # Mask Segmentation
-            sample[f"pred_anomaly_map_{self.model_name}"] = fo.Heatmap(
-                map=output.anomaly_map
-            )
-            sample[f"pred_defect_mask_{self.model_name}"] = fo.Segmentation(
-                mask=output.pred_mask
-            )
+                # Storing results in Voxel51 dataset
+                sample[field_pred_anomaly_score] = output.pred_score
+                sample[field_pred_anomaly_map] = fo.Heatmap(map=output.anomaly_map)
+                sample[field_pred_anomaly_mask] = fo.Segmentation(mask=output.pred_mask)
 
     def eval_v51(self):
         """
         Evaluates the segmentations of abnormal data using the specified model.
 
-        This method evaluates the segmentations of abnormal data by comparing the predicted defect mask
+        This method evaluates the segmentations of abnormal data by comparing the predicted anomaly mask
         with the ground truth anomaly mask. The evaluation results are stored and a report is printed.
 
         Parameters:
@@ -329,7 +330,7 @@ class Anodec:
         - Prints a report of the evaluation results for the specified classes [0, 255].
         """
         eval_seg = self.abnormal_data.evaluate_segmentations(
-            f"pred_defect_mask_{self.model_name}",
+            f"pred_anomaly_mask_{self.model_name}",
             gt_field="anomaly_mask",
             eval_key=f"eval_seg_{self.model_name}",
         )
