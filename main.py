@@ -499,6 +499,7 @@ class WorkflowExecutor:
                     eval_metrics = ano_dec_config["anomalib_eval_metrics"]
 
                     dataset_ano_dec = None
+                    data_root = None
                     if "train" in ano_dec_config["mode"]:
                         try:
                             data_preparer = AnomalyDetectionDataPreparation(
@@ -509,6 +510,7 @@ class WorkflowExecutor:
                             logging.error(
                                 f"Error during data preparation for Anomaly Detection: {e}"
                             )
+                            data_root = data_preparer.export_root
 
                     for MODEL_NAME in (
                         pbar := tqdm(anomalib_image_models, desc="Anomalib")
@@ -529,7 +531,7 @@ class WorkflowExecutor:
                             "early_stop_patience": ano_dec_config[
                                 "early_stop_patience"
                             ],
-                            "data_root": data_preparer.export_root,
+                            "data_root": data_root,
                             "mode": ano_dec_config["mode"],
                         }
 
