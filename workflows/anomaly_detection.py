@@ -39,11 +39,7 @@ class Anodec:
         self.dataset = dataset
         self.eval_metrics = eval_metrics
         self.normal_data = dataset.match_tags("train")
-        logging.info(f"Using {len(self.normal_data)} normal images for training.")
         self.abnormal_data = dataset.match_tags(["val", "test"])
-        logging.info(
-            f"Using {len(self.abnormal_data)} images with anomalies for evaluation."
-        )
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
         self.model_name = self.config["model_name"]
@@ -129,6 +125,7 @@ class Anodec:
                     os.path.join(self.mask_dir, new_filename),
                 )
 
+        logging.info(f"{len(self.normal_data)} normal images in train split.")
         self.datamodule = Folder(
             name=self.dataset_name,
             normal_dir=self.normal_dir,
@@ -261,7 +258,7 @@ class Anodec:
         else:
             logging.error(f"Engine '{self.engine}' not available.")
 
-    def run_inference(self, threshold=0.5):
+    def run_inference(self, mode, threshold=0.5):
         logging.info(f"Running inference")
         try:
             if os.path.exists(self.model_path):
@@ -285,7 +282,16 @@ class Anodec:
         inferencer = TorchInferencer(path=os.path.join(file_path), device=device)
         self.inferencer = inferencer
 
-        for sample in self.abnormal_data.iter_samples(autosave=True, progress=True):
+        if mode == "train":
+            dataset = self.abnormal_data
+            logging.info(f"{len(self.abnormal_data)} images in evaluation split.")
+        elif mode == "inference":
+            dataset = self.dataset
+        else:
+            dataset = None
+            logging.error(f"Mode {mode} is not suported during inference.")
+
+        for sample in dataset.iter_samples(autosave=True, progress=True):
 
             image = read_image(sample.filepath, as_tensor=True)
             output = self.inferencer.predict(image)
