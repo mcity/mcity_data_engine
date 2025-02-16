@@ -144,7 +144,7 @@ export WANDB_DIR="<your_path>/mcity_data_engine/logs"
 
 ## Contribution
 
-Contributions are very welcome! The Mcity Data Engine is a blueprint for data curation and model training and will not not support every use case out of the box. Please find instructions on how to contribute here:
+Contributions are very welcome! The Mcity Data Engine is a blueprint for data curation and model training and will not support every use case out of the box. Please find instructions on how to contribute here:
 
 - [Contribute new workflow](https://github.com/mcity/mcity_data_engine/wiki/Workflows#how-to-add-a-new-workflow)
 - [Contribute new dataset](https://github.com/mcity/mcity_data_engine/wiki/Datasets#how-to-add-a-new-dataset)
