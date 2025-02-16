@@ -150,10 +150,12 @@ def workflow_mask_teacher(dataset, dataset_info):
         for model_name in SEMANTIC_SEGMENTATION_MODELS:    
             teacher = MaskTeacher(dataset=dataset, dataset_info=dataset_info, model_name=model_name, task_type="semantic_segmentation", model_config=WORKFLOWS["mask_teacher"]["semantic_segmentation"][model_name])
             teacher.run_inference()
-            
+        
+        return dataset  
+
     except Exception as e:
         logging.error(f"Mask Teacher failed: {e}")
-
+        raise      
 def workflow_ensemble_exploration():
     pass
 
