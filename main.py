@@ -145,7 +145,6 @@ def workflow_mask_teacher(dataset, dataset_info):
         for model_name in DEPTH_ESTIMATION_MODELS:
             teacher = MaskTeacher(dataset=dataset, dataset_info=dataset_info, model_name=model_name, task_type="depth_estimation", model_config=WORKFLOWS["mask_teacher"]["depth_estimation"][model_name])
             teacher.run_inference()    
-            pass 
         
         for model_name in SEMANTIC_SEGMENTATION_MODELS:    
             teacher = MaskTeacher(dataset=dataset, dataset_info=dataset_info, model_name=model_name, task_type="semantic_segmentation", model_config=WORKFLOWS["mask_teacher"]["semantic_segmentation"][model_name])
