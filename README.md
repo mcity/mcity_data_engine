@@ -69,11 +69,6 @@ Launch a **Voxel51** session in one terminal:
 Configure your run in the [config/config.py](https://github.com/mcity/mcity_data_engine/blob/main/config/config.py) and launch the **Mcity Data Engine** in a second terminal:
 ```python main.py```
 
-Open Voxel51 in your browser:
-```http://localhost:5151/```
-
-In case there are issues with MongoDB, the underlying database Voxel51 uses, run ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
-
 ### Notebooks and Submodules
 
 To exclude the output of jupyter notebooks from git tracking, add the following lines to your ```.git/config``` :
