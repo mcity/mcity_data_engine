@@ -40,7 +40,7 @@ from workflows.auto_labeling import (
 )
 from workflows.aws_download import AwsDownloader
 from workflows.embedding_selection import EmbeddingSelection
-from workflows.ensemble_exploration import EnsembleExploration
+from workflows.ensemble_selection import EnsembleSelection
 
 wandb_run = None  # Init globally to make sure it is available
 
@@ -117,7 +117,12 @@ def workflow_aws_download(parameters, wandb_activate=True):
 
 
 def workflow_anomaly_detection(
-    dataset, dataset_info, eval_metrics, run_config, wandb_activate=True
+    dataset_normal,
+    dataset_ano_dec,
+    dataset_info,
+    eval_metrics,
+    run_config,
+    wandb_activate=True,
 ):
     try:
         # Weights and Biases
@@ -131,24 +136,32 @@ def workflow_anomaly_detection(
         )
 
         # Workflow
-        ano_dec = Anodec(
-            dataset=dataset,
-            eval_metrics=eval_metrics,
-            dataset_info=dataset_info,
-            config=run_config,
-            tensorboard_output=log_dir,
-        )
+
         SUPPORTED_MODES = ["train", "inference"]
         # Check if all selected modes are supported
         for mode in run_config["mode"]:
             if mode not in SUPPORTED_MODES:
                 logging.error(f"Selected mode {mode} is not supported.")
         if SUPPORTED_MODES[0] in run_config["mode"]:
+            ano_dec = Anodec(
+                dataset=dataset_ano_dec,
+                eval_metrics=eval_metrics,
+                dataset_info=dataset_info,
+                config=run_config,
+                tensorboard_output=log_dir,
+            )
             ano_dec.train_and_export_model()
-            ano_dec.run_inference()
+            ano_dec.run_inference(mode=SUPPORTED_MODES[0])
             ano_dec.eval_v51()
         if SUPPORTED_MODES[1] in run_config["mode"]:
-            ano_dec.run_inference()
+            ano_dec = Anodec(
+                dataset=dataset_normal,
+                eval_metrics=eval_metrics,
+                dataset_info=dataset_info,
+                config=run_config,
+                tensorboard_output=log_dir,
+            )
+            ano_dec.run_inference(mode=SUPPORTED_MODES[1])
 
     except Exception as e:
         logging.error(
@@ -343,23 +356,21 @@ def workflow_zero_shot_object_detection(dataset, dataset_info, config):
     return True
 
 
-def workflow_ensemble_exploration(
-    dataset, dataset_info, run_config, wandb_activate=True
-):
+def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activate=True):
     try:
         wandb_exit_code = 0
 
         wandb_run = wandb_init(
-            run_name="Ensemble Exploration",
-            project_name="Ensemble Exploration",
+            run_name="Selection by Ensemble",
+            project_name="Ensemble Selection",
             dataset_name=dataset_info["name"],
             config=run_config,
             wandb_activate=wandb_activate,
         )
-        explorer = EnsembleExploration(dataset, run_config)
-        explorer.ensemble_exploration()
+        ensemble_selecter = EnsembleSelection(dataset, run_config)
+        ensemble_selecter.ensemble_selection()
     except Exception as e:
-        logging.error(f"An error occured during Ensemble Exploration: {e}")
+        logging.error(f"An error occured during Ensemble Selection: {e}")
         wandb_exit_code = 1
 
     finally:
@@ -487,14 +498,19 @@ class WorkflowExecutor:
                     anomalib_image_models = ano_dec_config["anomalib_image_models"]
                     eval_metrics = ano_dec_config["anomalib_eval_metrics"]
 
-                    try:
-                        data_preparer = AnomalyDetectionDataPreparation(
-                            self.dataset, self.selected_dataset
-                        )
-                    except Exception as e:
-                        logging.error(
-                            f"Error during data preparation for Anomaly Detection: {e}"
-                        )
+                    dataset_ano_dec = None
+                    data_root = None
+                    if "train" in ano_dec_config["mode"]:
+                        try:
+                            data_preparer = AnomalyDetectionDataPreparation(
+                                self.dataset, self.selected_dataset
+                            )
+                            dataset_ano_dec = data_preparer.dataset_ano_dec
+                            data_root = data_preparer.export_root
+                        except Exception as e:
+                            logging.error(
+                                f"Error during data preparation for Anomaly Detection: {e}"
+                            )
 
                     for MODEL_NAME in (
                         pbar := tqdm(anomalib_image_models, desc="Anomalib")
@@ -515,13 +531,14 @@ class WorkflowExecutor:
                             "early_stop_patience": ano_dec_config[
                                 "early_stop_patience"
                             ],
-                            "data_root": data_preparer.export_root,
+                            "data_root": data_root,
                             "mode": ano_dec_config["mode"],
                         }
 
                         # Workflow
                         workflow_anomaly_detection(
-                            data_preparer.dataset_ano_dec,
+                            self.dataset,
+                            dataset_ano_dec,
                             self.dataset_info,
                             eval_metrics,
                             run_config,
@@ -641,12 +658,12 @@ class WorkflowExecutor:
                         self.dataset, self.dataset_info, config
                     )
 
-                elif workflow == "ensemble_exploration":
+                elif workflow == "ensemble_selection":
                     # Config
-                    run_config = WORKFLOWS["ensemble_exploration"]
+                    run_config = WORKFLOWS["ensemble_selection"]
 
                     # Workflow
-                    workflow_ensemble_exploration(
+                    workflow_ensemble_selection(
                         self.dataset, self.dataset_info, run_config
                     )
 

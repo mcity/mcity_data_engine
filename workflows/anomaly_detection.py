@@ -39,11 +39,7 @@ class Anodec:
         self.dataset = dataset
         self.eval_metrics = eval_metrics
         self.normal_data = dataset.match_tags("train")
-        logging.info(f"Using {len(self.normal_data)} normal images for training.")
         self.abnormal_data = dataset.match_tags(["val", "test"])
-        logging.info(
-            f"Using {len(self.abnormal_data)} images with anomalies for evaluation."
-        )
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
         self.model_name = self.config["model_name"]
@@ -57,17 +53,6 @@ class Anodec:
             self.dataset_name,
             "weights/torch/model.pt",
         )
-
-        data_root = os.path.abspath(self.config["data_root"])
-        dataset_folder_ano_dec_masks = f"{self.dataset_name}_anomaly_detection_masks/"
-        filepath_masks = os.path.join(data_root, dataset_folder_ano_dec_masks)
-
-        filepath_train = self.normal_data.take(1).first().filepath
-        filepath_val = self.abnormal_data.take(1).first().filepath
-
-        self.normal_dir = os.path.dirname(filepath_train)
-        self.abnormal_dir = os.path.dirname(filepath_val)
-        self.mask_dir = os.path.dirname(filepath_masks)
 
         self.hf_repo_name = f"{HF_ROOT}/{self.dataset_name}_anomalib_{self.model_name}"
 
@@ -129,6 +114,7 @@ class Anodec:
                     os.path.join(self.mask_dir, new_filename),
                 )
 
+        logging.info(f"{len(self.normal_data)} normal images in train split.")
         self.datamodule = Folder(
             name=self.dataset_name,
             normal_dir=self.normal_dir,
@@ -179,6 +165,18 @@ class Anodec:
 
         MAX_EPOCHS = self.config["epochs"]
         PATIENCE = self.config["early_stop_patience"]
+
+        # Set folders
+        data_root = os.path.abspath(self.config["data_root"])
+        dataset_folder_ano_dec_masks = f"{self.dataset_name}_anomaly_detection_masks/"
+        filepath_masks = os.path.join(data_root, dataset_folder_ano_dec_masks)
+
+        filepath_train = self.normal_data.take(1).first().filepath
+        filepath_val = self.abnormal_data.take(1).first().filepath
+
+        self.normal_dir = os.path.dirname(filepath_train)
+        self.abnormal_dir = os.path.dirname(filepath_val)
+        self.mask_dir = os.path.dirname(filepath_masks)
 
         # Resize image if defined in config
         if self.image_size is not None:
@@ -261,7 +259,7 @@ class Anodec:
         else:
             logging.error(f"Engine '{self.engine}' not available.")
 
-    def run_inference(self, threshold=0.5):
+    def run_inference(self, mode):
         logging.info(f"Running inference")
         try:
             if os.path.exists(self.model_path):
@@ -285,31 +283,33 @@ class Anodec:
         inferencer = TorchInferencer(path=os.path.join(file_path), device=device)
         self.inferencer = inferencer
 
-        for sample in self.abnormal_data.iter_samples(autosave=True, progress=True):
+        if mode == "train":
+            dataset = self.abnormal_data
+            logging.info(f"{len(self.abnormal_data)} images in evaluation split.")
+        elif mode == "inference":
+            dataset = self.dataset
+        else:
+            dataset = None
+            logging.error(f"Mode {mode} is not suported during inference.")
 
+        field_pred_anomaly_score = f"pred_anomaly_score_{self.model_name}"
+        field_pred_anomaly_map = f"pred_anomaly_map_{self.model_name}"
+        field_pred_anomaly_mask = f"pred_anomaly_mask_{self.model_name}"
+
+        for sample in dataset.iter_samples(autosave=True, progress=True):
             image = read_image(sample.filepath, as_tensor=True)
             output = self.inferencer.predict(image)
 
             # Storing results in Voxel51 dataset
-            # Sample Classifiction
-            conf = output.pred_score
-            anomaly = "normal" if conf < threshold else "anomaly"
-            sample[f"pred_anomaly_score_{self.model_name}"] = conf
-            sample[f"pred_anomaly_{self.model_name}"] = fo.Classification(label=anomaly)
-
-            # Mask Segmentation
-            sample[f"pred_anomaly_map_{self.model_name}"] = fo.Heatmap(
-                map=output.anomaly_map
-            )
-            sample[f"pred_defect_mask_{self.model_name}"] = fo.Segmentation(
-                mask=output.pred_mask
-            )
+            sample[field_pred_anomaly_score] = output.pred_score
+            sample[field_pred_anomaly_map] = fo.Heatmap(map=output.anomaly_map)
+            sample[field_pred_anomaly_mask] = fo.Segmentation(mask=output.pred_mask)
 
     def eval_v51(self):
         """
         Evaluates the segmentations of abnormal data using the specified model.
 
-        This method evaluates the segmentations of abnormal data by comparing the predicted defect mask
+        This method evaluates the segmentations of abnormal data by comparing the predicted anomaly mask
         with the ground truth anomaly mask. The evaluation results are stored and a report is printed.
 
         Parameters:
@@ -323,7 +323,7 @@ class Anodec:
         - Prints a report of the evaluation results for the specified classes [0, 255].
         """
         eval_seg = self.abnormal_data.evaluate_segmentations(
-            f"pred_defect_mask_{self.model_name}",
+            f"pred_anomaly_mask_{self.model_name}",
             gt_field="anomaly_mask",
             eval_key=f"eval_seg_{self.model_name}",
         )
