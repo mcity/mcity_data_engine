@@ -1,49 +1,70 @@
-# workflow_class_mapping_test.py
 import fiftyone as fo
 import pytest
 from fiftyone import ViewField as F
 from fiftyone.utils.huggingface import load_from_hub
 from main import workflow_class_mapping
-from utils.dataset_loader import load_dataset_info
+from workflows.class_mapping import ClassMapper
+from utils.dataset_loader import load_dataset_info, _post_process_dataset
+import logging
+from main import configure_logging
 
-max_samples=1
+@pytest.fixture(autouse=True)
+def setup_logging():
+    configure_logging()
 
 @pytest.fixture
 def dataset_v51():
-    """Fixture to load a FiftyOne dataset from the hub."""
+    """Fixture to load a FiftyOne dataset from the hub and filter to one target sample with detections."""
     dataset_name_hub = "Voxel51/fisheye8k"
-    dataset_name = "fisheye8k_v51_class_mapping_test"
-    try:
-        dataset = load_from_hub(
-            repo_id=dataset_name_hub, max_samples=max_samples, name=dataset_name
-        )
-    except:
-        dataset = fo.load_dataset(dataset_name)
-    assert dataset is not None, "Failed to load or create the FiftyOne dataset"
-    return dataset
+    dataset_name = "fisheye8k_v51_cm_test"
 
-def test_class_mapping(dataset_v51, sample_index=0):
+    # Updated target filepath to a sample known to have detections
+    # Specify the target image's filepath
+    target_filepath_ending = "camera17_A_32.png"
+    dataset = load_from_hub(dataset_name_hub,overwrite=True)
+    dataset = _post_process_dataset(dataset)
+
+    # Find the sample in the existing dataset
+    sample = dataset.match(F("filepath").ends_with(target_filepath_ending)).first()
+
+
+    temp_name = "new_test_dataset5"
+    if fo.dataset_exists(temp_name):
+        fo.delete_dataset(temp_name)
+    new_test_dataset5 = fo.Dataset(temp_name)
+    new_test_dataset5.add_sample(sample)
+
+
+    return new_test_dataset5
+
+def test_class_mapping(dataset_v51):
     """
-    Test workflow on a single selected sample from the dataset, verifying that each model
-    has added its specific tag.
+    Test workflow on the sample with the specified filepath,
+    verifying that each model has added its specific tag.
     """
+    # Since the fixture returns only one sample, we can directly get the first sample.
+    sample = dataset_v51.first()
+    assert sample is not None, "Target sample not found in dataset"
 
-    first_sample = dataset_v51.first()
+    print("\nBefore workflow:")
+    if hasattr(sample, 'ground_truth') and sample["ground_truth"].detections:
+        print(f"Sample has a total of detections: {len(sample["ground_truth"].detections)}")
 
-    # Select one sample by index
-    sample = dataset_v51[sample_index]
-    assert sample is not None, "Selected sample not found in dataset"
-
-    # Optional: store original tags for debugging
-    original_tags = sample.count_values("detections.detections.tags")
-
-    # Execute workflow
     dataset_info = load_dataset_info("fisheye8k")  # Use loader for actual dataset
-    dataset_info["name"] = "fisheye8k_v51_class_mapping_test"  # Update for local tests
+    dataset_info["name"] = (
+        "fisheye8k_v51_cm_test"  # Update with test name for local tests where both exist
+    )
+
     workflow_class_mapping(dataset_v51, dataset_info)
 
-    # Retrieve updated sample
-    updated_sample = dataset_v51[sample_index]
+    # Retrieve the updated sample
+    #updated_sample = dataset_v51.first()
+
+    print("\nAfter workflow:")
+    if hasattr(sample, "ground_truth") and sample["ground_truth"].detections:
+        print(f"Sample has a total of detections: {len(sample.ground_truth.detections)}")
+        for i, detection in enumerate(sample["ground_truth"].detections):
+            print(f"Detection {i} tags: {detection.tags if hasattr(detection, 'tags') else 'No tags'}")
 
     # List of expected model identifiers from config
     expected_models = [
@@ -54,15 +75,27 @@ def test_class_mapping(dataset_v51, sample_index=0):
         "BAAI/AltCLIP",
         "CIDAS/clipseg-rd64-refined"
     ]
-    # Construct expected tags assuming a "newclass-<model_id>" format
-    expected_tags = [f"newclass-{model}" for model in expected_models]
 
     # Gather all tags from all detections in the updated sample
     found_tags = set()
-    for detection in updated_sample.detections:
-        if detection.tags:
-            found_tags.update(detection.tags)
+    if hasattr(sample, "ground_truth") and sample["ground_truth"].detections:
+        for detection in sample["ground_truth"].detections:
+            if hasattr(detection, 'tags') and detection.tags:
+                found_tags.update(detection.tags)
 
-    # Validate that each expected tag is present
-    for expected_tag in expected_tags:
-        assert expected_tag in found_tags, f"Tag for model {expected_tag} not found in detections"
+    print("\nAll found tags:", found_tags)
+
+    # Print which models are missing tags
+    missing_models = []
+    for model in expected_models:
+        if not any(f"new_class_{model}" in tag for tag in found_tags):
+            missing_models.append(model)
+
+    if missing_models:
+        print("\nMissing tags for models:", missing_models)
+
+    # Validate that each expected model name appears in at least one tag
+    for model in expected_models:
+        assert any(f"new_class_{model}" in tag for tag in found_tags), (
+            f"Tag for model {model} not found in detections"
+        )

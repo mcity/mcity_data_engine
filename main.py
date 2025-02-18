@@ -218,42 +218,38 @@ def workflow_class_mapping(dataset, dataset_info):
         logging.error(f"No models found for the selected source: {model_source}")
         return False
 
-    model_name = models[0]  # Use the pre-selected model from config.
+    model_name = models[0]
     print("\nClass Mapping Workflow")
     print(f"Selected Model Source: {model_source}")
-    #print(f"Running model: {model_name}")
 
     # Initialize the mapper and run the mapping process with wandb logging enabled.
     for model_name in models:
         print(f"\nRunning model: {model_name}")
         mapper = ClassMapper(dataset, model_name, config)
+
+        any_success = False
         try:
             stats = mapper.run_mapping(interactive=True, wandb_logging=True)
+
+            # Display statistics only if mapping was successful
+            total_vehicles = stats["total_processed"]
+            print("\nVehicle Classification Results (Parent Classes):")
+            for parent, count in stats["parent_class_counts"].items():
+                percentage = (count / total_vehicles) * 100 if total_vehicles > 0 else 0
+                print(f"{parent}: {count} vehicles processed ({percentage:.1f}%)")
+
+            print("\nTag Addition Results (Child Tags):")
+            print(f"Total new tags added: {stats['changes_made']}")
+            for child, tag_count in stats["tags_added_per_category"].items():
+                print(f"{child} tags added: {tag_count}")
+
+            any_success = True
+
         except Exception as e:
             logging.error(f"Error during mapping with model {model_name}: {e}")
             continue
 
-    #mapper = ClassMapper(dataset, model_name, config)
-    #try:
-    #    stats = mapper.run_mapping(interactive=True, wandb_logging=True)
-    #except Exception as e:
-    #    logging.error(f"Error during mapping: {e}")
-    #    return False
-
-    # Display final statistics.
-    total_vehicles = stats["total_processed"]
-    print("\nVehicle Classification Results (Parent Classes):")
-    for parent, count in stats["parent_class_counts"].items():
-        percentage = (count / total_vehicles) * 100 if total_vehicles > 0 else 0
-        print(f"{parent}: {count} vehicles processed ({percentage:.1f}%)")
-
-    print("\nTag Addition Results (Child Tags):")
-    print(f"Total new tags added: {stats['changes_made']}")
-    for child, tag_count in stats["tags_added_per_category"].items():
-        print(f"{child} tags added: {tag_count}")
-
-    return True
-
+    return any_success
 
 class WorkflowExecutor:
     def __init__(

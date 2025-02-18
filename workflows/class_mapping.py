@@ -46,8 +46,6 @@ class ClassMapper:
             self.is_altclip = "AltCLIP" in self.model_name
             self.is_clipseg = "clipseg" in self.model_name
 
-
-
             if self.is_siglip:
                 self.model = AutoModel.from_pretrained(self.model_name)
                 self.processor = AutoProcessor.from_pretrained(self.model_name)
@@ -63,9 +61,6 @@ class ClassMapper:
             elif self.is_clipseg:
                 self.processor = CLIPSegProcessor.from_pretrained(self.model_name)
                 self.model = CLIPSegForImageSegmentation.from_pretrained(self.model_name)
-
-
-
 
             else:
                 self.model = AutoModelForZeroShotImageClassification.from_pretrained(self.model_name)
@@ -106,7 +101,6 @@ class ClassMapper:
         else:
             inputs = self.processor(images=vehicle_patch, text=candidate_labels, return_tensors="pt", padding=True)
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
-
 
 
         # Generate classification output.
@@ -279,18 +273,18 @@ class ClassMapper:
 
                         if wandb_logging:
                             wandb.log({
-                                f"Tags Added/{predicted_label}": self.stats["tags_added_per_category"].get(predicted_label, 0),
-                                "Total Tags Added": self.stats["changes_made"]
+                                f"{self.model_name}/Tags_Added/{predicted_label}": self.stats["tags_added_per_category"].get(predicted_label, 0),
+                                f"{self.model_name}/Total_Tags_Added": self.stats["changes_made"]
                             })
 
             if wandb_logging:
                 wandb.log({
-                    "Total Processed Samples": self.stats["total_processed"],
-                    "Total Tag Changes": self.stats["changes_made"],
-                    "Parent Class Count/Car": self.stats["parent_class_counts"].get("Car", 0),
-                    "Parent Class Count/Truck": self.stats["parent_class_counts"].get("Truck", 0),
-                    "Tags Added/Van": self.stats["tags_added_per_category"].get("Van", 0),
-                    "Tags Added/Pickup": self.stats["tags_added_per_category"].get("Pickup", 0)
+                    f"{self.model_name}/Total_Processed_Samples": self.stats["total_processed"],
+                    f"{self.model_name}/Total_Tag_Changes": self.stats["changes_made"],
+                    f"{self.model_name}/Parent_Class_Count/Car": self.stats["parent_class_counts"].get("Car", 0),
+                    f"{self.model_name}/Parent_Class_Count/Truck": self.stats["parent_class_counts"].get("Truck", 0),
+                    f"{self.model_name}/Tags_Added/Van": self.stats["tags_added_per_category"].get("Van", 0),
+                    f"{self.model_name}/Tags_Added/Pickup": self.stats["tags_added_per_category"].get("Pickup", 0)
                 }, step=sample_count)
 
             if tb_writer is not None:
