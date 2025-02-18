@@ -143,7 +143,7 @@ Contributions are very welcome! The Mcity Data Engine is a blueprint for data cu
 
 - [Contribute new workflow](https://github.com/mcity/mcity_data_engine/wiki/Workflows#how-to-add-a-new-workflow)
 - [Contribute new dataset](https://github.com/mcity/mcity_data_engine/wiki/Datasets#how-to-add-a-new-dataset)
-- Contribute new model
+- [Contribute new model](https://github.com/mcity/mcity_data_engine/wiki/Models)
 
 Special thanks to these amazing people for contributing to the Mcity Data Engine! 🙌
 
