@@ -506,11 +506,11 @@ class WorkflowExecutor:
                                 self.dataset, self.selected_dataset
                             )
                             dataset_ano_dec = data_preparer.dataset_ano_dec
+                            data_root = data_preparer.export_root
                         except Exception as e:
                             logging.error(
                                 f"Error during data preparation for Anomaly Detection: {e}"
                             )
-                            data_root = data_preparer.export_root
 
                     for MODEL_NAME in (
                         pbar := tqdm(anomalib_image_models, desc="Anomalib")
