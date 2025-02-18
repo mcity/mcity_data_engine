@@ -50,7 +50,7 @@ def test_anomaly_detection_train(dataset_v51):
     }
 
     data_preparer = AnomalyDetectionDataPreparation(
-        dataset_v51, "fisheye8k", config=prep_config
+        dataset_v51, "fisheye8k_v51_anomaly_test", config=prep_config
     )
     run_config = {
         "model_name": "Padim",
@@ -63,10 +63,10 @@ def test_anomaly_detection_train(dataset_v51):
     }
 
     eval_metrics = ["AUPR", "AUROC"]
-    dataset_info = {"name": "fisheye8k"}
+    dataset_info = {"name": "fisheye8k_v51_anomaly_test"}
 
     # Delete content from field if other runs filled it already
-    results_field = "pred_anomaly_Padim"
+    results_field = "pred_anomaly_score_Padim"
     try:
         data_preparer.dataset_ano_dec.delete_sample_field(results_field)
         print(f"Removed field {results_field} from dataset.")
@@ -74,6 +74,7 @@ def test_anomaly_detection_train(dataset_v51):
         pass
 
     workflow_anomaly_detection(
+        dataset_v51,
         data_preparer.dataset_ano_dec,
         dataset_info,
         eval_metrics,
@@ -85,9 +86,7 @@ def test_anomaly_detection_train(dataset_v51):
     print(
         f"Sample fields in dataset: {data_preparer.dataset_ano_dec.get_field_schema()}"
     )
-    view_anomalies = data_preparer.dataset_ano_dec.filter_labels(
-        results_field, F("label") == "anomaly"
-    )
+    view_anomalies = data_preparer.dataset_ano_dec.match(F(results_field) >= 0)
     n_samples_selected = len(view_anomalies)
     print(
         f"{n_samples_selected} samples anomalies found that were assessed by anomaly detection."
@@ -108,21 +107,16 @@ def test_anomaly_detection_inference(dataset_v51, load_local):
             except Exception as e:
                 logging.error(f"Error deleting local weights folder: {e}")
 
-    prep_config = {
-        "location": "cam3",
-        "rare_classes": ["Bus"],
-    }
+    dataset_ano_dec = None
+    data_root = None
 
-    data_preparer = AnomalyDetectionDataPreparation(
-        dataset_v51, "fisheye8k", config=prep_config
-    )
     run_config = {
         "model_name": "Padim",
         "image_size": [32, 32],
         "batch_size": 1,
         "epochs": 1,
         "early_stop_patience": 1,
-        "data_root": data_preparer.export_root,
+        "data_root": data_root,
         "mode": ["inference"],
     }
 
@@ -130,15 +124,16 @@ def test_anomaly_detection_inference(dataset_v51, load_local):
     dataset_info = {"name": "fisheye8k"}
 
     # Delete content from field if other runs filled it already
-    results_field = "pred_anomaly_Padim"
+    results_field = "pred_anomaly_score_Padim"
     try:
-        data_preparer.dataset_ano_dec.delete_sample_field(results_field)
+        dataset_v51.delete_sample_field(results_field)
         logging.warning(f"Removed field {results_field} from dataset.")
     except:
         pass
 
     workflow_anomaly_detection(
-        data_preparer.dataset_ano_dec,
+        dataset_v51,
+        dataset_ano_dec,
         dataset_info,
         eval_metrics,
         run_config,
@@ -146,12 +141,8 @@ def test_anomaly_detection_inference(dataset_v51, load_local):
     )
 
     # Select all samples that are considered anomalous
-    logging.info(
-        f"Sample fields in dataset: {data_preparer.dataset_ano_dec.get_field_schema()}"
-    )
-    view_anomalies = data_preparer.dataset_ano_dec.filter_labels(
-        results_field, F("label") == "anomaly"
-    )
+    logging.info(f"Sample fields in dataset: {dataset_v51.get_field_schema()}")
+    view_anomalies = dataset_v51.match(F(results_field) >= 0)
     n_samples_selected = len(view_anomalies)
     logging.info(
         f"{n_samples_selected} samples anomalies found that were assessed by anomaly detection."
