@@ -297,20 +297,13 @@ class Anodec:
         field_pred_anomaly_mask = f"pred_anomaly_mask_{self.model_name}"
 
         for sample in dataset.iter_samples(autosave=True, progress=True):
+            image = read_image(sample.filepath, as_tensor=True)
+            output = self.inferencer.predict(image)
 
-            # Check if sample was already processed
-            try:
-                # Will fail if field is not available
-                current_anomaly_score = sample[field_pred_anomaly_score]
-                continue
-            except:
-                image = read_image(sample.filepath, as_tensor=True)
-                output = self.inferencer.predict(image)
-
-                # Storing results in Voxel51 dataset
-                sample[field_pred_anomaly_score] = output.pred_score
-                sample[field_pred_anomaly_map] = fo.Heatmap(map=output.anomaly_map)
-                sample[field_pred_anomaly_mask] = fo.Segmentation(mask=output.pred_mask)
+            # Storing results in Voxel51 dataset
+            sample[field_pred_anomaly_score] = output.pred_score
+            sample[field_pred_anomaly_map] = fo.Heatmap(map=output.anomaly_map)
+            sample[field_pred_anomaly_mask] = fo.Segmentation(mask=output.pred_mask)
 
     def eval_v51(self):
         """
