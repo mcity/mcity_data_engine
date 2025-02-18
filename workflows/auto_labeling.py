@@ -21,12 +21,13 @@ import psutil
 import torch
 import torch.multiprocessing as mp
 import wandb
+from accelerate.test_utils.testing import get_backend
 from datasets import Split
+from huggingface_hub import HfApi, hf_hub_download
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms.functional import to_pil_image
-from tqdm import tqdm
 from transformers import (
     AutoConfig,
     AutoModelForObjectDetection,
@@ -36,11 +37,15 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
-from transformers.utils.generic import is_torch_device
-from transformers.utils.import_utils import is_torch_available, requires_backends
 
-from config.config import NUM_WORKERS, WORKFLOWS
-from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
+from config.config import (
+    GLOBAL_SEED,
+    HF_DO_UPLOAD,
+    HF_ROOT,
+    NUM_WORKERS,
+    WANDB_ACTIVE,
+    WORKFLOWS,
+)
 from utils.logging import configure_logging
 
 
@@ -1117,16 +1122,12 @@ class HuggingFaceObjectDetection:
 
 
 class CustomCoDETRObjectDetection:
-    def __init__(self, dataset, dataset_name, splits, export_dir_root):
+    def __init__(self, dataset, dataset_info, run_config):
         self.root_codetr = "./custom_models/CoDETR/Co-DETR"
         self.dataset = dataset
-        self.dataset_name = dataset_name
-        self.splits = splits
-
-        if "train" not in splits or "test" not in splits:
-            logging.error("Co-DETR training requires a train and test split.")
-
-        self.export_dir_root = export_dir_root
+        self.dataset_name = dataset_info["name"]
+        self.export_dir_root = run_config["export_dataset_root"]
+        self.hf_repo_name = f"{HF_ROOT}/{self.dataset_name}_{run_config["config"]}"
 
     def convert_data(self):
 
@@ -1135,11 +1136,14 @@ class CustomCoDETRObjectDetection:
         # Check if folder already exists
         if not os.path.exists(export_dir):
             logging.info(f"Exporting data to {export_dir}")
-            splits = ["train", "val"]  # Expects train and val tags in FiftyOne dataset
+            splits = [
+                "train",
+                "val",
+                "test",
+            ]  # CoDETR expects data in 'train' and 'val' folder
             for split in splits:
                 split_view = self.dataset.match_tags(split)
-                # Utilize expected 'val' split for export
-                if split == "test":
+                if split == "test":  # Assign 'test' split to 'val'
                     split = "val"
                 split_view.export(
                     dataset_type=fo.types.COCODetectionDataset,
@@ -1150,9 +1154,11 @@ class CustomCoDETRObjectDetection:
                     label_field="ground_truth",
                 )
         else:
-            logging.info(f"Folder {export_dir} already exists, skipping data export.")
+            logging.warning(
+                f"Folder {export_dir} already exists, skipping data export."
+            )
 
-    def update_config_file(self, dataset_name, config_file, max_epochs=12):
+    def update_config_file(self, dataset_name, config_file, max_epochs):
         config_path = os.path.join(self.root_codetr, config_file)
 
         # Get classes from exported data
@@ -1176,7 +1182,9 @@ class CustomCoDETRObjectDetection:
             content = file.read()
 
         # Update the classes tuple
-        content = re.sub(r"classes = \([^\)]+\)", f"classes = {class_names}", content)
+        content = re.sub(
+            r"classes\s*=\s*\([^\)]*\)", f"classes = {class_names}", content
+        )
 
         # Update all instances of num_classes
         content = re.sub(r"num_classes=\d+", f"num_classes={num_classes}", content)
@@ -1187,8 +1195,8 @@ class CustomCoDETRObjectDetection:
         with open(config_path, "w") as file:
             file.write(content)
 
-        logging.info(
-            f"Updated {config_path} with classes={class_names} and num_classes={num_classes}"
+        logging.warning(
+            f"Updated {config_path} with classes={class_names} and num_classes={num_classes} and max_epochs={max_epochs}"
         )
 
     def train(self, param_config, param_n_gpus, container_tool, param_function="train"):
@@ -1241,7 +1249,7 @@ class CustomCoDETRObjectDetection:
             ]
             if not checkpoint_files:
                 logging.error(
-                    "CoDETR was not trained, model pth file missing. No checkpoint file with 'best_bbox' found."
+                    "Co-DETR was not trained, model pth file missing. No checkpoint file with 'best_bbox' found."
                 )
             else:
                 if len(checkpoint_files) > 1:
@@ -1250,7 +1258,24 @@ class CustomCoDETRObjectDetection:
                     )
                 checkpoint = checkpoint_files[0]
                 checkpoint_path = os.path.join(output_folder_codetr, checkpoint)
-                logging.info("CoDETR was trained successfully.")
+                logging.info("Co-DETR was trained successfully.")
+
+                # Upload best model to Hugging Face
+                if HF_DO_UPLOAD == True:
+                    logging.info("Uploading Co-DETR model to Hugging Face.")
+                    api = HfApi()
+                    api.create_repo(
+                        self.hf_repo_name,
+                        private=True,
+                        repo_type="model",
+                        exist_ok=True,
+                    )
+                    api.upload_file(
+                        path_or_fileobj=checkpoint_path,
+                        path_in_repo=checkpoint,
+                        repo_id=self.hf_repo_name,
+                        repo_type="model",
+                    )
 
                 # Move best model file and clear output folder
                 self._run_container(
