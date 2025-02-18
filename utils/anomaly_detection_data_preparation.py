@@ -32,11 +32,17 @@ class AnomalyDetectionDataPreparation:
 
         SUPPORTED_DATASETS = {"fisheye8k"}
 
-        if self.dataset_name in SUPPORTED_DATASETS:
-            # Call method that is named like dataset
-            method = getattr(self, self.dataset_name)
-            method()
-        else:
+        supported_dataset_found = False
+        for dataset in SUPPORTED_DATASETS:
+            if (
+                dataset in self.dataset_name
+            ):  # Allow for generalization for test datasets
+                # Call method that is named like dataset
+                supported_dataset_found = True
+                method = getattr(self, dataset)
+                method()
+
+        if supported_dataset_found == False:
             logging.error(
                 f"Dataset {self.dataset_name} is currently not supported for Anomaly Detection. Please prepare a workflow to prepare to define normality and a rare class."
             )
