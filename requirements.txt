@@ -46,7 +46,7 @@ colorama==0.4.6
 colorlog==6.8.2
 comm==0.2.2
 contourpy==1.3.0
-cryptography==43.0.1
+cryptography==44.0.1
 cycler==0.12.1
 dacite==1.7.0
 datamodel-code-generator==0.26.1
