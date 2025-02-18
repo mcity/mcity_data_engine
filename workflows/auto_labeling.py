@@ -1182,9 +1182,7 @@ class CustomCoDETRObjectDetection:
             content = file.read()
 
         # Update the classes tuple
-        content = re.sub(
-            r"classes\s*=\s*\([^\)]*\)", f"classes = {class_names}", content
-        )
+        content = re.sub(r"classes\s*=\s*\(.*?\)", f"classes = {class_names}", content)
 
         # Update all instances of num_classes
         content = re.sub(r"num_classes=\d+", f"num_classes={num_classes}", content)
