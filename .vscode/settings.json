@@ -1,11 +1,20 @@
 {
-    "[python]": {
-      "editor.defaultFormatter": "ms-python.black-formatter",
-      "editor.codeActionsOnSave": {
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
       "source.fixAll": "explicit",
       "source.organizeImports": "explicit"
     }
-    },
-    "git.autofetch": true,
-    "editor.minimap.enabled": false
-  }
+  },
+  "isort.args": ["--profile", "black"],
+  "git.autofetch": true,
+  "files.trimFinalNewlines": true,
+  "files.trimTrailingWhitespace": true,
+  "notebook.formatOnSave.enabled": true,
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true
+}

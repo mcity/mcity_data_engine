@@ -3,12 +3,13 @@
 import logging
 
 import fiftyone.utils.coco as fouc
-import numpy as np
 import torch
-from datasets import Dataset, Split
 from torch.multiprocessing import Manager
 from torchvision.io import decode_image
 from tqdm import tqdm
+
+from datasets import Dataset, Split
+from utils.dataset_loader import get_split
 
 
 class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
@@ -73,27 +74,34 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         try:
             ground_truths = fiftyone_dataset.values(gt_field)
         except:
-            logging.info("Voxel51 dataset has no field named 'ground_truth'")
+            logging.info(f"Voxel51 dataset has no field named '{gt_field}'")
             ground_truths = None
         tags = fiftyone_dataset.values("tags")
 
         # Process all samples with values() in place of the loop
-        for i, sample_id in tqdm(enumerate(ids), total=len(ids), desc="Generating torch dataset from Voxel51 dataset"):
+        for i, sample_id in tqdm(
+            enumerate(ids),
+            total=len(ids),
+            desc="Generating torch dataset from Voxel51 dataset",
+        ):
             self.img_paths.append(img_paths[i])
             self.ids.append(sample_id)  # Store the sample ID
             self.metadata.append(metadata[i])
 
             # Extract labels and splits for each sample
-            if ground_truths and ground_truths[i]:  # Check if the ground truth exists for the sample
+            if (
+                ground_truths and ground_truths[i]
+            ):  # Check if the ground truth exists for the sample
+                # Store detections as (top_left_x, top_left_y, width, height) in rel. coordinates between [0,1]
                 self.labels[sample_id] = ground_truths[i].detections
             if tags[i]:  # Check if the tags exist for the sample
-                self.splits[sample_id] = tags[i][0]  # Assume first tag is split
+                self.splits[sample_id] = get_split(tags[i])
 
     def __getitem__(self, idx):
         img_path = self.img_paths[idx]
         img_id = self.ids[idx]
         metadata = self.metadata[idx]
-        detections = self.labels.get(idx, [])
+        detections = self.labels.get(img_id, [])
         img = decode_image(img_path, mode="RGB")
         boxes = []
         labels = []
@@ -102,13 +110,14 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
 
         for det in detections:
             category_id = self.labels_map_rev[det.label]
+            # https://docs.voxel51.com/api/fiftyone.utils.coco.html#fiftyone.utils.coco.COCOObject
             coco_obj = fouc.COCOObject.from_label(
                 det,
                 metadata,
                 category_id=category_id,
             )
-            x, y, w, h = coco_obj.bbox
-            boxes.append([x, y, w, h])
+            x_min, y_min, w, h = coco_obj.bbox  # Absolute coordinates
+            boxes.append([x_min, y_min, w, h])
             labels.append(coco_obj.category_id)
             area.append(coco_obj.area)
             iscrowd.append(coco_obj.iscrowd)
@@ -118,7 +127,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
             "category_id": torch.as_tensor(labels, dtype=torch.int64),
             "image_id": img_id,
             "area": torch.as_tensor(area, dtype=torch.float32),
-            "iscrowd": torch.as_tensor(iscrowd, dtype=torch.int64)
+            "iscrowd": torch.as_tensor(iscrowd, dtype=torch.int64),
         }
         if self.transforms:
             img = self.transforms(img)
@@ -135,114 +144,6 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
 
     def get_splits(self):
         return set(self.splits.values())
-
-
-class FiftyOneTorchDatasetCOCOFilepaths(torch.utils.data.Dataset):
-    """
-    A PyTorch Dataset class for loading data from a FiftyOne dataset with COCO-style annotations.
-
-    Args:
-        fiftyone_dataset (fiftyone.core.dataset.Dataset): The FiftyOne dataset to load.
-        transforms (callable, optional): A function/transform to apply to the images.
-        gt_field (str, optional): The name of the ground truth field in the FiftyOne dataset. Defaults to "ground_truth".
-
-    Attributes:
-        transforms (callable): The function/transform to apply to the images.
-        dataset_name (str): The name of the FiftyOne dataset.
-        classes (list): The list of class names in the FiftyOne dataset.
-        labels_map_rev (dict): A dictionary mapping class names to their corresponding indices.
-        dataset_length (int): The number of samples in the FiftyOne dataset.
-        ids_bytes (np.ndarray): An array of sample IDs in bytes format.
-        filepaths_bytes (np.ndarray): An array of filepaths in bytes format.
-        splits_bytes (np.ndarray): An array of split tags in bytes format.
-
-    Methods:
-        __getitem__(idx):
-            Retrieves the image and filepath at the specified index.
-
-            Args:
-                idx (int): The index of the sample to retrieve.
-
-            Returns:
-                tuple: A tuple containing the transformed image and its filepath.
-
-        __getitems__(indices):
-            Retrieves multiple items based on a list of indices.
-
-            Args:
-                indices (list): A list of indices of the samples to retrieve.
-
-            Returns:
-                list: A list of tuples, each containing a transformed image and its filepath.
-
-        __len__():
-            Returns the number of samples in the dataset.
-
-            Returns:
-                int: The number of samples in the dataset.
-
-        get_dataset_name():
-            Returns the name of the dataset.
-
-            Returns:
-                str: The name of the dataset.
-
-        get_classes():
-            Returns the list of class names in the dataset.
-
-            Returns:
-                list: The list of class names in the dataset.
-
-        get_splits():
-            Returns the set of unique split tags in the dataset.
-
-            Returns:
-                set: A set of unique split tags in the dataset.
-    """
-
-    def __init__(self, fiftyone_dataset, transforms=None, gt_field="ground_truth"):
-        self.transforms = transforms
-        self.dataset_name = fiftyone_dataset.name
-        self.classes = fiftyone_dataset.default_classes
-        self.labels_map_rev = {c: i for i, c in enumerate(self.classes)}
-        self.dataset_length = len(fiftyone_dataset)
-
-        ids = []
-        filepaths = []
-        splits = []
-        for sample in tqdm(fiftyone_dataset, desc="Processing Voxel51 dataset"):
-            ids.append(sample.id)
-            filepaths.append(sample.filepath)
-            splits.append(sample.tags[0])  # Assume split is first tag
-
-        # Store all data in np.arrays() to allow data_loaders with num_workers > 0
-        self.ids_bytes = np.array(ids).astype(np.bytes_)
-        self.filepaths_bytes = np.array(filepaths).astype(np.bytes_)
-        self.splits_bytes = np.array(splits).astype(np.bytes_)
-
-    def __getitem__(self, idx):
-        filepath_bytes = self.filepaths_bytes[idx]
-        filepath = filepath_bytes.decode("utf-8")
-        img = decode_image(filepath, mode="RGB")
-        if self.transforms:
-            img = self.transforms(img)
-        return img, filepath
-
-    def __getitems__(self, indices):
-        return [self.__getitem__(idx) for idx in indices]
-
-    def __len__(self):
-        return self.dataset_length
-
-    def get_dataset_name(self):
-        return self.dataset_name
-
-    def get_classes(self):
-        return self.classes
-
-    def get_splits(self):
-        splits = [split.decode("utf-8") for split in self.splits_bytes]
-        return set(splits)
 
 
 class TorchToHFDatasetCOCO:
@@ -274,18 +175,29 @@ class TorchToHFDatasetCOCO:
         self.torch_dataset = torch_dataset
 
     def convert(self):
-        splits = self.torch_dataset.get_splits()
-        hf_dataset = {
-            self.split_mapping[split]: Dataset.from_generator(
-                gen_factory(self.torch_dataset, split),
-                split=self.split_mapping[split],
+        try:
+            default_split_hf = "test"
+            splits = self.torch_dataset.get_splits()
+            if len(splits) == 0:
+                logging.warning(
+                    f"Hugging Face Datasets expects splits, but none are provided. Setting '{default_split_hf}' as the default split."
+                )
+                splits = [default_split_hf]
+            hf_dataset = {
+                self.split_mapping[split]: Dataset.from_generator(
+                    gen_factory(self.torch_dataset, split, default_split_hf),
+                    split=self.split_mapping[split],
+                )
+                for split in splits
+            }
+            return hf_dataset
+        except Exception as e:
+            logging.error(
+                f"Error in dataset conversion from Torch to Hugging Face: {e}"
             )
-            for split in splits
-        }
-        return hf_dataset
 
 
-def gen_factory(torch_dataset, split_name):
+def gen_factory(torch_dataset, split_name, default_split_hf):
     """
     Factory function to create a generator function for the Hugging Face dataset.
 
@@ -315,25 +227,31 @@ def gen_factory(torch_dataset, split_name):
 
     def _gen():
         for idx, (img_path, img_id) in enumerate(zip(img_paths, img_ids)):
-            split = splits[img_id]
+            split = splits.get(img_id, None)
+
+            # If no split is provided, set default split
+            if split is None:
+                split = default_split_hf
+
+            # Only select samples of the split we are currently looking for
             if split != split_name:
                 continue
 
             sample_data = {
                 "metadata": metadata[idx],
-                "detections": labels[img_id],
+                "detections": labels.get(img_id, None),
             }
             target = create_target(sample_data, labels_map_rev, idx)
             yield {
-                "image": img_path,
-                "target": target,
+                "image_path": img_path,
+                "objects": target,
                 "split": split,
             }
 
     return _gen
 
 
-def create_target(sample_data, labels_map_rev, idx):
+def create_target(sample_data, labels_map_rev, idx, convert_to_coco=True):
     """
     Creates a target dictionary for a given sample.
 
@@ -351,17 +269,45 @@ def create_target(sample_data, labels_map_rev, idx):
     dict
         A dictionary containing bounding boxes, category IDs, image ID, area, and iscrowd flags.
     """
-    detections = sample_data["detections"]
+    detections = sample_data.get("detections", [])
+    img_width = sample_data["metadata"]["width"]
+    img_height = sample_data["metadata"]["height"]
 
-    boxes = [det.bounding_box for det in detections]
+    # Handle empty or missing detections
+    if not detections:
+        logging.warning(f"No detections found for sample {idx}")
+        return {
+            "bbox": [],
+            "category_id": [],
+            "image_id": idx,
+            "area": [],
+            "iscrowd": [],
+        }
+
+    boxes = []
+    areas = []
+
+    if convert_to_coco:
+        # From rel. coordinates between [0,1] to abs. coordinates (COCO)
+        for det in detections:
+            x_min = det.bounding_box[0] * img_width
+            y_min = det.bounding_box[1] * img_height
+            width = det.bounding_box[2] * img_width
+            height = det.bounding_box[3] * img_height
+            boxes.append([x_min, y_min, width, height])
+            area = width * height
+            areas.append(area)
+    else:
+        boxes = [det.bounding_box for det in detections]
+        areas = [det.bounding_box[2] * det.bounding_box[3] for det in detections]
+
     labels = [labels_map_rev[det.label] for det in detections]
-    area = [det.bounding_box[2] * det.bounding_box[3] for det in detections]
     iscrowd = [0 for _ in detections]
 
     return {
         "bbox": boxes,
         "category_id": labels,
         "image_id": idx,
-        "area": area,
+        "area": areas,
         "iscrowd": iscrowd,
     }

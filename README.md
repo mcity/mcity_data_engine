@@ -14,6 +14,37 @@
 
 The Mcity Data Engine is an essential tool in the Mcity makerspace for transportation innovators making AI algorithms and seeking actionable data insights through machine learning. Details on the Data Engine can be found in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki).
 
+<p align='center'>
+<a target="_blank" rel="noopener noreferrer" href="https://github.com/mcity/mcity_data_engine/wiki">
+<picture>
+  <source srcset="https://github.com/user-attachments/assets/e3e1cd10-5195-4db7-9147-11b75e078662" width="15%">
+  <img alt="Mcity Data Engine Wiki" src="">
+</picture>
+</a>
+  
+<a target="_blank" rel="noopener noreferrer" href="">
+<picture>
+  <source srcset="https://github.com/user-attachments/assets/b93f0c88-172d-4eed-8dac-3fdb82436f71"
+width="15%">
+  <img alt="Mcity Data Engine Docs" src="">
+</picture>
+</a>
+
+<a target="_blank" rel="noopener noreferrer" href="https://wandb.ai/mcity">
+<picture>
+  <source srcset="https://github.com/user-attachments/assets/2e54c0ba-26b7-42cf-b33f-903ddfd55ae9" width="15%">
+  <img alt="Mcity Data Engine Logs" src="">
+</picture>
+</a>
+
+<a target="_blank" rel="noopener noreferrer" href="https://huggingface.co/mcity-data-engine">
+<picture>
+  <source srcset="https://github.com/user-attachments/assets/5b925a76-d0a2-46ad-8d95-b9296d6a5b46" width="15%">
+  <img alt="Mcity Data Engine Models" src="">
+</picture>
+</a>
+</p>
+
 ## Instructions
 
 At least one GPU is required for the Data Engine. Check the hardware setups we have tested in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki/Environments). To download the repository and install requirements run:
@@ -26,16 +57,17 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+Login with your [Weights and Biases](https://wandb.ai/) and [Hugging Face](https://huggingface.co/) accounts:
+```
+wandb.login()
+huggingface-cli login
+```
+
 Launch a **Voxel51** session in one terminal:
 ```python session_v51.py```
 
 Configure your run in the [config/config.py](https://github.com/mcity/mcity_data_engine/blob/main/config/config.py) and launch the **Mcity Data Engine** in a second terminal:
 ```python main.py```
-
-Open Voxel51 in your browser:
-```http://localhost:5151/```
-
-In case there are issues with MongoDB, the underlying database Voxel51 uses, run ```ps aux | grep mongod``` and ```kill``` the fiftyone process.
 
 ### Notebooks and Submodules
 
@@ -97,75 +129,21 @@ Open the [docs/index.html](./docs/index.html) file locally with your browser to 
 
 ## Training
 
-Training runs are logged with [Weights and Biases (WandB)](https://wandb.ai/mcity/mcity-data-engine). To fill queues with your local machine, you need to setup an [agent](https://docs.wandb.ai/guides/launch/setup-launch-docker):
-
-```
-wandb.login()
-wandb launch-agent -q <queue-name> --max-jobs <n>
-```
+Training runs are logged with [Weights and Biases (WandB)](https://wandb.ai/mcity/mcity-data-engine). 
 
 In order to change the standard WandB directory, add the following line to the bottom of your ```~/.profile``` file and then run ```source ~/.profile```:
 
 ```
 export WANDB_DIR="<your_path>/mcity_data_engine/logs"
 ```
-In order to execute jobs on your own machine, the [following tools](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch) need to be installed:
 
-- [Docker](https://docs.docker.com/engine/install/ubuntu/) incl. [post-installation](https://docs.docker.com/engine/install/linux-postinstall/)
-- [CUDA](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#ubuntu)
-- [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
-- [GitHub Authentication Caching](https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git) with SSH
+## Contribution
 
-To launch a job on your machine with Docker, an [active agent](https://wandb.ai/mcity/launch/UnVuUXVldWU6NDQ0OTE4MA==/agents) needs to be running in a terminal. Adapt the [config](https://wandb.ai/mcity/launch/UnVuUXVldWU6NDQ0OTE4MA==/config) as necessary. Then, run
+Contributions are very welcome! The Mcity Data Engine is a blueprint for data curation and model training and will not support every use case out of the box. Please find instructions on how to contribute here:
 
-```
-wandb launch --uri "git@github.com:mcity/mcity_data_engine.git" --job-name <name-run> --project mcity-data-engine --entry-point "python main.py" --dockerfile Dockerfile.wandb --queue data-engine
-```
-
-Locally, you will need to clean up old docker images once in a while. Run ```docker image prune --all --filter until=48h``` to delete docker images older than 48 hours.
-
-### Huggingface
-
-For object detection, the data engine supports Hugging Face (HF) models of the types [AutoModelForObjectDetection](https://huggingface.co/docs/transformers/en/model_doc/auto#transformers.AutoModelForObjectDetection) and [AutoModelForZeroShotObjectDetection](https://huggingface.co/docs/transformers/en/model_doc/auto#transformers.AutoModelForZeroShotObjectDetection). At this point, [multi-GPU training is not working](https://github.com/huggingface/transformers/pull/33561) for the object detection pipeline, but multi-GPU inference is implemented.
-
-### Custom models
-
-Custom models run in their own containers to avoid any conflicting requirements. To build a dockerfile, mount the repository, test it, and push it do Dockerhub, run the following commands:
-```
-cd custom_models/<model>
-docker build -t <dockerhub-account>/<image-name>:latest .
-docker run --gpus all -v /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch <dockerhub-account>/<image-name>:latest <optional argument>
-docker login
-docker push <dockerhub-account>/<image-name>:latest
-```
-
-To run such a container with [Singularity](https://github.com/sylabs/singularity/blob/main/INSTALL.md) (readily available on UofM cluster), run the following command:
-```
-singularity run --nv --pwd /launch --bind /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch docker://<dockerhub-account>/<image-name>:latest <optional argument>
-```
-
-To run it with [Docker](https://docs.docker.com/engine/install/ubuntu/) instead, run the following command:
-
-```
-docker run --gpus all --workdir /launch --volume /<root>/mcity_data_engine/custom_models/<model>/<repo>:/launch <dockerhub-account>/<image-name>:latest <optional argument>
-```
-
-#### Co-DETR
-
-[Co-DETR](https://github.com/Sense-X/Co-DETR) is an object detection model and is leading the [COCO test-dev leaderboard](https://paperswithcode.com/sota/object-detection-on-coco) as of January 2025.
-Co-DETR is included as a submodule at [custom_models/CoDETR/Co-DETR](https://github.com/mcity/mcity_data_engine/tree/main/custom_models/CoDETR). A container image for CoDETR can be found at [dbogdollresearch/codetr](https://hub.docker.com/r/dbogdollresearch/codetr).
-
-It is necessary to also mount the dataset used for training and increase shared memory:
-
-```
-docker run --gpus all --workdir /launch \
-  --volume /<root>/mcity_data_engine/custom_models/CoDETR/Co-DETR:/launch \
-  --volume /<root_datasets>/codetr_data/data:/launch/data \
-  --shm-size=8g \
-  dbogdollresearch/codetr:latest train
-```
-
-## Contributors
+- [Contribute new workflow](https://github.com/mcity/mcity_data_engine/wiki/Workflows#how-to-add-a-new-workflow)
+- [Contribute new dataset](https://github.com/mcity/mcity_data_engine/wiki/Datasets#how-to-add-a-new-dataset)
+- [Contribute new model](https://github.com/mcity/mcity_data_engine/wiki/Models)
 
 Special thanks to these amazing people for contributing to the Mcity Data Engine! 🙌
 

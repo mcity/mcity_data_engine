@@ -5,24 +5,42 @@ import re
 import time
 from pathlib import Path
 
+import fiftyone as fo
 import fiftyone.brain as fob
 import fiftyone.zoo as foz
-import numpy as np
 from fiftyone import ViewField as F
+from huggingface_hub import HfApi, hf_hub_download
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from config.config import GLOBAL_SEED, NUM_WORKERS
+from config.config import GLOBAL_SEED, HF_DO_UPLOAD, HF_ROOT, NUM_WORKERS
 
 """
 Implementing Voxel51 brain methods.
 https://docs.voxel51.com/brain.html
 """
 
+BRAIN_TAXONOMY = {
+    "field": "embedding_selection",
+    "value_compute_representativeness": "representativeness_center",
+    "value_find_unique": "greedy_center",
+    "value_compute_uniqueness": "deterministic_center",
+    "value_find_unique_neighbour": "greedy_neighbour",
+    "value_compute_uniqueness_neighbour": "deterministic_neighbour",
+    "value_compute_representativeness_neighbour": "representativeness_neighbour",
+    "field_model": "embedding_selection_model",
+    "field_count": "embedding_selection_count",
+}
 
-class Brain:
+
+class EmbeddingSelection:
     def __init__(
-        self, dataset, dataset_info, model_name, embeddings_path="./output/embeddings/"
+        self,
+        dataset,
+        dataset_info,
+        model_name,
+        log_dir,
+        embeddings_path="./output/embeddings/",
     ):
         # WandB counter
         self.steps = 0
@@ -30,7 +48,7 @@ class Brain:
         self.brains = dataset.list_brain_runs()
         self.dataset_name = dataset_info["name"]
         self.v51_model_zoo = foz.list_zoo_models()
-        self.writer = SummaryWriter(log_dir="logs/tensorboard/teacher_zeroshot")
+        self.writer = SummaryWriter(log_dir=log_dir)
 
         # Model
         if model_name not in self.v51_model_zoo:
@@ -56,21 +74,37 @@ class Brain:
         self.embeddings_root = embeddings_path + self.dataset_name + "/"
         Path(self.embeddings_root).mkdir(parents=True, exist_ok=True)
 
-        self.brain_taxonomy = {
-            "field": "brain_selection",
-            "value_compute_representativeness": "representativeness_center",
-            "value_find_unique": "greedy_center",
-            "value_compute_uniqueness": "deterministic_center",
-            "value_find_unique_neighbour": "greedy_neighbour",
-            "value_compute_uniqueness_neighbour": "deterministic_neighbour",
-            "value_compute_representativeness_neighbour": "representativeness_neighbour",
-        }
+        self.hf_repo_name = (
+            f"{HF_ROOT}/{self.dataset_name}_embedding_{self.model_name_key}"
+        )
+
+        # Add fields to dataset
+        self.dataset.add_sample_field(BRAIN_TAXONOMY["field"], fo.StringField)
+        self.dataset.add_sample_field(BRAIN_TAXONOMY["field_model"], fo.StringField)
+        self.dataset.add_sample_field(
+            BRAIN_TAXONOMY["field_count"], fo.FloatField
+        )  # Float instead of Int for visualization in US
+
+        # Init count for samples only once. Is intilized with None by add_sample_field
+        test_sample = self.dataset.first()
+        if test_sample[BRAIN_TAXONOMY["field_count"]] is None:
+            logging.info("Setting all selection counts to 0")
+            zeros = [0] * len(self.dataset)  # Needs to be an iterablr
+            self.dataset.set_values(BRAIN_TAXONOMY["field_count"], zeros, progress=True)
+
+        # Determine if model was already used for selection
+        self.model_already_used = False
+        dataset_schema = self.dataset.get_field_schema()
+        if BRAIN_TAXONOMY["field_model"] in dataset_schema:
+            field_values = set(self.dataset.values(BRAIN_TAXONOMY["field_model"]))
+            if self.model_name_key in field_values:
+                self.model_already_used = True
 
     def __del__(self):
         self.steps -= 1  # +1 after every function, need to decrement for final step
         self.writer.close()
 
-    def compute_embeddings(self):
+    def compute_embeddings(self, mode):
         """
         Computes and stores embeddings for the given model name. Uses V51 pre-defined dim. reduction methods.
 
@@ -94,26 +128,78 @@ class Brain:
         embedding_file_name = self.embeddings_root + self.model_name_key + ".pkl"
 
         if self.model.has_embeddings:
-            # Load or compute embeddings for the model
-            if self.dataset.get_field(self.embedding_key) is not None:
-                logging.info("Loading embeddings from V51.")
-                self.embeddings_model = self.dataset.values(self.embedding_key)
-            elif os.path.exists(embedding_file_name):
-                logging.info("Loading embeddings from disk.")
-                with open(embedding_file_name, "rb") as f:
-                    self.embeddings_model = pickle.load(f)
-                self.dataset.set_values(self.embedding_key, self.embeddings_model)
-            else:
-                logging.info("Computing embeddings.")
+            # Try to load models
+            load_models_successful = None
+            if mode == "load":
+                try:
+                    logging.info(
+                        f"Attempting to load embeddings for model {self.model_name_key}."
+                    )
+                    if self.dataset.get_field(self.embedding_key) is not None:
+                        logging.info("Loading embeddings from V51.")
+                        self.embeddings_model = self.dataset.values(self.embedding_key)
+                    elif os.path.exists(embedding_file_name):
+                        logging.info("Loading embeddings from disk.")
+                        with open(embedding_file_name, "rb") as f:
+                            self.embeddings_model = pickle.load(f)
+                        self.dataset.set_values(
+                            self.embedding_key, self.embeddings_model
+                        )
+                    else:
+                        logging.info(
+                            f"Downloading embeddings {self.hf_repo_name} from Hugging Face to {self.embeddings_root}"
+                        )
+                        model_name = f"{self.model_name_key}.pkl"
+                        embedding_file_name = hf_hub_download(
+                            repo_id=self.hf_repo_name,
+                            filename=model_name,
+                            local_dir=self.embeddings_root,
+                        )
+                        logging.info("Loading embeddings from disk.")
+                        with open(embedding_file_name, "rb") as f:
+                            self.embeddings_model = pickle.load(f)
+                        self.dataset.set_values(
+                            self.embedding_key, self.embeddings_model
+                        )
+                    load_models_successful = True
+                except Exception as e:
+                    logging.warning(f"Failed to load or download embeddings: {str(e)}")
+                    load_models_successful = False
+
+            if mode == "compute" or load_models_successful == False:
+                logging.info(f"Computing embeddings for model {self.model_name_key}.")
                 self.dataset.compute_embeddings(
                     model=self.model, embeddings_field=self.embedding_key
                 )
                 self.embeddings_model = self.dataset.values(self.embedding_key)
 
-                # TODO Is this necessary? (since compute_embeddings is not stored into a variable)
                 self.dataset.set_values(self.embedding_key, self.embeddings_model)
                 with open(embedding_file_name, "wb") as f:
                     pickle.dump(self.embeddings_model, f)
+
+                # Upload embeddings to Hugging Face
+                if HF_DO_UPLOAD == True:
+                    logging.info(
+                        f"Uploading embeddings to Hugging Face: {self.hf_repo_name}"
+                    )
+                    api = HfApi()
+                    api.create_repo(
+                        self.hf_repo_name,
+                        private=True,
+                        repo_type="model",
+                        exist_ok=True,
+                    )
+
+                    model_name = f"{self.model_name_key}.pkl"
+                    api.upload_file(
+                        path_or_fileobj=embedding_file_name,
+                        path_in_repo=model_name,
+                        repo_id=self.hf_repo_name,
+                        repo_type="model",
+                    )
+
+            if mode not in ["load", "compute"]:
+                logging.error(f"Mode {mode} is not supported.")
 
             for method in tqdm(dim_reduction_methods, "Dimensionality reductions"):
                 method_key = self.model_name_key + "_" + re.sub(r"[\W-]+", "_", method)
@@ -212,7 +298,7 @@ class Brain:
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
         self.steps += 1
 
-    def compute_representativeness(self, threshold=0.99):
+    def compute_representativeness(self, threshold):
         """
         Computes the representativeness of frames in the dataset using specified
         embedding models and methods.
@@ -244,8 +330,10 @@ class Brain:
         """
 
         start_time = time.time()
-        field = self.brain_taxonomy["field"]
-        value = self.brain_taxonomy["value_compute_representativeness"]
+        field = BRAIN_TAXONOMY["field"]
+        field_model = BRAIN_TAXONOMY["field_model"]
+        field_count = BRAIN_TAXONOMY["field_count"]
+        value = BRAIN_TAXONOMY["value_compute_representativeness"]
         methods_cluster_center = ["cluster-center", "cluster-center-downweight"]
 
         for method in tqdm(methods_cluster_center, desc="Representativeness"):
@@ -273,15 +361,19 @@ class Brain:
             # quant_threshold = self.dataset.quantiles(key, threshold)
             # view = self.dataset.match(F(key) >= quant_threshold)
             view = self.dataset.match(F(method_key) >= threshold)
-            # TODO Speed up with values() and set_values()
             for sample in view.iter_samples(progress=True, autosave=True):
-                sample[field] = value
+                if sample[field] is None:
+                    sample[field] = value
+                    sample[field_model] = self.model_name_key
+                    sample[field_count] += 1
+                else:
+                    sample[field_count] += 1
         end_time = time.time()
         duration = end_time - start_time
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
         self.steps += 1
 
-    def compute_unique_images_greedy(self, perct_unique=0.01):
+    def compute_unique_images_greedy(self, perct_unique):
         """
         Computes a subset of unique images from the dataset using a greedy algorithm.
 
@@ -308,8 +400,10 @@ class Brain:
         start_time = time.time()
         sample_count = len(self.dataset.view())
         num_of_unique = perct_unique * sample_count
-        field = self.brain_taxonomy["field"]
-        value = self.brain_taxonomy["value_find_unique"]
+        field = BRAIN_TAXONOMY["field"]
+        field_model = BRAIN_TAXONOMY["field_model"]
+        field_count = BRAIN_TAXONOMY["field_count"]
+        value = BRAIN_TAXONOMY["value_find_unique"]
 
         # Check if any sample has the label label_unique:
         dataset_labels = self.dataset.count_sample_tags()
@@ -325,14 +419,20 @@ class Brain:
                 self.similarities.unique_ids, desc="Tagging unique images"
             ):
                 sample = self.dataset[unique_id]
-                sample[field] = value
+                if sample[field] is None:
+                    sample[field] = value
+                    sample[field_model] = self.model_name_key
+                    sample[field_count] += 1
+                else:
+                    sample[field_count] += 1
                 sample.save()
+
         end_time = time.time()
         duration = end_time - start_time
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
         self.steps += 1
 
-    def compute_unique_images_deterministic(self, threshold=0.99):
+    def compute_unique_images_deterministic(self, threshold):
         """
         Computes a deterministic uniqueness score for each sample in the dataset
         and updates the dataset with the computed uniqueness values. Weighted k-neighbors distances for each sample.
@@ -352,8 +452,10 @@ class Brain:
         """
 
         start_time = time.time()
-        field = self.brain_taxonomy["field"]
-        value = self.brain_taxonomy["value_compute_uniqueness"]
+        field = BRAIN_TAXONOMY["field"]
+        field_model = BRAIN_TAXONOMY["field_model"]
+        field_count = BRAIN_TAXONOMY["field_count"]
+        value = BRAIN_TAXONOMY["value_compute_uniqueness"]
 
         fob.compute_uniqueness(
             self.dataset,
@@ -365,25 +467,30 @@ class Brain:
         # quant_threshold = self.dataset.quantiles(key, threshold)
         # view = self.dataset.match(F(key) >= quant_threshold)
         view = self.dataset.match(F(self.uniqueness_key) >= threshold)
-        # TODO Improve with values() and set_values()
         for sample in view.iter_samples(progress=True, autosave=True):
-            sample[field] = value
+            if sample[field] is None:
+                sample[field] = value
+                sample[field_model] = self.model_name_key
+                sample[field_count] += 1
+            else:
+                sample[field_count] += 1
         end_time = time.time()
         duration = end_time - start_time
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
         self.steps += 1
 
-    def find_samples_by_text(self, prompt, model_name):
+    def find_samples_by_text(self, prompt, model_name, k=5):
+        # TODO Implement if of interest
         # https://docs.voxel51.com/api/fiftyone.core.collections.html#fiftyone.core.collections.SampleCollection.sort_by_similarity
         if model_name == "clip-vit-base32-torch":
-            view = self.dataset.sort_by_similarity(prompt, k=5)
+            view = self.dataset.sort_by_similarity(prompt, k=k)
 
     def compute_duplicate_images(self, fraction=0.99):
-        # Find duplicates of least similar images
+        # TODO Implement if of interest
         # https://docs.voxel51.com/brain.html#finding-near-duplicate-images
         pass
 
-    def compute_similar_images(self, dist_threshold=0.03, neighbour_count=3):
+    def compute_similar_images(self, dist_threshold, neighbour_count):
         """
         Computes and assigns similar images based on a distance threshold and neighbour count.
 
@@ -399,20 +506,22 @@ class Brain:
         None
         """
         start_time = time.time()
-        field = self.brain_taxonomy["field"]
+        field = BRAIN_TAXONOMY["field"]
+        field_model = BRAIN_TAXONOMY["field_model"]
+        field_count = BRAIN_TAXONOMY["field_count"]
         field_neighbour_distance = "distance"
 
-        value_find_unique = self.brain_taxonomy["value_find_unique"]
-        value_compute_uniqueness = self.brain_taxonomy["value_compute_uniqueness"]
-        value_compute_representativeness = self.brain_taxonomy[
+        value_find_unique = BRAIN_TAXONOMY["value_find_unique"]
+        value_compute_uniqueness = BRAIN_TAXONOMY["value_compute_uniqueness"]
+        value_compute_representativeness = BRAIN_TAXONOMY[
             "value_compute_representativeness"
         ]
 
-        value_find_unique_neighbour = self.brain_taxonomy["value_find_unique_neighbour"]
-        value_compute_uniqueness_neighbour = self.brain_taxonomy[
+        value_find_unique_neighbour = BRAIN_TAXONOMY["value_find_unique_neighbour"]
+        value_compute_uniqueness_neighbour = BRAIN_TAXONOMY[
             "value_compute_uniqueness_neighbour"
         ]
-        value_compute_representativeness_neighbour = self.brain_taxonomy[
+        value_compute_representativeness_neighbour = BRAIN_TAXONOMY[
             "value_compute_representativeness_neighbour"
         ]
 
@@ -463,12 +572,15 @@ class Brain:
                     )
                     for sample_neighbour in view:
                         distance = sample_neighbour[field_neighbour_distance]
-                        if (
-                            distance < dist_threshold
-                            and sample_neighbour[field] == None
-                        ):
-                            sample_neighbour[field] = value
+                        if distance < dist_threshold:
+                            if sample_neighbour[field] is None:
+                                sample_neighbour[field] = value
+                                sample_neighbour[field_model] = self.model_name_key
+                                sample_neighbour[field_count] += 1
+                            else:
+                                sample_neighbour[field_count] += 1
                             sample_neighbour.save()
+
         end_time = time.time()
         duration = end_time - start_time
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)

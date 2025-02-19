@@ -6,23 +6,63 @@ import torch
 from fiftyone.utils.huggingface import load_from_hub
 from torch.utils.data import DataLoader
 
+from config.config import ACCEPTED_SPLITS
+from datasets import Dataset, Split
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
+from utils.dataset_loader import get_split
+
+fisheye8k_gt_field = "detections"
+max_samples = 50
+batch_size = 4
 
 
 @pytest.fixture
 def dataset_v51():
     """Fixture to load a FiftyOne dataset from the hub."""
-    dataset_name_hub = "dbogdollumich/mcity_fisheye_v51"
-    dataset_name = "mcity_fisheye_v51_pytest"
+    dataset_name_hub = "Voxel51/fisheye8k"
+    dataset_name = "fisheye8k_pytest"
     try:
         dataset = load_from_hub(
-            repo_id=dataset_name_hub, max_samples=100, name=dataset_name
+            repo_id=dataset_name_hub, max_samples=max_samples, name=dataset_name
         )
-        for sample in dataset:
-            sample.tags = random.choice([["train"], ["val"]])
+        # Ensure that all splits are represented (normally Data Engine takes care of that)
+        for sample in dataset.iter_samples(progress=True, autosave=True):
+            sample.tags = [random.choice(ACCEPTED_SPLITS)]
     except:
         dataset = fo.load_dataset(dataset_name)
     return dataset
+
+
+@pytest.fixture
+def dataset_v51_no_splits_no_detections():
+    """Fixture to load a FiftyOne dataset from the hub."""
+    dataset_name_hub = "Voxel51/fisheye8k"
+    dataset_name = "fisheye8k_pytest_raw"
+    try:
+        dataset = load_from_hub(
+            repo_id=dataset_name_hub, max_samples=max_samples, name=dataset_name
+        )
+        # Remove all tags
+        for sample in dataset.iter_samples(progress=True, autosave=True):
+            sample.tags = []
+
+        # Remove detection field
+        dataset.delete_sample_field(fisheye8k_gt_field)
+    except:
+        dataset = fo.load_dataset(dataset_name)
+    return dataset
+
+
+def test_conversions_on_raw_dataset(dataset_v51_no_splits_no_detections):
+    "Test if conversions work with a V51 without labels or a split"
+    torch_dataset = FiftyOneTorchDatasetCOCO(
+        dataset_v51_no_splits_no_detections, gt_field=None
+    )
+    hf_dataset_converter = TorchToHFDatasetCOCO(torch_dataset)
+    hf_dataset = hf_dataset_converter.convert()
+
+    assert torch_dataset is not None
+    assert hf_dataset is not None
 
 
 def test_dataset_v51(dataset_v51):
@@ -33,12 +73,12 @@ def test_dataset_v51(dataset_v51):
 @pytest.fixture
 def torch_dataset(dataset_v51):
     """Fixture to create a FiftyOneTorchDatasetCOCO instance."""
-    return FiftyOneTorchDatasetCOCO(dataset_v51)
+    return FiftyOneTorchDatasetCOCO(dataset_v51, gt_field=fisheye8k_gt_field)
 
 
 def test_torch_dataset_length(torch_dataset):
     """Test the length of the torch dataset."""
-    assert len(torch_dataset) == 100
+    assert len(torch_dataset) == max_samples
 
 
 @pytest.mark.parametrize("index", [0, 1, 2])
@@ -55,8 +95,9 @@ def test_torch_dataset_getitem(torch_dataset, index):
 
 def test_torch_dataset_getitem_invalid_index(torch_dataset):
     """Test getting an item with an invalid index from the torch dataset."""
+    test_index = max_samples * 10
     with pytest.raises(IndexError):
-        torch_dataset[1000]
+        torch_dataset[test_index]
 
 
 def test_torch_dataset_getitems(torch_dataset):
@@ -70,8 +111,10 @@ def test_torch_dataset_getitems(torch_dataset):
 
 def test_torch_dataset_getitems_invalid_indices(torch_dataset):
     """Test getting multiple items with invalid indices from the torch dataset."""
+    test_index_1 = max_samples * 10
+    test_index_2 = test_index_1 + 1
     with pytest.raises(IndexError):
-        torch_dataset.__getitems__([1000, 1001])
+        torch_dataset.__getitems__([test_index_1, test_index_2])
 
 
 def test_torch_dataset_get_classes(torch_dataset):
@@ -83,8 +126,17 @@ def test_torch_dataset_get_classes(torch_dataset):
 def test_torch_dataset_get_splits(torch_dataset):
     """Test getting splits from the torch dataset."""
     splits = torch_dataset.get_splits()
-    assert isinstance(splits, set)
-    assert "train" in splits or "val" in splits
+    # Test return type is set
+    assert isinstance(splits, set), "get_splits() should return a set"
+
+    # Empty splits are allowed
+    if not splits:
+        return
+
+    # If splits exist, they must be subset of ACCEPTED_SPLITS
+    assert splits.issubset(
+        set(ACCEPTED_SPLITS)
+    ), f"Invalid splits found: {splits} All splits must be one of {ACCEPTED_SPLITS}"
 
 
 # Tests for torch dataloader
@@ -93,7 +145,7 @@ def dataloader(torch_dataset):
     """Fixture to create a DataLoader instance."""
     return DataLoader(
         torch_dataset,
-        batch_size=4,
+        batch_size=batch_size,
         collate_fn=lambda batch: list(zip(*batch)),
         shuffle=True,
     )
@@ -101,15 +153,31 @@ def dataloader(torch_dataset):
 
 def test_dataloader_length(dataloader, torch_dataset):
     """Test the length of the dataloader."""
-    assert len(dataloader) == (len(torch_dataset) + 3) // 4
+    assert len(dataloader) == (len(torch_dataset) + 3) // batch_size
 
 
-def test_dataloader_batch(dataloader):
+def test_dataloader_batch(dataloader, torch_dataset):
     """Test getting a batch from the dataloader."""
+    total_samples = len(torch_dataset)
+    samples_processed = 0
+
     for batch in dataloader:
         imgs, targets = batch
-        assert len(imgs) == 4
-        assert len(targets) == 4
+        current_batch_size = len(imgs)
+
+        # For the last batch, size might be smaller
+        if samples_processed + batch_size > total_samples:
+            expected_size = total_samples - samples_processed
+            assert (
+                current_batch_size == expected_size
+            ), f"Last batch size should be {expected_size} but got {current_batch_size}"
+        else:
+            assert (
+                current_batch_size == batch_size
+            ), f"Batch size should be {batch_size} but got {current_batch_size}"
+
+        assert len(targets) == current_batch_size
+
         for img, target in zip(imgs, targets):
             assert isinstance(img, torch.Tensor)
             assert "bbox" in target
@@ -117,6 +185,13 @@ def test_dataloader_batch(dataloader):
             assert "image_id" in target
             assert "area" in target
             assert "iscrowd" in target
+
+        samples_processed += current_batch_size
+
+    # Verify we processed all samples
+    assert (
+        samples_processed == total_samples
+    ), f"Processed {samples_processed} samples but dataset has {total_samples}"
 
 
 # Tests for HF dataset
@@ -129,80 +204,71 @@ def converter_torch_hf(torch_dataset):
 def test_hf_dataset_conversion(converter_torch_hf):
     """Test converting the torch dataset to HF dataset."""
     hf_dataset = converter_torch_hf.convert()
-    assert "train" in hf_dataset or "val" in hf_dataset
+    # Get splits from dataset
+    splits = set(hf_dataset.keys())
+
+    # Empty splits are allowed
+    if not splits:
+        return
+
+    ACCEPTED_SPLITS_HF = {Split.TRAIN, Split.TEST, Split.VALIDATION}
+
+    # If splits exist, they must be subset of ACCEPTED_SPLITS
+    assert splits.issubset(
+        ACCEPTED_SPLITS_HF
+    ), f"Invalid splits found: {splits} All splits must be one of {ACCEPTED_SPLITS_HF}"
+
+    # Only test instance type for valid splits
+    for split in splits:
+        assert isinstance(
+            hf_dataset[split], Dataset
+        ), f"{split} split should be a Dataset"
 
 
 def test_hf_dataset_sample(converter_torch_hf):
     """Test getting a sample from the HF dataset."""
     hf_dataset = converter_torch_hf.convert()
-    if "train" in hf_dataset:
-        sample = hf_dataset["train"][0]
-        assert "image" in sample
-        assert "target" in sample
-        assert "split" in sample
-    if "val" in hf_dataset:
-        sample = hf_dataset["val"][0]
-        assert "image" in sample
-        assert "target" in sample
-        assert "split" in sample
+    for split in ACCEPTED_SPLITS:
+        if split in hf_dataset:
+            sample = hf_dataset[split][0]
+            assert "image_path" in sample
+            assert "objects" in sample
+            assert "split" in sample
 
 
 def test_hf_dataset_dataloader(converter_torch_hf):
     """Test creating a DataLoader from the HF dataset."""
     hf_dataset = converter_torch_hf.convert()
-    if "train" in hf_dataset:
-        hf_dataset["train"] = hf_dataset["train"]
-        dataloader = DataLoader(
-            hf_dataset["train"],
-            batch_size=4,
-            collate_fn=lambda batch: (
-                [item["image"] for item in batch],
-                [item["target"] for item in batch],
-                [item["split"] for item in batch],
-            ),
-        )
-        for batch in dataloader:
-            images, targets, splits = batch
-            for img, target, split in zip(images, targets, splits):
-                assert isinstance(img, str)
-                assert isinstance(target["bbox"], list)
-                assert isinstance(target["category_id"], list)
-                assert isinstance(split, str)
-    if "val" in hf_dataset:
-        hf_dataset["val"] = hf_dataset["val"]
-        dataloader = DataLoader(
-            hf_dataset["val"],
-            batch_size=4,
-            collate_fn=lambda batch: (
-                [item["image"] for item in batch],
-                [item["target"] for item in batch],
-                [item["split"] for item in batch],
-            ),
-        )
-        for batch in dataloader:
-            images, targets, splits = batch
-            for img, target, split in zip(images, targets, splits):
-                assert isinstance(img, str)
-                assert isinstance(target["bbox"], list)
-                assert isinstance(target["category_id"], list)
-                assert isinstance(split, str)
+    for split in ACCEPTED_SPLITS:
+        if split in hf_dataset:
+            dataloader = DataLoader(
+                hf_dataset[split],
+                batch_size=batch_size,
+                collate_fn=lambda batch: (
+                    [item["image_path"] for item in batch],
+                    [item["objects"] for item in batch],
+                    [item["split"] for item in batch],
+                ),
+            )
+            for batch in dataloader:
+                images, targets, splits = batch
+                for img, target, split in zip(images, targets, splits):
+                    assert isinstance(img, str)
+                    assert isinstance(target["bbox"], list)
+                    assert isinstance(target["category_id"], list)
+                    assert isinstance(split, str)
 
 
 def test_hf_dataset_with_format(converter_torch_hf):
     """Test setting the format of the HF dataset."""
     hf_dataset = converter_torch_hf.convert()
-    if "train" in hf_dataset:
-        hf_dataset["train"] = hf_dataset["train"].with_format("torch")
-        sample = hf_dataset["train"][0]
-        assert isinstance(sample["image"], str)  # Includes filepath
-        assert isinstance(sample["target"]["bbox"], torch.Tensor)
-        assert isinstance(sample["target"]["category_id"], torch.Tensor)
-    if "val" in hf_dataset:
-        hf_dataset["val"] = hf_dataset["val"].with_format("torch")
-        sample = hf_dataset["val"][0]
-        assert isinstance(sample["image"], str)
-        assert isinstance(sample["target"]["bbox"], torch.Tensor)
-        assert isinstance(sample["target"]["category_id"], torch.Tensor)
+    for split in ACCEPTED_SPLITS:
+        if split in hf_dataset:
+            hf_dataset[split] = hf_dataset[split].with_format("torch")
+            sample = hf_dataset[split][0]
+            assert isinstance(sample["image_path"], str)  # Includes filepath
+            assert isinstance(sample["objects"]["bbox"], torch.Tensor)
+            assert isinstance(sample["objects"]["category_id"], torch.Tensor)
 
 
 # Tests for incomplete datasets
@@ -239,3 +305,61 @@ def test_no_annotations_dataset(no_annotations_dataset):
     """Test creating a torch dataset from a FiftyOne dataset with no annotations."""
     dataset = FiftyOneTorchDatasetCOCO(no_annotations_dataset)
     assert len(dataset) == 2
+
+
+def test_detection_preservation(dataset_v51, torch_dataset, converter_torch_hf):
+    """Test that detections are preserved when converting between dataset formats."""
+
+    # Get a sample from FiftyOne dataset
+    v51_sample = dataset_v51.first()
+    v51_detections = v51_sample[fisheye8k_gt_field].detections
+    v51_det_count = len(v51_detections)
+
+    # Get corresponding torch sample
+    torch_sample = torch_dataset[0]
+    torch_bboxes = torch_sample[1]["bbox"]
+    torch_categories = torch_sample[1]["category_id"]
+
+    # Build category mapping
+    categories = dataset_v51.default_classes
+    category_map = {label: idx for idx, label in enumerate(categories)}
+
+    # Verify torch detection count matches
+    assert len(torch_bboxes) == v51_det_count
+    assert len(torch_categories) == v51_det_count
+
+    # Convert to HF dataset and get sample
+    hf_dataset = converter_torch_hf.convert()
+    split = get_split(v51_sample)
+    split_mapping = {"train": Split.TRAIN, "val": Split.VALIDATION, "test": Split.TEST}
+    hf_sample = hf_dataset[split_mapping[split]][0]
+
+    # Verify HF detection count matches
+    assert len(hf_sample["objects"]["bbox"]) == v51_det_count
+    assert len(hf_sample["objects"]["category_id"]) == v51_det_count
+
+    img_width = v51_sample.metadata.width
+    img_height = v51_sample.metadata.height
+
+    # Verify detection properties match between V51 and torch
+    for i, v51_det in enumerate(v51_detections):
+        # Check bounding box format conversion
+        v51_bbox = v51_det.bounding_box
+        torch_bbox = torch_sample[1]["bbox"][i].tolist()
+
+        # Verify coordinates with tolerance
+        assert (
+            abs(v51_bbox[0] - torch_bbox[0] / img_width) < 0.01
+        )  # width normalization
+        assert (
+            abs(v51_bbox[1] - torch_bbox[1] / img_height) < 0.01
+        )  # height normalization
+        assert abs(v51_bbox[2] - torch_bbox[2] / img_width) < 0.01
+        assert abs(v51_bbox[3] - torch_bbox[3] / img_height) < 0.01
+
+        # Verify category mapping for all classes
+        expected_category = category_map[v51_det.label]
+        assert (
+            torch_categories[i] == expected_category
+        ), f"Mismatched category for {v51_det.label}"
+        assert hf_sample["objects"]["category_id"][i] == expected_category

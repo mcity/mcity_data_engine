@@ -1,8 +1,10 @@
-import pytest
 import fiftyone as fo
+import pytest
 from fiftyone.utils.huggingface import load_from_hub
+
+from config.config import WORKFLOWS
 from main import workflow_mask_teacher
-from config.config import WORKFLOWS  
+
 
 @pytest.fixture
 def dataset_v51():
@@ -18,16 +20,17 @@ def dataset_v51():
     assert dataset is not None, "Failed to load or create the FiftyOne dataset"
     return dataset
 
+
 # @pytest.mark.parametrize("seg_model", [
 #     "segment-anything-2.1-hiera-tiny-image-torch",
 # ])
 # def test_semantic_segmentation_model(dataset_v51, seg_model):
 #     WORKFLOWS["mask_teacher"]["semantic_segmentation"]["sam2"]["models"] = [seg_model]
-    
+
 #     print("Testing semantic segmentation model:", seg_model)
 #     assert len(WORKFLOWS["mask_teacher"]["semantic_segmentation"]["sam2"]["models"]) == 1, \
 #         "Expected only one semantic segmentation model"
-    
+
 #     dataset_info = {"name": "fisheye8k_mask_test"}
 
 #     print("\n[TEST] Starting workflow_mask_teacher integration test for segmentation model")
@@ -52,11 +55,11 @@ def dataset_v51():
 # ])
 # def test_depth_estimation_model(dataset_v51, depth_model):
 #     WORKFLOWS["mask_teacher"]["depth_estimation"]["dpt"]["models"] = {depth_model}
-    
+
 #     print("Testing depth estimation model:", depth_model)
 #     assert len(WORKFLOWS["mask_teacher"]["depth_estimation"]["dpt"]["models"]) == 1, \
 #         "Expected only one depth estimation model"
-    
+
 #     dataset_info = {"name": "fisheye8k_mask_test"}
 
 #     print("\n[TEST] Starting workflow_mask_teacher integration test for depth estimation model")
@@ -87,8 +90,12 @@ def test_mask_teacher(dataset_v51):
         "Intel/dpt-swinv2-tiny-256"
     }
 
-    assert len(WORKFLOWS["mask_teacher"]["semantic_segmentation"]["sam2"]["models"]) == 1, "Expected only one semantic segmentation model"
-    assert len(WORKFLOWS["mask_teacher"]["depth_estimation"]["dpt"]["models"]) == 1, "Expected only one depth estimation model"
+    assert (
+        len(WORKFLOWS["mask_teacher"]["semantic_segmentation"]["sam2"]["models"]) == 1
+    ), "Expected only one semantic segmentation model"
+    assert (
+        len(WORKFLOWS["mask_teacher"]["depth_estimation"]["dpt"]["models"]) == 1
+    ), "Expected only one depth estimation model"
 
     dataset_info = {"name": "fisheye8k_mask_test"}
 

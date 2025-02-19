@@ -59,30 +59,30 @@ def calculcate_bbox_size(box):
     return box[2] * box[3]
 
 
-class EnsembleExploration:
+class EnsembleSelection:
 
     def __init__(self, dataset, config):
         self.dataset = dataset
         self.config = config
-        self.positive_classes = config[
-            "positive_classes"
-        ]  # List of classes that count as a detection. Must be included in the classes used for detections
-        self.agreement_threshold = config[
-            "agreement_threshold"
-        ]  # Threshold for agreement between models
-        self.iou_threshold = config[
-            "iou_threshold"
-        ]  # Threshold for IoU between bboxes to consider them as overlapping
-        self.max_bbox_size = config[
-            "max_bbox_size"
-        ]  # Value between [0,1] for the max size of considered bboxes
+        self.positive_classes = config["positive_classes"]
+        self.agreement_threshold = config["agreement_threshold"]
+        self.iou_threshold = config["iou_threshold"]
+        self.max_bbox_size = config["max_bbox_size"]
+        pred_prefix = config["field_includes"]
         self.v51_agreement_tag = "detections_overlap"
+        self.n_unique_field = "n_unique_ensemble_selection"
+        self.n_unique_id_field = "n_unique_id_ensemble_selection"
+
+        logging.info(
+            f"Collecting detections of fields with prefix '{pred_prefix}'. Successful detections will be tagged with '{self.v51_agreement_tag}'."
+        )
 
         # Get V51 fields that store detection results
         self.v51_detection_fields = []
         dataset_schema = self.dataset.get_field_schema()
-        pred_prefix = "pred_"  # Assume teacher workflow was used for detections
-        for field in dataset_schema:
+        for field in tqdm(
+            dataset_schema, desc="Collecting dataset fields with detections"
+        ):
             if pred_prefix in field:
                 self.v51_detection_fields.append(field)
 
@@ -102,10 +102,7 @@ class EnsembleExploration:
 
         if len(self.v51_detection_fields) < self.agreement_threshold:
             logging.error(
-                f"Number of detection models used ({len(self.v51_detection_fields)}) is less than the agreement threshold ({self.agreement_threshold}). No agreements will be possible."
-            )
-            logging.warning(
-                "Detections can be generated with the workflow `zero_shot_teacher`"
+                f"Number of detection models used ({len(self.v51_detection_fields)}) is less than the agreement threshold ({self.agreement_threshold}). No agreements will be possible. Detections are expected in the field {pred_prefix}. Detections can be generated with the workflow `auto_labeling_zero_shot`"
             )
 
         # Get filtered V51 view for faster processing
@@ -131,9 +128,9 @@ class EnsembleExploration:
             )
         self.n_samples = len(self.view)
 
-    def ensemble_exploration(self):
+    def ensemble_selection(self):
         """
-        Perform ensemble exploration to identify and tag overlapping detections across multiple models.
+        Perform ensemble selection to identify and tag overlapping detections across multiple models.
         This method processes detections from multiple models, identifies overlapping bounding boxes,
         and tags them based on an agreement threshold. It also logs the number of unique detections
         and samples with agreed detections.
@@ -160,7 +157,7 @@ class EnsembleExploration:
             None
         """
 
-        writer = SummaryWriter(log_dir="logs/tensorboard/teacher_zeroshot")
+        writer = SummaryWriter(log_dir="logs/tensorboard/ensemble_selection")
 
         # Get detections from V51 with efficient "values" method
         samples_detections = []  # List of lists of list [model][sample][detections]
@@ -298,7 +295,7 @@ class EnsembleExploration:
                                 det_index
                             ].tags.append(self.v51_agreement_tag)
                             samples_detections[model_index][sample_index][det_index][
-                                "unique_id_exploration"
+                                self.n_unique_id_field
                             ] = unique_detection_id
                             n_bboxes_agreed += 1
 
@@ -323,7 +320,7 @@ class EnsembleExploration:
         # Calculate number of unique detections per sample
         # TODO Avoid additional iteration over dataset, integrate in prior loop
         try:
-            self.dataset.delete_sample_field("n_unique_exploration")
+            self.dataset.delete_sample_field(self.n_unique_field)
         except:
             pass
         view_tagged = self.view.select_labels(tags=self.v51_agreement_tag)
@@ -331,8 +328,8 @@ class EnsembleExploration:
             n_unique_set = set()
             for field in self.v51_detection_fields:
                 detections = sample[field].detections
-                n_unique_set.update(d["unique_id_exploration"] for d in detections)
-            sample["n_unique_exploration"] = len(n_unique_set)
+                n_unique_set.update(d[self.n_unique_id_field] for d in detections)
+            sample[self.n_unique_field] = len(n_unique_set)
 
         logging.info(
             f"Found {n_unique_vru} unique detections in {n_samples_agreed} samples. Based on {n_bboxes_agreed} total detections with {self.agreement_threshold} or more overlapping detections."

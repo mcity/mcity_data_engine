@@ -10,11 +10,11 @@ from anomalib.data.utils import read_image
 from anomalib.deploy import ExportType, TorchInferencer
 from anomalib.engine import Engine
 from anomalib.loggers import AnomalibTensorBoardLogger
-from fiftyone import ViewField as F
+from huggingface_hub import HfApi, hf_hub_download
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from torchvision.transforms.v2 import Compose, Resize
 
-from config.config import GLOBAL_SEED, NUM_WORKERS
+from config.config import GLOBAL_SEED, HF_DO_UPLOAD, HF_ROOT, NUM_WORKERS
 
 # https://docs.voxel51.com/tutorials/anomaly_detection.html
 # https://medium.com/@enrico.randellini/anomalib-a-library-for-image-anomaly-detection-and-localization-fb363639104f
@@ -29,26 +29,24 @@ class Anodec:
         eval_metrics,
         dataset_info,
         config,
+        tensorboard_output,
         anomalib_output_root="./output/models/anomalib/",
     ):
-        self.config = config
         torch.set_float32_matmul_precision(
             "medium"
         )  # Utilize Tensor core, came in warning
+        self.config = config
         self.dataset = dataset
         self.eval_metrics = eval_metrics
         self.normal_data = dataset.match_tags("train")
-        self.abnormal_data = dataset.match_tags("val")
-        self.brains = dataset.list_brain_runs()
+        self.abnormal_data = dataset.match_tags(["val", "test"])
         self.dataset_name = dataset_info["name"]
         self.TASK = TaskType.SEGMENTATION
         self.model_name = self.config["model_name"]
-        self.IMAGE_SIZE = self.config[
-            "image_size"
-        ]  # Preprocess image size for uniformity
-        if self.model_name == "Uflow":
-            self.IMAGE_SIZE = (448, 448)  # Inflexible model
-        self.anomalib_output_root = anomalib_output_root
+        self.image_size = self.config["image_size"]
+        self.batch_size = self.config["batch_size"]
+        self.tensorboard_output = os.path.abspath(tensorboard_output)
+        self.anomalib_output_root = os.path.abspath(anomalib_output_root)
         self.model_path = os.path.join(
             anomalib_output_root,
             self.model_name,
@@ -56,13 +54,7 @@ class Anodec:
             "weights/torch/model.pt",
         )
 
-        filepath_masks = dataset_info["anomalib_masks_path"]
-        filepath_train = self.normal_data.take(1).first().filepath
-        filepath_val = self.abnormal_data.take(1).first().filepath
-
-        self.normal_dir = os.path.dirname(filepath_train)
-        self.abnormal_dir = os.path.dirname(filepath_val)
-        self.mask_dir = os.path.dirname(filepath_masks)
+        self.hf_repo_name = f"{HF_ROOT}/{self.dataset_name}_anomalib_{self.model_name}"
 
         # Anomalib objects
         self.inferencer = None
@@ -77,7 +69,7 @@ class Anodec:
         except:
             pass
 
-    def create_datamodule(self, transform=None):
+    def create_datamodule(self, transform):
         """
         Create and setup a data module for anomaly detection.
 
@@ -93,17 +85,21 @@ class Anodec:
         Returns:
             None
         """
-        if transform is None:
-            transform = Compose([Resize(self.IMAGE_SIZE, antialias=True)])
 
         # Symlink the images and masks to the directory Anomalib expects.
-        for sample in self.abnormal_data.iter_samples():
+        logging.info("Preparing images and masks for Anomalib")
+        for sample in self.abnormal_data.iter_samples(progress=True, autosave=True):
             # Add mask groundtruth
             base_filename = sample.filename
             mask_filename = os.path.basename(base_filename).replace(".jpg", ".png")
+
             mask_path = os.path.join(self.mask_dir, mask_filename)
+            logging.debug(f"Assigned mask {mask_path} to sample {base_filename}")
+
+            if not os.path.exists(mask_path):
+                logging.error(f"Mask file not found: {mask_path}")
+
             sample["anomaly_mask"] = fo.Segmentation(mask_path=mask_path)
-            sample.save()
 
             dir_name = os.path.dirname(sample.filepath).split("/")[-1]
             new_filename = f"{dir_name}_{base_filename}"
@@ -118,11 +114,7 @@ class Anodec:
                     os.path.join(self.mask_dir, new_filename),
                 )
 
-        # Anomalib models that requires smaller batch sizes on an RTX 4090
-        batch_size_mapping = {"Draem": 8, "EfficientAd": 1}
-        batch_size = batch_size_mapping.get(self.model_name, self.config["batch_size"])
-        logging.info("Batch size = ", batch_size, " for model " + self.model_name)
-
+        logging.info(f"{len(self.normal_data)} normal images in train split.")
         self.datamodule = Folder(
             name=self.dataset_name,
             normal_dir=self.normal_dir,
@@ -130,30 +122,35 @@ class Anodec:
             mask_dir=self.mask_dir,
             task=self.TASK,
             transform=transform,
-            train_batch_size=batch_size,
-            eval_batch_size=batch_size,
+            train_batch_size=self.batch_size,
+            eval_batch_size=self.batch_size,
             num_workers=NUM_WORKERS,
             seed=GLOBAL_SEED,
         )
+
         self.datamodule.setup()
 
     def unlink_symlinks(self):
-        for sample in self.abnormal_data.iter_samples():
+        for sample in self.abnormal_data.iter_samples(progress=True):
             base_filename = sample.filename
             dir_name = os.path.dirname(sample.filepath).split("/")[-1]
             new_filename = f"{dir_name}_{base_filename}"
 
             try:
                 os.unlink(os.path.join(self.abnormal_dir, new_filename))
-            except:
-                pass
+            except Exception as e:
+                logging.debug(
+                    f"Unlinking of {os.path.join(self.abnormal_dir, new_filename)} failed: {e}"
+                )
 
             try:
                 os.unlink(os.path.join(self.mask_dir, new_filename))
-            except:
-                pass
+            except Exception as e:
+                logging.debug(
+                    f"Unlinking of {os.path.join(self.mask_dir, new_filename)} failed: {e}"
+                )
 
-    def train_and_export_model(self, transform=None):
+    def train_and_export_model(self):
         """
         Trains an anomaly detection model using Anomalib’s Engine class, exports the model,
         and returns the model “inferencer” object. The inferencer object is used to make predictions on new images.
@@ -169,17 +166,33 @@ class Anodec:
         MAX_EPOCHS = self.config["epochs"]
         PATIENCE = self.config["early_stop_patience"]
 
+        # Set folders
+        data_root = os.path.abspath(self.config["data_root"])
+        dataset_folder_ano_dec_masks = f"{self.dataset_name}_anomaly_detection_masks/"
+        filepath_masks = os.path.join(data_root, dataset_folder_ano_dec_masks)
+
+        filepath_train = self.normal_data.take(1).first().filepath
+        filepath_val = self.abnormal_data.take(1).first().filepath
+
+        self.normal_dir = os.path.dirname(filepath_train)
+        self.abnormal_dir = os.path.dirname(filepath_val)
+        self.mask_dir = os.path.dirname(filepath_masks)
+
+        # Resize image if defined in config
+        if self.image_size is not None:
+            transform = Compose([Resize(self.image_size, antialias=True)])
+        else:
+            transform = None
+
         self.create_datamodule(transform=transform)
         if not os.path.exists(self.model_path):
             self.model = getattr(anomalib.models, self.model_name)()
 
             os.makedirs(self.anomalib_output_root, exist_ok=True)
-            tensorboard_logs_dir = "./logs/tensorboard"
-            os.makedirs(tensorboard_logs_dir, exist_ok=True)
+            os.makedirs(self.tensorboard_output, exist_ok=True)
             self.unlink_symlinks()
             self.anomalib_logger = AnomalibTensorBoardLogger(
-                save_dir=tensorboard_logs_dir,
-                # project="mcity-data-engine",
+                save_dir=self.tensorboard_output,
             )
 
             # Callbacks
@@ -215,18 +228,26 @@ class Anodec:
                 ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
             )
 
+            # Upload model to Hugging Face
+            if HF_DO_UPLOAD == True:
+                logging.info(f"Uploading model to Hugging Face: {self.hf_repo_name}")
+                api = HfApi()
+                api.create_repo(
+                    self.hf_repo_name, private=True, repo_type="model", exist_ok=True
+                )
+                api.upload_file(
+                    path_or_fileobj=self.model_path,
+                    path_in_repo="model.pt",
+                    repo_id=self.hf_repo_name,
+                    repo_type="model",
+                )
+
+        else:
+            logging.warning(
+                f"Skipping model {self.model_name}, training results are already in {self.model_path}."
+            )
+
     def validate_model(self):
-        """
-        Validates the model using the engine's test method.
-
-        This method tests the model if the engine is available. It logs the test results
-        using the `logging` module. If the engine is not available, it currently does nothing
-        but has a TODO comment indicating that the model should be loaded from a path similar
-        to inference mode.
-
-        Returns:
-            None
-        """
         # Test model
         if self.engine:
             test_results = self.engine.test(
@@ -234,94 +255,61 @@ class Anodec:
                 datamodule=self.datamodule,
                 ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
             )
-            logging.info(test_results)
+            logging.info(f"Model test results: {test_results}")
         else:
-            pass
+            logging.error(f"Engine '{self.engine}' not available.")
 
-    def run_inference(self, threshold=0.5):
-        """
-        Runs inference on a collection of samples to detect anomalies.
-
-        Parameters:
-        threshold (float): The cutoff value for the anomaly score. Samples with a score above this threshold
-                           are considered anomalous. Default is 0.5.
-
-        Description:
-        This method takes a FiftyOne sample collection (e.g., a test set) as input, along with an inferencer object,
-        and a key for storing the results in the samples. It runs the model on each sample in the collection and stores
-        the results. The threshold argument acts as a cutoff for the anomaly score. If the score is above the threshold,
-        the sample is considered anomalous.
-
-        If the engine is available, it uses the engine to predict the outputs. For each sample, it checks if the sample
-        and output are aligned. If they are not aligned, it logs an error and continues to the next sample. It then
-        calculates the confidence score and determines if the sample is anomalous based on the threshold. The results
-        are stored in the sample with keys for anomaly score, anomaly classification, anomaly map, and defect mask.
-
-        If the engine is not available, it initializes a TorchInferencer and uses it to predict the outputs for each sample.
-        It reads the image from the sample's filepath, predicts the output, calculates the confidence score, and determines
-        if the sample is anomalous based on the threshold. The results are stored in the sample with keys for anomaly score,
-        anomaly classification, anomaly map, and defect mask.
-        """
-        if self.engine:
-            outputs = self.engine.predict(
-                model=self.model,
-                datamodule=self.datamodule,
-                ckpt_path=self.engine.trainer.checkpoint_callback.best_model_path,
-            )
-            for sample, output in zip(
-                self.abnormal_data.iter_samples(autosave=True, progress=True), outputs
-            ):
-                if sample.filepath != output["image_path"][0]:
-                    logging.error("Sample and output are not aligned!")
-                    continue
-                conf = output["pred_scores"].item()
-                anomaly = "normal" if conf < threshold else "anomaly"
-
-                sample[f"pred_anomaly_score_{self.model_name}"] = conf
-                sample[f"pred_anomaly_{self.model_name}"] = fo.Classification(
-                    label=anomaly
+    def run_inference(self, mode):
+        logging.info(f"Running inference")
+        try:
+            if os.path.exists(self.model_path):
+                file_path = self.model_path
+                logging.info(f"Loading model {self.model_name} from disk: {file_path}")
+            else:
+                download_dir = self.model_path.replace("model.pt", "")
+                logging.info(
+                    f"Downloading model {self.hf_repo_name} from Hugging Face to {download_dir}"
                 )
-                sample[f"pred_anomaly_map_{self.model_name}"] = fo.Heatmap(
-                    map=output["anomaly_maps"].numpy()
+                file_path = hf_hub_download(
+                    repo_id=self.hf_repo_name,
+                    filename="model.pt",
+                    local_dir=download_dir,
                 )
-                sample[f"pred_defect_mask_{self.model_name}"] = fo.Segmentation(
-                    mask=output["pred_masks"].numpy()
-                )
-                sample.save()
+        except Exception as e:
+            logging.error(f"Failed to load or download model: {str(e)}.")
+            return False
 
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        inferencer = TorchInferencer(path=os.path.join(file_path), device=device)
+        self.inferencer = inferencer
+
+        if mode == "train":
+            dataset = self.abnormal_data
+            logging.info(f"{len(self.abnormal_data)} images in evaluation split.")
+        elif mode == "inference":
+            dataset = self.dataset
         else:
-            inferencer = TorchInferencer(
-                path=os.path.join(self.model_path), device="cuda"
-            )
-            self.inferencer = inferencer
+            dataset = None
+            logging.error(f"Mode {mode} is not suported during inference.")
 
-            for sample in self.abnormal_data.iter_samples(autosave=True, progress=True):
+        field_pred_anomaly_score = f"pred_anomaly_score_{self.model_name}"
+        field_pred_anomaly_map = f"pred_anomaly_map_{self.model_name}"
+        field_pred_anomaly_mask = f"pred_anomaly_mask_{self.model_name}"
 
-                image = read_image(sample.filepath, as_tensor=True)
-                output = self.inferencer.predict(image)
+        for sample in dataset.iter_samples(autosave=True, progress=True):
+            image = read_image(sample.filepath, as_tensor=True)
+            output = self.inferencer.predict(image)
 
-                # Classification
-                conf = output.pred_score
-                anomaly = "normal" if conf < threshold else "anomaly"
-                sample[f"pred_anomaly_score_{self.model_name}"] = conf
-                sample[f"pred_anomaly_{self.model_name}"] = fo.Classification(
-                    label=anomaly
-                )
-
-                # Segmentation
-                sample[f"pred_anomaly_map_{self.model_name}"] = fo.Heatmap(
-                    map=output.anomaly_map
-                )
-                sample[f"pred_defect_mask_{self.model_name}"] = fo.Segmentation(
-                    mask=output.pred_mask
-                )
-                sample.save()
+            # Storing results in Voxel51 dataset
+            sample[field_pred_anomaly_score] = output.pred_score
+            sample[field_pred_anomaly_map] = fo.Heatmap(map=output.anomaly_map)
+            sample[field_pred_anomaly_mask] = fo.Segmentation(mask=output.pred_mask)
 
     def eval_v51(self):
         """
         Evaluates the segmentations of abnormal data using the specified model.
 
-        This method evaluates the segmentations of abnormal data by comparing the predicted defect mask
+        This method evaluates the segmentations of abnormal data by comparing the predicted anomaly mask
         with the ground truth anomaly mask. The evaluation results are stored and a report is printed.
 
         Parameters:
@@ -335,7 +323,7 @@ class Anodec:
         - Prints a report of the evaluation results for the specified classes [0, 255].
         """
         eval_seg = self.abnormal_data.evaluate_segmentations(
-            f"pred_defect_mask_{self.model_name}",
+            f"pred_anomaly_mask_{self.model_name}",
             gt_field="anomaly_mask",
             eval_key=f"eval_seg_{self.model_name}",
         )

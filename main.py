@@ -1,6 +1,4 @@
-import argparse
 import datetime
-import json
 import logging
 import signal
 import sys
@@ -8,52 +6,67 @@ import time
 import warnings
 from typing import Dict, List
 
-IGNORE_FUTURE_WARNINGS=True
+import torch
+
+IGNORE_FUTURE_WARNINGS = True
 if IGNORE_FUTURE_WARNINGS:
     warnings.simplefilter("ignore", category=FutureWarning)
+
+import gc
+
 import fiftyone as fo
 import torch.multiprocessing as mp
-import wandb
 from tqdm import tqdm
 
-from config.config import (SELECTED_DATASET, SELECTED_WORKFLOW, V51_ADDRESS,
-                           V51_PORT, WORKFLOWS)
-from utils.data_loader import FiftyOneTorchDatasetCOCO
-# Called with globals()
-from utils.dataset_loader import (load_annarbor_rolling, load_dataset_info,
-                                  load_fisheye_8k, load_mars_multiagent,
-                                  load_mars_multitraversal,
-                                  load_mcity_fisheye_3_months,
-                                  load_mcity_fisheye_2000)
+from config.config import (
+    SELECTED_DATASET,
+    SELECTED_WORKFLOW,
+    V51_ADDRESS,
+    V51_PORT,
+    V51_REMOTE,
+    WORKFLOWS,
+)
+from utils.anomaly_detection_data_preparation import AnomalyDetectionDataPreparation
+from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
+from utils.dataset_loader import load_dataset
 from utils.logging import configure_logging
 from utils.mp_distribution import ZeroShotDistributer
-from utils.wandb_helper import launch_to_queue_terminal
-from workflows.ano_dec import Anodec
+from utils.wandb_helper import wandb_close, wandb_init
+from workflows.anomaly_detection import Anodec
+from workflows.auto_labeling import (
+    CustomCoDETRObjectDetection,
+    HuggingFaceObjectDetection,
+    ZeroShotObjectDetection,
+)
 from workflows.aws_download import AwsDownloader
-from workflows.brain import Brain
-from workflows.ensemble_exploration import EnsembleExploration
-from workflows.teacher import (TeacherCustomCoDETR, TeacherHuggingFace,
-                               ZeroShotTeacher)
+from workflows.embedding_selection import EmbeddingSelection
+from workflows.ensemble_selection import EnsembleSelection
 from workflows.teacher_mask import MaskTeacher
+
+wandb_run = None  # Init globally to make sure it is available
 
 
 def signal_handler(sig, frame):
     logging.error("You pressed Ctrl+C!")
-    # Perform any cleanup or final actions here
     try:
-        wandb.finish()
+        wandb_close(exit_code=1)
+        cleanup_memory()
     except:
         pass
     sys.exit(0)
 
-def workflow_aws_download():
-    wandb_run = None
+
+def workflow_aws_download(parameters, wandb_activate=True):
     dataset = None
+    dataset_name = None
+    wandb_exit_code = 0
+    files_to_be_downloaded = 0
     try:
-        bucket = WORKFLOWS["aws_download"]["bucket"]
-        prefix = WORKFLOWS["aws_download"]["prefix"]
-        download_path = WORKFLOWS["aws_download"]["download_path"]
-        test_run = WORKFLOWS["aws_download"]["test_run"]
+        # Config
+        bucket = parameters["bucket"]
+        prefix = parameters["prefix"]
+        download_path = parameters["download_path"]
+        test_run = parameters["test_run"]
 
         # Logging
         now = datetime.datetime.now()
@@ -62,15 +75,16 @@ def workflow_aws_download():
 
         dataset_name = f"annarbor_rolling_{datetime_str}"
 
-        wandb.tensorboard.patch(root_logdir=log_dir)
-        wandb_run = wandb.init(
-            name=dataset_name,
-            sync_tensorboard=True,
-            group="S3",
-            job_type="download",
-            project="Data Engine Download",
+        # Weights and Biases
+        wandb_run = wandb_init(
+            run_name=dataset_name,
+            project_name="AWS Download",
+            dataset_name=dataset_name,
+            log_dir=log_dir,
+            wandb_activate=wandb_activate,
         )
 
+        # Workflow
         aws_downloader = AwsDownloader(
             bucket=bucket,
             prefix=prefix,
@@ -78,94 +92,370 @@ def workflow_aws_download():
             test_run=test_run,
         )
 
-        sub_folder, files, DOWNLOAD_NUMBER_SUCCESS, DOWNLOAD_SIZE_SUCCESS = aws_downloader.download_files(log_dir=log_dir)
-        dataset = aws_downloader.decode_data(sub_folder=sub_folder, files=files, log_dir=log_dir, dataset_name=dataset_name)
+        (
+            sub_folder,
+            files,
+            files_to_be_downloaded,
+            DOWNLOAD_NUMBER_SUCCESS,
+            DOWNLOAD_SIZE_SUCCESS,
+        ) = aws_downloader.download_files(log_dir=log_dir)
 
-        wandb_run.finish(exit_code=0)
+        dataset = aws_downloader.decode_data(
+            sub_folder=sub_folder,
+            files=files,
+            log_dir=log_dir,
+            dataset_name=dataset_name,
+        )
+
     except Exception as e:
         logging.error(f"AWS Download and Extraction failed: {e}")
-        if wandb_run:
-            wandb_run.finish(exit_code=1)
-    
-    return dataset, dataset_name
+        wandb_exit_code = 1
 
-def workflow_anomaly_detection():
-    pass
+    finally:
+        wandb_close(wandb_exit_code)
 
-def workflow_brain_selection(dataset, dataset_info, MODEL_NAME):
-    v51_brain = Brain(dataset, dataset_info, MODEL_NAME)
-    v51_brain.compute_embeddings()
-    v51_brain.compute_similarity()
+    return dataset, dataset_name, files_to_be_downloaded
 
-    # Find representative and unique samples as center points for further selections
-    v51_brain.compute_representativeness()
-    v51_brain.compute_unique_images_greedy()
-    v51_brain.compute_unique_images_deterministic()
 
-    # Select samples similar to the center points to enlarge the dataset
-    v51_brain.compute_similar_images()
+def workflow_anomaly_detection(
+    dataset_normal,
+    dataset_ano_dec,
+    dataset_info,
+    eval_metrics,
+    run_config,
+    wandb_activate=True,
+):
+    try:
+        # Weights and Biases
+        wandb_exit_code = 0
+        wandb_run, log_dir = wandb_init(
+            run_name=run_config["model_name"],
+            project_name="Selection by Anomaly Detection",
+            dataset_name=dataset_info["name"],
+            config=run_config,
+            wandb_activate=wandb_activate,
+        )
 
-    v51_keys = {}
-    v51_keys["embedding"] = v51_brain.embedding_key
-    v51_keys["similarity"] = v51_brain.similiarity_key
-    v51_keys["uniqueness"] = v51_brain.uniqueness_key
+        # Workflow
 
-    return v51_keys
+        SUPPORTED_MODES = ["train", "inference"]
+        # Check if all selected modes are supported
+        for mode in run_config["mode"]:
+            if mode not in SUPPORTED_MODES:
+                logging.error(f"Selected mode {mode} is not supported.")
+        if SUPPORTED_MODES[0] in run_config["mode"]:
+            ano_dec = Anodec(
+                dataset=dataset_ano_dec,
+                eval_metrics=eval_metrics,
+                dataset_info=dataset_info,
+                config=run_config,
+                tensorboard_output=log_dir,
+            )
+            ano_dec.train_and_export_model()
+            ano_dec.run_inference(mode=SUPPORTED_MODES[0])
+            ano_dec.eval_v51()
+        if SUPPORTED_MODES[1] in run_config["mode"]:
+            ano_dec = Anodec(
+                dataset=dataset_normal,
+                eval_metrics=eval_metrics,
+                dataset_info=dataset_info,
+                config=run_config,
+                tensorboard_output=log_dir,
+            )
+            ano_dec.run_inference(mode=SUPPORTED_MODES[1])
 
-def workflow_train_teacher():
-    pass
+    except Exception as e:
+        logging.error(
+            f"Error in Anomaly Detection for model {run_config['model_name']}: {e}"
+        )
+        wandb_exit_code = 1
+    finally:
+        wandb_close(exit_code=wandb_exit_code)
 
-def workflow_zero_shot_teacher(dataset, dataset_info):
+    return True
+
+
+def workflow_embedding_selection(
+    dataset, dataset_info, MODEL_NAME, config, wandb_activate=True
+):
+    try:
+        wandb_exit_code = 0
+        wandb_run, log_dir = wandb_init(
+            run_name=MODEL_NAME,
+            project_name="Selection by Embedding",
+            dataset_name=dataset_info["name"],
+            config=config,
+            wandb_activate=wandb_activate,
+        )
+        embedding_selector = EmbeddingSelection(
+            dataset, dataset_info, MODEL_NAME, log_dir
+        )
+
+        if embedding_selector.model_already_used == False:
+
+            embedding_selector.compute_embeddings(config["mode"])
+            embedding_selector.compute_similarity()
+
+            # Find representative and unique samples as center points for further selections
+            thresholds = config["parameters"]
+            embedding_selector.compute_representativeness(
+                thresholds["compute_representativeness"]
+            )
+            embedding_selector.compute_unique_images_greedy(
+                thresholds["compute_unique_images_greedy"]
+            )
+            embedding_selector.compute_unique_images_deterministic(
+                thresholds["compute_unique_images_deterministic"]
+            )
+
+            # Select samples similar to the center points to enlarge the dataset
+            embedding_selector.compute_similar_images(
+                thresholds["compute_similar_images"], thresholds["neighbour_count"]
+            )
+        else:
+            logging.warning(
+                f"Skipping model {embedding_selector.model_name_key}. It was already used for sample selection."
+            )
+
+    except Exception as e:
+        logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
+        wandb_exit_code = 1
+    finally:
+        wandb_close(wandb_exit_code)
+
+    return True
+
+
+def workflow_auto_labeling(dataset, hf_dataset, run_config, wandb_activate=True):
+    try:
+        wandb_exit_code = 0
+        wandb_run = wandb_init(
+            run_name=run_config["model_name"],
+            project_name="Auto Labeling Hugging Face",
+            dataset_name=run_config["v51_dataset_name"],
+            config=run_config,
+            wandb_activate=wandb_activate,
+        )
+
+        logging.error
+
+        detector = HuggingFaceObjectDetection(
+            dataset=dataset,
+            config=run_config,
+        )
+        SUPPORTED_MODES = ["train", "inference"]
+
+        # Check if all selected modes are supported
+        for mode in run_config["mode"]:
+            if mode not in SUPPORTED_MODES:
+                logging.error(f"Selected mode {mode} is not supported.")
+        if SUPPORTED_MODES[0] in run_config["mode"]:
+            logging.info(f"Training model {run_config['model_name']}")
+            detector.train(hf_dataset)
+        if SUPPORTED_MODES[1] in run_config["mode"]:
+            logging.info(f"Running inference for model {run_config['model_name']}")
+            detector.inference()
+
+    except Exception as e:
+        logging.error(f"An error occurred with model {run_config['model_name']}: {e}")
+        wandb_exit_code = 1
+
+    finally:
+        wandb_close(wandb_exit_code)
+
+    return True
+
+
+def workflow_auto_labeling_custom_codetr(
+    dataset_info, run_config, dataset=None, detector=None, wandb_activate=True
+):
+    try:
+        if detector is None:
+            # Export dataset into the format Co-DETR expects
+            try:
+                if dataset is None:
+                    logging.error(
+                        f"Dataset is '{dataset}' but needs to be passed for dataset conversion."
+                    )
+                detector = CustomCoDETRObjectDetection(
+                    dataset,
+                    dataset_info["name"],
+                    dataset_info["v51_splits"],
+                    run_config["export_dataset_root"],
+                )
+                detector.convert_data()
+            except Exception as e:
+                logging.error(f"Error during CoDETR dataset export: {e}")
+
+        wandb_exit_code = 0
+        wandb_run = wandb_init(
+            run_name="MODEL_NAME",
+            project_name="Selection by Embedding",
+            dataset_name=dataset_info["name"],
+            config=run_config,
+            wandb_activate=wandb_activate,
+        )
+
+        detector.update_config_file(
+            dataset_name=dataset_info["name"], config_file=run_config["codetr_config"]
+        )
+        detector.train(
+            run_config["codetr_config"],
+            run_config["n_gpus"],
+            run_config["container_tool"],
+        )
+    except Exception as e:
+        logging.error(f"Error during CoDETR training: {e}")
+        wandb_exit_code = 1
+    finally:
+        wandb_close(wandb_exit_code)
+
+    return True
+
+
+def workflow_zero_shot_object_detection(dataset, dataset_info, config):
     # Set multiprocessing mode for CUDA multiprocessing
     try:
-        mp.set_start_method("spawn")
-    except:
-        pass
-    # Zero-shot object detector teacher models from Huggingface
+        mp.set_start_method("spawn", force=True)
+        logging.debug("Successfully set multiprocessing start method to 'spawn'")
+    except RuntimeError as e:
+        # This is expected if the start method was already set
+        logging.debug(f"Multiprocessing start method was already set: {e}")
+    except Exception as e:
+        # Handle any other unexpected errors
+        logging.error(f"Failed to set multiprocessing start method: {e}")
+
+    # Zero-shot object detector models from Huggingface
     # Optimized for parallel multi-GPU inference, also supports single GPU
-    config = WORKFLOWS["zero_shot_teacher"]
     dataset_torch = FiftyOneTorchDatasetCOCO(dataset)
-    teacher = ZeroShotTeacher(dataset_torch=dataset_torch, dataset_info=dataset_info, config=config)
-    
+    detector = ZeroShotObjectDetection(
+        dataset_torch=dataset_torch, dataset_info=dataset_info, config=config
+    )
+
     # Check if model detections are already stored in V51 dataset or on disk
-    # TODO Think about config. Teacher already has it in init before it is processed, but does not use the hf_models. Could be more elegant.
-    models_splits_dict = teacher.exclude_stored_predictions(dataset_v51=dataset, config=config)
+    models_splits_dict = detector.exclude_stored_predictions(
+        dataset_v51=dataset, config=config
+    )
     if len(models_splits_dict) > 0:
         config["hf_models_zeroshot_objectdetection"] = models_splits_dict
-        distributor = ZeroShotDistributer(config=config, n_samples=len(dataset_torch), dataset_info=dataset_info, teacher=teacher)
+        distributor = ZeroShotDistributer(
+            config=config,
+            n_samples=len(dataset_torch),
+            dataset_info=dataset_info,
+            detector=detector,
+        )
         distributor.distribute_and_run()
     else:
-        logging.info("All teacher models already have predictions stored in the dataset.")
+        logging.info(
+            "All zero shot models already have predictions stored in the dataset."
+        )
+
+    # To make new fields available to follow-up processes
+    dataset.reload()
+    dataset.save()
+
+    return True
+
 
 def workflow_mask_teacher(dataset, dataset_info):
     try:
         DEPTH_ESTIMATION_MODELS = WORKFLOWS["mask_teacher"]["depth_estimation"]
-        SEMANTIC_SEGMENTATION_MODELS = WORKFLOWS["mask_teacher"]["semantic_segmentation"]
-        
+        SEMANTIC_SEGMENTATION_MODELS = WORKFLOWS["mask_teacher"][
+            "semantic_segmentation"
+        ]
+
         for model_name in DEPTH_ESTIMATION_MODELS:
-            teacher = MaskTeacher(dataset=dataset, dataset_info=dataset_info, model_name=model_name, task_type="depth_estimation", model_config=WORKFLOWS["mask_teacher"]["depth_estimation"][model_name])
-            teacher.run_inference()    
-        
-        for model_name in SEMANTIC_SEGMENTATION_MODELS:    
-            teacher = MaskTeacher(dataset=dataset, dataset_info=dataset_info, model_name=model_name, task_type="semantic_segmentation", model_config=WORKFLOWS["mask_teacher"]["semantic_segmentation"][model_name])
+            teacher = MaskTeacher(
+                dataset=dataset,
+                dataset_info=dataset_info,
+                model_name=model_name,
+                task_type="depth_estimation",
+                model_config=WORKFLOWS["mask_teacher"]["depth_estimation"][model_name],
+            )
             teacher.run_inference()
-        
-        return dataset  
+
+        for model_name in SEMANTIC_SEGMENTATION_MODELS:
+            teacher = MaskTeacher(
+                dataset=dataset,
+                dataset_info=dataset_info,
+                model_name=model_name,
+                task_type="semantic_segmentation",
+                model_config=WORKFLOWS["mask_teacher"]["semantic_segmentation"][
+                    model_name
+                ],
+            )
+            teacher.run_inference()
+
+        return dataset
 
     except Exception as e:
         logging.error(f"Mask Teacher failed: {e}")
-        raise      
-def workflow_ensemble_exploration():
-    pass
+        raise
+
+
+def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activate=True):
+    try:
+        wandb_exit_code = 0
+
+        wandb_run = wandb_init(
+            run_name="Selection by Ensemble",
+            project_name="Ensemble Selection",
+            dataset_name=dataset_info["name"],
+            config=run_config,
+            wandb_activate=wandb_activate,
+        )
+        ensemble_selecter = EnsembleSelection(dataset, run_config)
+        ensemble_selecter.ensemble_selection()
+    except Exception as e:
+        logging.error(f"An error occured during Ensemble Selection: {e}")
+        wandb_exit_code = 1
+
+    finally:
+        wandb_close(wandb_exit_code)
+
+    return True
+
+
+def cleanup_memory():
+    logging.info("Starting memory cleanup")
+    """Clean up memory after workflow execution"""
+    # Clear CUDA cache
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    # Force garbage collection
+    gc.collect()
+
+    # Clear any leftover tensors
+    n_deleted_torch_objects = 0
+    for obj in tqdm(
+        gc.get_objects(), desc="Deleting objects from Python Garbage Collector"
+    ):
+        try:
+            if torch.is_tensor(obj):
+                del obj
+                n_deleted_torch_objects += 1
+        except:
+            pass
+
+    logging.info(f"Deleted {n_deleted_torch_objects} torch objects")
+
+    # Final garbage collection
+    gc.collect()
 
 
 class WorkflowExecutor:
-    def __init__(self, workflows: List[str], selected_dataset: str, dataset: fo.Dataset,  dataset_info: Dict, args):
+    def __init__(
+        self,
+        workflows: List[str],
+        selected_dataset: str,
+        dataset: fo.Dataset,
+        dataset_info: Dict,
+    ):
         self.workflows = workflows
         self.selected_dataset = selected_dataset
         self.dataset = dataset
         self.dataset_info = dataset_info
-        self.args = args
 
     def execute(self) -> bool:
         """Execute workflows in sequential order"""
@@ -174,294 +464,297 @@ class WorkflowExecutor:
             return False
 
         logging.info(f"Selected workflows: {self.workflows}")
-
         for workflow in self.workflows:
-            logging.info(f"Running workflow {workflow} for dataset {self.selected_dataset}")
-            wandb_run = None
+            logging.info(
+                f"Running workflow {workflow} for dataset {self.selected_dataset}"
+            )
             try:
+                cleanup_memory()  # Clean before each workflow
+
                 if workflow == "aws_download":
-                    dataset, dataset_name = workflow_aws_download()
+                    parameter_group = "mcity"
+                    parameters = WORKFLOWS["aws_download"].get(parameter_group, None)
+                    if parameter_group == "mcity":
+                        dataset, dataset_name = workflow_aws_download(parameters)
+                    else:
+                        logging.error(
+                            f"The parameter group {parameter_group} is not supported. As AWS are highly specific, please provide a separate set of parameters and a workflow."
+                        )
 
                     # Select downloaded dataset for further workflows if configured
-                    if WORKFLOWS["aws_download"]["selected_dataset_overwrite"] == True:
+                    if dataset is not None:
+                        if (
+                            WORKFLOWS["aws_download"]["selected_dataset_overwrite"]
+                            == True
+                        ):
 
-                        dataset_info = {
-                            "name": dataset_name,
-                            "v51_type": "FiftyOneDataset",
-                            "splits": []
-                        }
+                            dataset_info = {
+                                "name": dataset_name,
+                                "v51_type": "FiftyOneDataset",
+                                "splits": [],
+                            }
 
-                        self.dataset = dataset
-                        self.dataset_info = dataset_info
-                        self.selected_dataset = dataset_name
-                        logging.warning(f"Selected dataset overwritten to {dataset_name}")
+                            self.dataset = dataset
+                            self.dataset_info = dataset_info
+                            logging.warning(
+                                f"Overwritting selected dataset {self.selected_dataset} with {dataset_name}"
+                            )
+                            self.selected_dataset = dataset_name
 
-                elif workflow == "brain_selection":
-                    embedding_models = WORKFLOWS["brain_selection"]["embedding_models"]
-                    config_file_path = "wandb_runs/brain_config.json"
-                    with open(config_file_path, "r") as file:
-                        config = json.load(file)
-                    config["overrides"]["run_config"]["v51_dataset_name"] = self.selected_dataset
+                elif workflow == "embedding_selection":
+                    embedding_models = WORKFLOWS["embedding_selection"][
+                        "embedding_models"
+                    ]
 
-                    for MODEL_NAME in (pbar := tqdm(embedding_models, desc="Brain")):
-                        wandb_run = None
-                        try:
-                            pbar.set_description("Generating/Loading embeddings with " + MODEL_NAME)
-                            config["overrides"]["run_config"]["model_name"] = MODEL_NAME
+                    for MODEL_NAME in (
+                        pbar := tqdm(embedding_models, desc="Selection by Embeddings")
+                    ):
 
-                            if args.queue == None:
-                                wandb_run = wandb.init(
-                                    name=MODEL_NAME,
-                                    allow_val_change=True,
-                                    sync_tensorboard=True,
-                                    group="Brain",
-                                    job_type="eval",
-                                    project="Data Engine Brain",
-                                    config=config,
-                                )
-                                wandb_config = wandb.config["overrides"]["run_config"]
-                                wandb_run.tags += (
-                                    wandb_config["v51_dataset_name"],
-                                    wandb_config["v51_dataset_name"],
-                                    "local",
-                                )
-                                workflow_brain_selection(self.dataset, self.dataset_info, MODEL_NAME)
-                                wandb_run.finish(exit_code=0)
-                        except Exception as e:
-                            logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
-                            if wandb_run:
-                                wandb_run.finish(exit_code=1)
-                            continue
+                        # Status
+                        pbar.set_description(
+                            f"Selection by embeddings with model {MODEL_NAME}."
+                        )
+
+                        # Config
+                        mode = WORKFLOWS["embedding_selection"]["mode"]
+                        parameters = WORKFLOWS["embedding_selection"]["parameters"]
+                        config = {"mode": mode, "parameters": parameters}
+
+                        # Workflow
+                        workflow_embedding_selection(
+                            self.dataset,
+                            self.dataset_info,
+                            MODEL_NAME,
+                            config,
+                        )
 
                 elif workflow == "anomaly_detection":
-                    anomalib_image_models = WORKFLOWS["anomaly_detection"]["anomalib_image_models"]
-                    eval_metrics = WORKFLOWS["anomaly_detection"]["anomalib_eval_metrics"]
 
-                    config_file_path = "wandb_runs/anomalib_config.json"
-                    with open(config_file_path, "r") as file:
-                        config = json.load(file)
-                    config["overrides"]["run_config"]["v51_dataset_name"] = self.selected_dataset
-                    wandb_project = "Data Engine Anomalib"
+                    # Config
+                    ano_dec_config = WORKFLOWS["anomaly_detection"]
+                    anomalib_image_models = ano_dec_config["anomalib_image_models"]
+                    eval_metrics = ano_dec_config["anomalib_eval_metrics"]
 
-                    for MODEL_NAME in (pbar := tqdm(anomalib_image_models, desc="Anomalib")):
-                        pbar.set_description("Training/Loading Anomalib model " + MODEL_NAME)
-                        config["overrides"]["run_config"]["model_name"] = MODEL_NAME
-
-                        # Local execution
-                        if self.args.queue == None:
-                            wandb_run = wandb.init(
-                                allow_val_change=True,
-                                sync_tensorboard=True,
-                                project=wandb_project,
-                                group="Anomalib",
-                                job_type="train",
-                                config=config,
+                    dataset_ano_dec = None
+                    data_root = None
+                    if "train" in ano_dec_config["mode"]:
+                        try:
+                            data_preparer = AnomalyDetectionDataPreparation(
+                                self.dataset, self.selected_dataset
                             )
-                            config = wandb.config["overrides"]["run_config"]
-                            wandb_run.tags += (config["v51_dataset_name"], config["model_name"], "local")
-                            ano_dec = Anodec(
-                                dataset=self.dataset,
-                                eval_metrics=eval_metrics,
-                                dataset_info=self.dataset_info,
-                                config=config,
-                            )
-                            ano_dec.train_and_export_model()
-                            ano_dec.run_inference()
-                            ano_dec.eval_v51()
-
-                        # Queue execution
-                        elif self.args.queue != None:
-                            # Update config file
-                            with open(config_file_path, "w") as file:
-                                json.dump(config, file, indent=4)
-
-                            # Add job to queue
-                            wandb_entry_point = config["overrides"]["entry_point"]
-                            launch_to_queue_terminal(
-                                name=MODEL_NAME,
-                                project=wandb_project,
-                                config_file=config_file_path,
-                                entry_point=wandb_entry_point,
-                                queue=self.args.queue,
+                            dataset_ano_dec = data_preparer.dataset_ano_dec
+                            data_root = data_preparer.export_root
+                        except Exception as e:
+                            logging.error(
+                                f"Error during data preparation for Anomaly Detection: {e}"
                             )
 
-                        wandb_run.finish(exit_code=0)
+                    for MODEL_NAME in (
+                        pbar := tqdm(anomalib_image_models, desc="Anomalib")
+                    ):
+                        # Status
+                        pbar.set_description(f"Anomalib model {MODEL_NAME}.")
 
-                elif workflow == "train_teacher":
-                    selected_model_source = WORKFLOWS["train_teacher"]["model_source"]
+                        # Config
+                        run_config = {
+                            "model_name": MODEL_NAME,
+                            "image_size": anomalib_image_models[MODEL_NAME].get(
+                                "image_size", None
+                            ),
+                            "batch_size": anomalib_image_models[MODEL_NAME].get(
+                                "batch_size", 1
+                            ),
+                            "epochs": ano_dec_config["epochs"],
+                            "early_stop_patience": ano_dec_config[
+                                "early_stop_patience"
+                            ],
+                            "data_root": data_root,
+                            "mode": ano_dec_config["mode"],
+                        }
 
-                    if selected_model_source == "hf_models_objectdetection":
-                        teacher_models = WORKFLOWS["train_teacher"]["hf_models_objectdetection"]
-                        wandb_project = "Data Engine Teacher"
-                        config_file_path = "wandb_runs/teacher_config.json"
-                        with open(config_file_path, "r") as file:
-                            config = json.load(file)
+                        # Workflow
+                        workflow_anomaly_detection(
+                            self.dataset,
+                            dataset_ano_dec,
+                            self.dataset_info,
+                            eval_metrics,
+                            run_config,
+                        )
 
-                        # Train teacher models
-                        for MODEL_NAME in (pbar := tqdm(teacher_models, desc="Teacher Models")):
-                            wandb_run = None
-                            try:
-                                pbar.set_description("Training/Loading Teacher model " + MODEL_NAME)
-                                config["overrides"]["run_config"]["model_name"] = MODEL_NAME
-                                config["overrides"]["run_config"]["v51_dataset_name"] = self.selected_dataset
-                                if self.args.queue == None:
+                elif workflow == "auto_labeling":
 
-                                    wandb_run = wandb.init(
-                                        name=MODEL_NAME,
-                                        allow_val_change=True,
-                                        sync_tensorboard=True,
-                                        group="Teacher",
-                                        job_type="train",
-                                        config=config,
-                                        project=wandb_project,
-                                    )
-                                    wandb_config = wandb.config["overrides"]["run_config"]
+                    # Config
+                    SUPPORTED_MODEL_SOURCES = [
+                        "hf_models_objectdetection",
+                        "custom_codetr",
+                        "ultralytics",
+                    ]
 
-                                    wandb_run.tags += (
-                                        wandb_config["v51_dataset_name"],
-                                        "local",
-                                    )
-                                    teacher = TeacherHuggingFace(
-                                        dataset=self.dataset,
-                                        config=wandb_config,
-                                    )
+                    # Check if all selected modes are supported
+                    config_autolabel = WORKFLOWS["auto_labeling"]
+                    selected_model_source = config_autolabel["model_source"]
+                    for model_source in selected_model_source:
+                        if model_source not in SUPPORTED_MODEL_SOURCES:
+                            logging.error(
+                                f"Selected model source {model_source} is not supported."
+                            )
+                    if SUPPORTED_MODEL_SOURCES[0] in selected_model_source:
+                        hf_models = config_autolabel["hf_models_objectdetection"]
 
-                                    teacher.train()
-                                    wandb_run.finish(exit_code=0)
+                        # Dataset Conversion
+                        try:
+                            logging.info("Converting dataset into Hugging Face format.")
+                            pytorch_dataset = FiftyOneTorchDatasetCOCO(self.dataset)
+                            pt_to_hf_converter = TorchToHFDatasetCOCO(pytorch_dataset)
+                            hf_dataset = pt_to_hf_converter.convert()
+                        except Exception as e:
+                            logging.error(f"Error during dataset conversion: {e}")
 
-                                elif self.args.queue != None:
-                                    # Update config file
-                                    with open(config_file_path, "w") as file:
-                                        json.dump(config, file, indent=4)
+                        # Train models
+                        for MODEL_NAME in (
+                            pbar := tqdm(hf_models, desc="Auto Labeling Models")
+                        ):
+                            # Status Update
+                            pbar.set_description(
+                                f"Processing Hugging Face model {MODEL_NAME}"
+                            )
 
-                                    wandb_entry_point = config["overrides"]["entry_point"]
-                                    # Add job to queue
-                                    launch_to_queue_terminal(
-                                        name=MODEL_NAME,
-                                        project=wandb_project,
-                                        config_file=config_file_path,
-                                        entry_point=wandb_entry_point,
-                                        queue=self.args.queue,
-                                    )
-                            except Exception as e:
-                                logging.error(f"An error occurred with model {MODEL_NAME}: {e}")
-                                if wandb_run:
-                                    wandb_run.finish(exit_code=1)
-                                continue
-                    elif selected_model_source == "custom_codetr":
+                            # Config
+                            config_model = config_autolabel[
+                                "hf_models_objectdetection"
+                            ][MODEL_NAME]
+
+                            run_config = {
+                                "mode": config_autolabel["mode"],
+                                "model_name": MODEL_NAME,
+                                "v51_dataset_name": self.selected_dataset,
+                                "epochs": config_autolabel["epochs"],
+                                "early_stop_threshold": config_autolabel[
+                                    "early_stop_threshold"
+                                ],
+                                "early_stop_patience": config_autolabel[
+                                    "early_stop_patience"
+                                ],
+                                "learning_rate": config_autolabel["learning_rate"],
+                                "weight_decay": config_autolabel["weight_decay"],
+                                "max_grad_norm": config_autolabel["max_grad_norm"],
+                                "batch_size": config_model.get("batch_size", 1),
+                                "image_size": config_model.get("image_size", None),
+                                "n_worker_dataloader": config_autolabel[
+                                    "n_worker_dataloader"
+                                ],
+                            }
+
+                            # Workflow
+                            workflow_auto_labeling(
+                                self.dataset,
+                                hf_dataset,
+                                run_config,
+                            )
+
+                    if SUPPORTED_MODEL_SOURCES[1] in selected_model_source:
+
+                        # Config
+                        config_codetr = WORKFLOWS["auto_labeling"]["custom_codetr"]
+                        run_config = {
+                            "export_dataset_root": config_codetr["export_dataset_root"],
+                            "container_tool": config_codetr["container_tool"],
+                            "n_gpus": config_codetr["n_gpus"],
+                        }
+                        codetr_models = config_codetr["configs"]
+
                         # Export dataset into the format Co-DETR expects
-                        export_dir = WORKFLOWS["train_teacher"]["custom_codetr"]["export_dataset_root"]
-                        container_tool = WORKFLOWS["train_teacher"]["custom_codetr"]["container_tool"]
-                        param_n_gpus = WORKFLOWS["train_teacher"]["custom_codetr"]["n_gpus"]
-                        teacher = TeacherCustomCoDETR(self.dataset, self.selected_dataset, self.dataset_info["v51_splits"], export_dir)
-                        teacher.convert_data()
+                        try:
+                            detector = CustomCoDETRObjectDetection(
+                                dataset,
+                                dataset_info["name"],
+                                dataset_info["v51_splits"],
+                                config_codetr["export_dataset_root"],
+                            )
+                            detector.convert_data()
+                        except Exception as e:
+                            logging.error(f"Error during CoDETR dataset export: {e}")
 
-                        codetr_configs = WORKFLOWS["train_teacher"]["custom_codetr"]["configs"]
-                        for config in codetr_configs:
-                            teacher.update_config_file(dataset_name=self.selected_dataset, config_file=config)
-                            teacher.train(config, param_n_gpus, container_tool)
-                    else:
-                        logging.error(f"Selected model source {selected_model_source} is not supported.")
+                        for MODEL_NAME in (
+                            pbar := tqdm(codetr_models, desc="CoDETR training")
+                        ):
+                            # Status Update
+                            pbar.set_description(f"CoDETR model {MODEL_NAME}")
 
+                            # Update config
+                            run_config["codetr_config"] = MODEL_NAME
 
-                elif workflow == "zero_shot_teacher":
-                    workflow_zero_shot_teacher(self.dataset, self.dataset_info)
+                            # Workflow
+                            workflow_auto_labeling_custom_codetr(
+                                self.dataset_info, run_config
+                            )
+
+                elif workflow == "auto_labeling_zero_shot":
+                    config = WORKFLOWS["auto_labeling_zero_shot"]
+                    workflow_zero_shot_object_detection(
+                        self.dataset, self.dataset_info, config
+                    )
+
+                elif workflow == "ensemble_selection":
+                    # Config
+                    run_config = WORKFLOWS["ensemble_selection"]
+
+                    # Workflow
+                    workflow_ensemble_selection(
+                        self.dataset, self.dataset_info, run_config
+                    )
 
                 elif workflow == "mask_teacher":
                     workflow_mask_teacher(self.dataset, self.dataset_info)
 
-                elif workflow == "ensemble_exploration":
-                    wandb_project = "Data Engine Ensemble Exploration"
-                    config_file_path = "wandb_runs/ensemble_exploration_config.json"
-                    with open(config_file_path, "r") as file:
-                        config = json.load(file)
-                    config["overrides"]["run_config"]["v51_dataset_name"] = self.selected_dataset
-                    if self.args.queue == None:
-                        wandb_run = wandb.init(
-                            name="ensemble-exploration",
-                            allow_val_change=True,
-                            sync_tensorboard=True,
-                            group="Exploration",
-                            job_type="eval",
-                            config=config,
-                            project=wandb_project,
-                        )
-                        wandb_config = wandb.config["overrides"]["run_config"]
-                        wandb_run.tags += (
-                            wandb_config["v51_dataset_name"],
-                            "local",
-                            "ensemble-exploration",
-                        )
-                        explorer = EnsembleExploration(self.dataset, wandb_config)
-                        explorer.ensemble_exploration()
-                        wandb_run.finish(exit_code=0)
-
                 else:
-                    logging.error(f"Workflow {workflow} not found. Check available workflows in config.py.")
+                    logging.error(
+                        f"Workflow {workflow} not found. Check available workflows in config.py."
+                    )
                     return False
+
+                cleanup_memory()  # Clean after each workflow
+                logging.info(f"Completed workflow {workflow} and cleaned up memory")
 
             except Exception as e:
                 logging.error(f"Workflow {workflow}: An error occurred: {e}")
-                if wandb_run:
-                    wandb_run.finish(exit_code=1)
+                wandb_close(exit_code=1)
+                cleanup_memory()  # Clean up even after failure
 
         return True
 
-def load_dataset(selected_dataset: str) -> fo.Dataset:
-    dataset_info = load_dataset_info(selected_dataset)
 
-    if dataset_info:
-        loader_function = dataset_info.get("loader_fct")
-        dataset = globals()[loader_function](dataset_info)
-    else:
-        logging.error(
-            str(selected_dataset)
-            + " is not a valid dataset name. Check supported datasets in datasets.yaml."
-        )
-
-    return dataset, dataset_info
-
-def main(args):
+def main():
     time_start = time.time()
     configure_logging()
 
-    if args.tags:
-        wandb_tags = args.tags.split(",")
-        # TODO Implement usage of tags
-    if not args.queue:
-        # Signal handler for CTRL + C
-        signal.signal(signal.SIGINT, signal_handler)
+    # Signal handler for CTRL + C
+    signal.signal(signal.SIGINT, signal_handler)
 
     # Execute workflows
     dataset, dataset_info = load_dataset(SELECTED_DATASET)
-    executor = WorkflowExecutor(SELECTED_WORKFLOW, SELECTED_DATASET, dataset, dataset_info, args)
+    executor = WorkflowExecutor(
+        SELECTED_WORKFLOW, SELECTED_DATASET["name"], dataset, dataset_info
+    )
     executor.execute()
 
     # Launch V51 session
-    if not args.queue:
-        dataset.reload()
-        dataset.save()
-        logging.info(f"Launching Voxel51 session for dataset {dataset.name}:")
-        logging.info(dataset)
-        fo.pprint(dataset.stats(include_media=True))
-        session = fo.launch_app(dataset, address=V51_ADDRESS, port=V51_PORT, remote=True)
+    dataset.reload()
+    dataset.save()
+    logging.info(f"Launching Voxel51 session for dataset {dataset_info["name"]}:")
+
+    # Dataset stats
+    logging.debug(dataset)
+    logging.debug(dataset.stats(include_media=True))
+
+    # V51 UI launch
+    session = fo.launch_app(
+        dataset, address=V51_ADDRESS, port=V51_PORT, remote=V51_REMOTE
+    )
 
     time_stop = time.time()
     logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run script locally or in W&B queue.")
-    parser.add_argument(
-        "--queue",
-        choices=[None, "data-engine", "lighthouse"],
-        default=None,
-        help="If no WandB queue selected, code will run locally.'",
-    )
-    parser.add_argument(
-        "--tags",
-        type=str,
-        help="Comma-separated list of WandB tags",
-    )
-    args = parser.parse_args()
-    main(args)
+    main()
