@@ -1,7 +1,7 @@
 # This workflow will install Python dependencies, run tests and lint with a single version of Python
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
-name: Tests and Documentation
+name: Tests and Docs
 
 on:
   push:
@@ -18,9 +18,7 @@ permissions:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - name: Remove unnecessary files
       run: |
@@ -58,6 +56,7 @@ jobs:
       with:
         path: docs/
 
+    # Local availability of docs
     - name: Pull request for updated documentation
       uses: peter-evans/create-pull-request@v7
       with:
@@ -69,5 +68,16 @@ jobs:
         add-paths: docs/*
 
   # Deploy the artifact to GitHub pages PUBLICLY.
-  # This is a separate job so that only actions/deploy-pages has the necessary permissions.
   # https://github.com/mitmproxy/pdoc/blob/main/.github/workflows/docs.yml
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
