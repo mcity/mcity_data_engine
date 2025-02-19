@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    allow:
+      - dependency-name: "fiftyone"
+      - dependency-name: "transformers"
+      - dependency-name: "datasets"
+      - dependency-name: "huggingface-hub"
+      - dependency-name: "ultralytics"
+      - dependency-name: "wandb"
+      - dependency-name: "timm"
+      - dependency-name: "accelerate"
+      - dependency-name: "openai"
+      - dependency-name: "anomalib"
