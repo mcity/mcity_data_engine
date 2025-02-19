@@ -67,10 +67,11 @@ jobs:
         labels: documentation
         add-paths: docs/*
 
-  # Deploy the artifact to GitHub pages PUBLICLY.
+  # Deploy the artifact to GitHub pages PUBLICLY when pushes to main occur
   # https://github.com/mitmproxy/pdoc/blob/main/.github/workflows/docs.yml
   deploy:
     needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'  
     runs-on: ubuntu-latest
     permissions:
       pages: write
