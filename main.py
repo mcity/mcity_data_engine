@@ -469,8 +469,6 @@ class WorkflowExecutor:
                 f"Running workflow {workflow} for dataset {self.selected_dataset}"
             )
             try:
-                cleanup_memory()  # Clean before each workflow
-
                 if workflow == "aws_download":
                     parameter_group = "mcity"
                     parameters = WORKFLOWS["aws_download"].get(parameter_group, None)
@@ -757,4 +755,5 @@ def main():
 
 
 if __name__ == "__main__":
+    cleanup_memory()  # Clean before run
     main()
