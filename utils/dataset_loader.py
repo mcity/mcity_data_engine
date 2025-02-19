@@ -83,10 +83,10 @@ def get_split(v51_sample: Union[fo.core.sample.Sample, List[str]]) -> str:
     found_splits = [split for split in ACCEPTED_SPLITS if split in sample_tags]
 
     if len(found_splits) == 0:
-        logging.error(f"No split found in sample tags: '{sample_tags}'")
+        logging.warning(f"No split found in sample tags: {sample_tags}")
         return None
     elif len(found_splits) > 1:
-        logging.error(f"Multiple splits found in sample tags: '{found_splits}'")
+        logging.warning(f"Multiple splits found in sample tags: '{found_splits}'")
         return None
     else:
         split = found_splits[0]
