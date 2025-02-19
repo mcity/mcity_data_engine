@@ -676,7 +676,7 @@ class ZeroShotObjectDetection:
                                 box_width = (box[2] - box[0]).item()
                                 box_height = (box[3] - box[1]).item()
                             else:
-                                logging.warning(
+                                logging.debug(
                                     f"Skipped detection with {hf_model_config_name} due to unclear output: {label}"
                                 )
                                 processing_successful = False
