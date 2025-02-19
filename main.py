@@ -739,7 +739,7 @@ def main():
     # Launch V51 session
     dataset.reload()
     dataset.save()
-    logging.info(f"Launching Voxel51 session for dataset {dataset_info["name"]}:")
+    logging.info(f"Launching Voxel51 session for dataset {dataset_info['name']}:")
 
     # Dataset stats
     logging.debug(dataset)
