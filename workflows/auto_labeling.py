@@ -638,8 +638,8 @@ class ZeroShotObjectDetection:
             elif hf_model_config_name == "OmDetTurboConfig":
                 results = processor.post_process_grounded_object_detection(
                     outputs,
-                    classes=batch_classes,
-                    score_threshold=detection_threshold,
+                    text_labels=batch_classes,
+                    threshold=detection_threshold,
                     nms_threshold=detection_threshold,
                     target_sizes=target_sizes,
                 )
@@ -651,15 +651,14 @@ class ZeroShotObjectDetection:
                     f"Lengths of results, target_sizes, and labels do not match: {len(results)}, {len(target_sizes)}, {len(labels)}"
                 )
             for result, size, target in zip(results, target_sizes, labels):
-                boxes, scores = result["boxes"], result["scores"]
+                boxes, scores, labels = (
+                    result["boxes"],
+                    result["scores"],
+                    result["text_labels"],
+                )
 
                 img_height = size[0]
                 img_width = size[1]
-
-                if "labels" in result:
-                    labels = result["labels"]
-                elif "classes" in result:  # OmDet deviates from the other models
-                    labels = result["classes"]
 
                 detections = []
                 for box, score, label in zip(boxes, scores, labels):
@@ -701,7 +700,6 @@ class ZeroShotObjectDetection:
                         "Owlv2Config",
                         "OwlViTConfig",
                     ]:
-                        label = object_classes[label]  # Label is ID
                         top_left_x = box[0].item() / img_width
                         top_left_y = box[1].item() / img_height
                         box_width = (box[2].item() - box[0].item()) / img_width
