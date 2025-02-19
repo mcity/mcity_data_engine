@@ -22,6 +22,7 @@ import torch
 import torch.multiprocessing as mp
 import wandb
 from accelerate.test_utils.testing import get_backend
+from datasets import Split
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
@@ -44,7 +45,6 @@ from config.config import (
     WANDB_ACTIVE,
     WORKFLOWS,
 )
-from datasets import Split
 from utils.logging import configure_logging
 
 
@@ -1196,7 +1196,6 @@ class CustomCoDETRObjectDetection:
         )
 
     def train(self, param_config, param_n_gpus, container_tool, param_function="train"):
-        logging.info(f"Launching training for Co-DETR config {param_config}.")
 
         volume_data = os.path.join(self.export_dir_root, self.dataset_name)
         train_result = self._run_container(
@@ -1226,7 +1225,14 @@ class CustomCoDETRObjectDetection:
             checkpoint = checkpoint_files[0]
             checkpoint_path = os.path.join(output_folder_codetr, checkpoint)
 
-            logging.info("CoDETR was trained successfully.")
+            # Train model, store checkpoints in 'output_folder_codetr'
+            train_result = self._run_container(
+                volume_data=volume_data,
+                param_function=param_function,
+                param_config=param_config,
+                param_n_gpus=param_n_gpus,
+                container_tool=container_tool,
+            )
 
             # Move model file
             param_config_clean = os.path.splitext(os.path.basename(param_config))[0]

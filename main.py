@@ -41,6 +41,7 @@ from workflows.auto_labeling import (
 from workflows.aws_download import AwsDownloader
 from workflows.embedding_selection import EmbeddingSelection
 from workflows.ensemble_selection import EnsembleSelection
+from workflows.teacher_mask import MaskTeacher
 
 wandb_run = None  # Init globally to make sure it is available
 
@@ -356,6 +357,42 @@ def workflow_zero_shot_object_detection(dataset, dataset_info, config):
     return True
 
 
+def workflow_mask_teacher(dataset, dataset_info):
+    try:
+        DEPTH_ESTIMATION_MODELS = WORKFLOWS["mask_teacher"]["depth_estimation"]
+        SEMANTIC_SEGMENTATION_MODELS = WORKFLOWS["mask_teacher"][
+            "semantic_segmentation"
+        ]
+
+        for model_name in DEPTH_ESTIMATION_MODELS:
+            teacher = MaskTeacher(
+                dataset=dataset,
+                dataset_info=dataset_info,
+                model_name=model_name,
+                task_type="depth_estimation",
+                model_config=WORKFLOWS["mask_teacher"]["depth_estimation"][model_name],
+            )
+            teacher.run_inference()
+
+        for model_name in SEMANTIC_SEGMENTATION_MODELS:
+            teacher = MaskTeacher(
+                dataset=dataset,
+                dataset_info=dataset_info,
+                model_name=model_name,
+                task_type="semantic_segmentation",
+                model_config=WORKFLOWS["mask_teacher"]["semantic_segmentation"][
+                    model_name
+                ],
+            )
+            teacher.run_inference()
+
+        return dataset
+
+    except Exception as e:
+        logging.error(f"Mask Teacher failed: {e}")
+        raise
+
+
 def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activate=True):
     try:
         wandb_exit_code = 0
@@ -666,6 +703,9 @@ class WorkflowExecutor:
                     workflow_ensemble_selection(
                         self.dataset, self.dataset_info, run_config
                     )
+
+                elif workflow == "mask_teacher":
+                    workflow_mask_teacher(self.dataset, self.dataset_info)
 
                 else:
                     logging.error(

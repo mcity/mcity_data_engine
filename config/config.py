@@ -122,7 +122,6 @@ WORKFLOWS = {
             "hustvl/yolos-base": {"batch_size": 1},
         },
         "custom_codetr": {
-            "train_model": True,  # Set false if model file should be loaded without training
             "export_dataset_root": "/media/dbogdoll/Datasets/codetr_data/",
             "configs": [
                 "projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py",
@@ -140,29 +139,29 @@ WORKFLOWS = {
         "hf_models_zeroshot_objectdetection": {
             # dataset_chunks: Number of chunks to split the dataset into for parallel processing       # batch_size
             "omlab/omdet-turbo-swin-tiny-hf": {
-                "batch_size": 1,
+                "batch_size": 180,
                 "n_dataset_chunks": 1,
             },  # RTX 4090: 64 ; H 100: 128
             "IDEA-Research/grounding-dino-tiny": {
-                "batch_size": 1,
+                "batch_size": 32,
                 "n_dataset_chunks": 1,
             },  # RTX 4090: 8 ;  H 100: 32
             # "IDEA-Research/grounding-dino-base": {"batch_size": 8, "n_dataset_chunks": 1},            # RTX 4090: 8 ;  H 100: ?
             # "google/owlvit-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},                   # RTX 4090: 8 ;  H 100: ?
             # "google/owlvit-base-patch32": {"batch_size": 8, "n_dataset_chunks": 1},                   # RTX 4090: 8 ;  H 100: ?
             "google/owlvit-large-patch14": {
-                "batch_size": 1,
+                "batch_size": 24,
                 "n_dataset_chunks": 8,
             },  # RTX 4090: 4 ;  H 100: 16
             # "google/owlv2-base-patch16": {"batch_size": 32, "n_dataset_chunks": 1},                    # RTX 4090: 8 ;  H 100: 32
             # "google/owlv2-base-patch16-ensemble": {"batch_size": 8, "n_dataset_chunks": 1},           # RTX 4090: 8 ;  H 100: ?
             "google/owlv2-base-patch16-finetuned": {
-                "batch_size": 1,
+                "batch_size": 32,
                 "n_dataset_chunks": 8,
             },  # RTX 4090: 8 ;  H 100: 16
             # "google/owlv2-large-patch14": {"batch_size": 8, "n_dataset_chunks": 8},                   # RTX 4090: 2 ;  H 100: 8
             "google/owlv2-large-patch14-ensemble": {
-                "batch_size": 1,
+                "batch_size": 12,
                 "n_dataset_chunks": 8,
             },  # RTX 4090: 2 ;  H 100: 8
             # "google/owlv2-large-patch14-finetuned": {"batch_size": 2, "n_dataset_chunks": },          # RTX 4090: 2 ;  H 100: ?
@@ -196,6 +195,59 @@ WORKFLOWS = {
             "emergency vehicle",
             "delivery driver",
         ],
+    },
+    "mask_teacher": {
+        "semantic_segmentation": {
+            "sam2": {
+                "prompt_field": None,  # None or Voxel51 field with bbox detections
+                "models": [
+                    "segment-anything-2-hiera-tiny-image-torch",
+                    "segment-anything-2-hiera-small-image-torch",
+                    "segment-anything-2-hiera-base-plus-image-torch",
+                    "segment-anything-2-hiera-large-image-torch",
+                    "segment-anything-2.1-hiera-tiny-image-torch",
+                    "segment-anything-2.1-hiera-small-image-torch",
+                    "segment-anything-2.1-hiera-base-plus-image-torch",
+                    "segment-anything-2.1-hiera-large-image-torch",
+                ],
+            },
+        },
+        "depth_estimation": {
+            "dpt": {
+                "prompt_field": None,
+                "models": {
+                    "Intel/dpt-swinv2-tiny-256",
+                    "Intel/dpt-swinv2-large-384",
+                    "Intel/dpt-beit-large-384",
+                    "Intel/dpt-beit-large-512",
+                    "Intel/dpt-large-ade",
+                    "Intel/dpt-large",
+                    "Intel/dpt-hybrid-midas",
+                    "Intel/dpt-swinv2-base-384",
+                    "Intel/dpt-beit-base-384",
+                },
+            },
+            "depth_anything": {
+                "prompt_field": None,
+                "models": {
+                    "LiheYoung/depth-anything-base-hf",
+                    "LiheYoung/depth-anything-large-hf",
+                    "LiheYoung/depth-anything-small-hf",
+                },
+            },
+            "glpn": {
+                "prompt_field": None,
+                "models": {"vinvino02/glpn-nyu", "vinvino02/glpn-kitti"},
+            },
+            "zoe_depth": {
+                "prompt_field": None,
+                "models": {
+                    "Intel/zoedepth-nyu-kitti",
+                    "Intel/zoedepth-nyu",
+                    "Intel/zoedepth-kitti",
+                },
+            },
+        },
     },
     "ensemble_selection": {
         "field_includes": "pred_zsod_",  # V51 field used for detections, "pred_zsod_" default for zero-shot object detection models
