@@ -83,9 +83,7 @@ class ZeroShotInferenceCollateFn:
             # Adjustments for final batch
             n_images = len(images)
             if n_images < self.batch_size:
-                self.batch_classes = ZeroShotObjectDetection._get_batch_classes(
-                    self.hf_model_config_name, self.object_classes, n_images
-                )
+                self.batch_classes = [self.object_classes] * n_images
 
             # Apply PIL transformation for specific models
             if self.hf_model_config_name == "OmDetTurboConfig":
@@ -123,23 +121,6 @@ class ZeroShotObjectDetection:
         )
 
         logging.info(f"Zero-shot models will look for {self.object_classes}")
-
-    @staticmethod  # Also utilized in ZeroShotInferenceCollateFn
-    def _get_batch_classes(hf_model_config_name, object_classes, batch_size):
-        if hf_model_config_name == "GroundingDinoConfig":
-            classes = " . ".join(object_classes) + " . "
-            batch_classes = [classes] * batch_size
-        elif hf_model_config_name == "OmDetTurboConfig":
-            batch_classes = [object_classes] * batch_size
-        elif (
-            hf_model_config_name == "Owlv2Config"
-            or hf_model_config_name == "OwlViTConfig"
-        ):
-            batch_classes = object_classes * batch_size
-        else:
-            logging.error(f"Invalid model name: {hf_model_config_name}")
-
-        return batch_classes
 
     def exclude_stored_predictions(
         self, dataset_v51: fo.Dataset, config, do_exclude=False
@@ -471,13 +452,8 @@ class ZeroShotObjectDetection:
             model.eval()
             hf_model_config = AutoConfig.from_pretrained(model_name)
             hf_model_config_name = type(hf_model_config).__name__
+            batch_classes = [object_classes] * batch_size
             logging.info(f"Loaded model type {hf_model_config_name}")
-
-            batch_classes = ZeroShotObjectDetection._get_batch_classes(
-                hf_model_config_name=hf_model_config_name,
-                object_classes=object_classes,
-                batch_size=batch_size,
-            )
 
             # Dataloader
             logging.info("Generating dataloader")
@@ -639,6 +615,7 @@ class ZeroShotObjectDetection:
                     outputs=outputs,
                     threshold=detection_threshold,
                     target_sizes=target_sizes,
+                    text_labels=batch_classes,
                 )
             elif hf_model_config_name == "OmDetTurboConfig":
                 results = processor.post_process_grounded_object_detection(
@@ -704,13 +681,8 @@ class ZeroShotObjectDetection:
                     elif hf_model_config_name in [
                         "Owlv2Config",
                         "OwlViTConfig",
+                        "OmDetTurboConfig",
                     ]:
-                        top_left_x = box[0].item() / img_width
-                        top_left_y = box[1].item() / img_height
-                        box_width = (box[2].item() - box[0].item()) / img_width
-                        box_height = (box[3].item() - box[1].item()) / img_height
-
-                    elif hf_model_config_name == "OmDetTurboConfig":
                         top_left_x = box[0].item() / img_width
                         top_left_y = box[1].item() / img_height
                         box_width = (box[2].item() - box[0].item()) / img_width
