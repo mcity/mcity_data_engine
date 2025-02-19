@@ -141,7 +141,9 @@ class ZeroShotObjectDetection:
 
         return batch_classes
 
-    def exclude_stored_predictions(self, dataset_v51: fo.Dataset, config):
+    def exclude_stored_predictions(
+        self, dataset_v51: fo.Dataset, config, do_exclude=False
+    ):
         dataset_schema = dataset_v51.get_field_schema()
         models_splits_dict = {}
         for model_name, value in config["hf_models_zeroshot_objectdetection"].items():
@@ -150,12 +152,15 @@ class ZeroShotObjectDetection:
                 r"[\W-]+", "_", "pred_zsod_" + model_name
             )  # od for Object Detection
             # Check if data already stored in V51 dataset
-            if pred_key in dataset_schema:
+            if pred_key in dataset_schema and do_exclude is True:
                 logging.warning(
                     f"Skipping model {model_name}. Predictions already stored in Voxel51 dataset."
                 )
             # Check if data already stored on disk
-            elif os.path.isdir(os.path.join(self.detections_root, model_name_key)):
+            elif (
+                os.path.isdir(os.path.join(self.detections_root, model_name_key))
+                and do_exclude is True
+            ):
                 try:
                     logging.info(f"Loading {model_name} predictions from disk.")
                     temp_dataset = fo.Dataset.from_dir(
@@ -630,7 +635,7 @@ class ZeroShotObjectDetection:
                     text_threshold=detection_threshold,
                 )
             elif hf_model_config_name in ["Owlv2Config", "OwlViTConfig"]:
-                results = processor.post_process_object_detection(
+                results = processor.post_process_grounded_object_detection(
                     outputs=outputs,
                     threshold=detection_threshold,
                     target_sizes=target_sizes,
