@@ -27,6 +27,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms.functional import to_pil_image
+from tqdm import tqdm
 from transformers import (
     AutoConfig,
     AutoModelForObjectDetection,
@@ -507,9 +508,11 @@ class ZeroShotObjectDetection:
             writer = SummaryWriter(log_dir=log_directory)
 
             # Inference Loop
-            logging.info(f"{os.getpid()}: Starting inference loop")
+            logging.info(f"{os.getpid()}: Starting inference loop5")
             n_processed_images = 0
-            for inputs, labels, target_sizes, batch_classes in dataloader:
+            for inputs, labels, target_sizes, batch_classes in tqdm(
+                dataloader, desc="Inference Loop"
+            ):
                 signal.alarm(dataloader_timeout)
                 try:
                     time_start = time.time()
