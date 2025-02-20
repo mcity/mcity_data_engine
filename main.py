@@ -41,9 +41,14 @@ from workflows.auto_labeling import (
 from workflows.aws_download import AwsDownloader
 from workflows.embedding_selection import EmbeddingSelection
 from workflows.ensemble_selection import EnsembleSelection
-from workflows.teacher_mask import MaskTeacher
+from workflows.auto_label_mask import AutoLabelMask
 
 wandb_run = None  # Init globally to make sure it is available
+
+import os
+
+os.environ["WANDB_MODE"] = "disabled"
+os.environ["WANDB_DISABLED"] = "true"
 
 
 def signal_handler(sig, frame):
@@ -357,39 +362,38 @@ def workflow_zero_shot_object_detection(dataset, dataset_info, config):
     return True
 
 
-def workflow_mask_teacher(dataset, dataset_info):
+def workflow_auto_label_mask(dataset, dataset_info, config):
     try:
-        DEPTH_ESTIMATION_MODELS = WORKFLOWS["mask_teacher"]["depth_estimation"]
-        SEMANTIC_SEGMENTATION_MODELS = WORKFLOWS["mask_teacher"][
-            "semantic_segmentation"
-        ]
+        depth_config = config["depth_estimation"]
+        seg_config = config["semantic_segmentation"]
 
-        for model_name in DEPTH_ESTIMATION_MODELS:
-            teacher = MaskTeacher(
+        for arch_name, arch_info in depth_config.items():
+            logging.info(f"Processing depth_estimation arch: {arch_name}")
+            mask = AutoLabelMask(
                 dataset=dataset,
                 dataset_info=dataset_info,
-                model_name=model_name,
+                model_name=arch_name,
                 task_type="depth_estimation",
-                model_config=WORKFLOWS["mask_teacher"]["depth_estimation"][model_name],
+                model_config=arch_info,
             )
-            teacher.run_inference()
+            mask.run_inference()
 
-        for model_name in SEMANTIC_SEGMENTATION_MODELS:
-            teacher = MaskTeacher(
+        for arch_name, arch_info in seg_config.items():
+            logging.info(f"Processing semantic_segmentation arch: {arch_name}")
+            mask = AutoLabelMask(
                 dataset=dataset,
                 dataset_info=dataset_info,
-                model_name=model_name,
+                model_name=arch_name,
                 task_type="semantic_segmentation",
-                model_config=WORKFLOWS["mask_teacher"]["semantic_segmentation"][
-                    model_name
-                ],
+                model_config=arch_info,
             )
-            teacher.run_inference()
+            mask.run_inference()
 
+        logging.info("workflow_auto_label_mask completed successfully")
         return dataset
 
     except Exception as e:
-        logging.error(f"Mask Teacher failed: {e}")
+        logging.error(f"Auto-labeling mask workflow failed: {e}", exc_info=True)
         raise
 
 
@@ -704,9 +708,9 @@ class WorkflowExecutor:
                         self.dataset, self.dataset_info, run_config
                     )
 
-                elif workflow == "mask_teacher":
-                    workflow_mask_teacher(self.dataset, self.dataset_info)
-
+                elif workflow == "auto_label_mask":
+                    config = WORKFLOWS["auto_label_mask"]
+                    workflow_auto_label_mask(self.dataset, self.dataset_info, config)
                 else:
                     logging.error(
                         f"Workflow {workflow} not found. Check available workflows in config.py."
@@ -733,6 +737,8 @@ def main():
 
     # Execute workflows
     dataset, dataset_info = load_dataset(SELECTED_DATASET)
+    dataset = dataset.limit(10)
+
     executor = WorkflowExecutor(
         SELECTED_WORKFLOW, SELECTED_DATASET["name"], dataset, dataset_info
     )
@@ -741,7 +747,7 @@ def main():
     # Launch V51 session
     dataset.reload()
     dataset.save()
-    logging.info(f"Launching Voxel51 session for dataset {dataset_info["name"]}:")
+    logging.info(f"Launching Voxel51 session for dataset {dataset_info['name']}:")
 
     # Dataset stats
     logging.debug(dataset)
