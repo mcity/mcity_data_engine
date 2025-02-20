@@ -1,7 +1,7 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["ensemble_selection"]
+SELECTED_WORKFLOW = ["embedding_selection"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -46,7 +46,7 @@ WORKFLOWS = {
         ],
     },
     "anomaly_detection": {
-        "mode": ["train"],  # "train" and "inference" supported
+        "mode": ["inference"],  # "train" and "inference" supported
         "epochs": 36,
         "early_stop_patience": 5,
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
@@ -55,28 +55,20 @@ WORKFLOWS = {
             "Draem": {},
             "Cfa": {},
         },
-        "anomalib_eval_metrics": [  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/metrics/index.html
+        "anomalib_eval_metrics": [  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/metrics/index.html Focus on standard metrics, computation of others can be expensive
             "AUPR",
             "AUROC",
             "F1Max",
-            # "AUPRO",      # Focus on standard metrics, computation of others can be expensive
-            # "AnomalyScoreDistribution",
-            # "BinaryPrecisionRecallCurve",
-            # "F1AdaptiveThreshold",
-            # "F1Score",
-            # "ManualThreshold",
-            # "MinMax",
-            # "PRO",
         ],
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": ["train", "inference"],  # "train" and "inference" supported
+        "mode": ["inference"],  # "train" and "inference" supported
         "model_source": [
             "hf_models_objectdetection"
         ],  # "hf_models_objectdetection" and "custom_codetr" and "ultralytics" supported
         "n_worker_dataloader": 3,
-        "epochs": 1,
+        "epochs": 36,
         "early_stop_patience": 5,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -133,38 +125,30 @@ WORKFLOWS = {
         "ultralytics": {},
     },
     "auto_labeling_zero_shot": {
-        "n_post_processing_worker_per_inference_worker": 2,
+        "n_post_processing_worker_per_inference_worker": 5,
         "n_worker_dataloader": 3,
         "prefetch_factor_dataloader": 2,
         "hf_models_zeroshot_objectdetection": {
-            # dataset_chunks: Number of chunks to split the dataset into for parallel processing       # batch_size
-            "omlab/omdet-turbo-swin-tiny-hf": {
-                "batch_size": 180,
+            "omlab/omdet-turbo-swin-tiny-hf": {  # https://huggingface.co/models?pipeline_tag=zero-shot-object-detection&sort=trending&search=omlab%2Fomdet
+                "batch_size": 1,
+                "n_dataset_chunks": 1,  # Number of chunks to split the dataset into for parallel processing
+            },
+            "IDEA-Research/grounding-dino-tiny": {  # https://huggingface.co/models?pipeline_tag=zero-shot-object-detection&sort=trending&search=IDEA-Research%2Fgrounding
+                "batch_size": 1,
                 "n_dataset_chunks": 1,
-            },  # RTX 4090: 64 ; H 100: 128
-            "IDEA-Research/grounding-dino-tiny": {
-                "batch_size": 32,
+            },
+            "google/owlvit-large-patch14": {  # https://huggingface.co/models?pipeline_tag=zero-shot-object-detection&sort=trending&search=google%2Fowlvit
+                "batch_size": 1,
                 "n_dataset_chunks": 1,
-            },  # RTX 4090: 8 ;  H 100: 32
-            # "IDEA-Research/grounding-dino-base": {"batch_size": 8, "n_dataset_chunks": 1},            # RTX 4090: 8 ;  H 100: ?
-            # "google/owlvit-base-patch16": {"batch_size": 8, "n_dataset_chunks": 1},                   # RTX 4090: 8 ;  H 100: ?
-            # "google/owlvit-base-patch32": {"batch_size": 8, "n_dataset_chunks": 1},                   # RTX 4090: 8 ;  H 100: ?
-            "google/owlvit-large-patch14": {
-                "batch_size": 24,
-                "n_dataset_chunks": 8,
-            },  # RTX 4090: 4 ;  H 100: 16
-            # "google/owlv2-base-patch16": {"batch_size": 32, "n_dataset_chunks": 1},                    # RTX 4090: 8 ;  H 100: 32
-            # "google/owlv2-base-patch16-ensemble": {"batch_size": 8, "n_dataset_chunks": 1},           # RTX 4090: 8 ;  H 100: ?
-            "google/owlv2-base-patch16-finetuned": {
-                "batch_size": 32,
-                "n_dataset_chunks": 8,
-            },  # RTX 4090: 8 ;  H 100: 16
-            # "google/owlv2-large-patch14": {"batch_size": 8, "n_dataset_chunks": 8},                   # RTX 4090: 2 ;  H 100: 8
+            },
+            "google/owlv2-base-patch16-finetuned": {  # https://huggingface.co/models?pipeline_tag=zero-shot-object-detection&sort=trending&search=google%2Fowlv2
+                "batch_size": 1,
+                "n_dataset_chunks": 1,
+            },
             "google/owlv2-large-patch14-ensemble": {
-                "batch_size": 12,
-                "n_dataset_chunks": 8,
-            },  # RTX 4090: 2 ;  H 100: 8
-            # "google/owlv2-large-patch14-finetuned": {"batch_size": 2, "n_dataset_chunks": },          # RTX 4090: 2 ;  H 100: ?
+                "batch_size": 1,
+                "n_dataset_chunks": 1,
+            },
         },
         "detection_threshold": 0.2,
         "object_classes": [
