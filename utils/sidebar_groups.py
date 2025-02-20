@@ -16,7 +16,7 @@ def arrange_fields_in_groups(dataset):
             "embedding_selection_model",
             "embedding_selection_count",
         ],
-        "Embedding Computation": ["representativeness_", "uniqueness_"],
+        "Embedding Computation": ["representativeness_", "uniqueness_", "distance"],
         "Evaluation": ["eval_"],
         "Data Recording": ["location", "timestamp", "name", "time_of_day"],
     }
@@ -34,7 +34,6 @@ def arrange_fields_in_groups(dataset):
                 or field_name in prefixes
             ):
                 task_groups[task].append(field_name)
-                logging.info(f"Added field {field_name} to group {task}")
 
     sidebar_groups = fo.DatasetAppConfig.default_sidebar_groups(dataset)
 
@@ -60,7 +59,12 @@ def arrange_fields_in_groups(dataset):
     if n_added_groups > 0:
         for group in sidebar_groups:
             # Collapse default groups
-            if group.name in ["metadata", "other", "primitives"]:
+            if group.name in [
+                "metadata",
+                "other",
+                "primitives",
+                "Embedding Computation",
+            ]:
                 group.expanded = False
 
             # Remove moved fields from their original groups
