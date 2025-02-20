@@ -34,12 +34,15 @@ def arrange_fields_in_groups(dataset):
 
     sidebar_groups = fo.DatasetAppConfig.default_sidebar_groups(dataset)
     # Create a group for every task that has at least one field
+    n_added_groups = 0
     for task, fields in task_groups.items():
-        if len(fields > 0):
+        if len(fields) > 0:
             group = fo.SidebarGroupDocument(name=task)
             group.paths = []
             for field in fields:
                 group.paths.append(field)
             sidebar_groups.append(group)
-    dataset.app_config.sidebar_groups = sidebar_groups
-    dataset.save()
+            n_added_groups += 1
+    if n_added_groups > 0:
+        dataset.app_config.sidebar_groups = sidebar_groups
+        dataset.save()
