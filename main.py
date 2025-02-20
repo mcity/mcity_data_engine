@@ -31,6 +31,7 @@ from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.dataset_loader import load_dataset
 from utils.logging import configure_logging
 from utils.mp_distribution import ZeroShotDistributer
+from utils.sidebar_groups import arrange_fields_in_groups
 from utils.wandb_helper import wandb_close, wandb_init
 from workflows.anomaly_detection import Anodec
 from workflows.auto_labeling import (
@@ -739,7 +740,8 @@ def main():
     # Launch V51 session
     dataset.reload()
     dataset.save()
-    logging.info(f"Launching Voxel51 session for dataset {dataset_info['name']}:")
+    arrange_fields_in_groups(dataset)
+    logging.info(f"Launching Voxel51 session for dataset {dataset_info['name']}.")
 
     # Dataset stats
     logging.debug(dataset)
