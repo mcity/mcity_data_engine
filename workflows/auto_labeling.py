@@ -25,6 +25,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms.functional import to_pil_image
+from tqdm import tqdm
 from transformers import (
     AutoConfig,
     AutoModelForObjectDetection,
@@ -34,9 +35,11 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+from ultralytics import YOLO
 
 import wandb
 from config.config import (
+    ACCEPTED_SPLITS,
     GLOBAL_SEED,
     HF_DO_UPLOAD,
     HF_ROOT,
@@ -746,13 +749,47 @@ class ZeroShotObjectDetection:
 
 
 class UltralyticsObjectDetection:
-    def __init__(self, dataset, dataset_info, config):
+
+    def __init__(self, dataset, config):
         self.dataset = dataset
-        self.dataset_info = dataset_info
         self.config = config
+        self.temp_dataset_path = os.path.join(
+            self.DEFAULT_DATASET_ROOT, config["v51_dataset_name"]
+        )
+
+    @staticmethod
+    def export_data(
+        dataset, dataset_info, export_dataset_root, label_field="ground_truth"
+    ):
+        ultralytics_data_path = os.path.join(export_dataset_root, dataset_info["name"])
+        # Check if export directory already exists
+        if os.path.exists(ultralytics_data_path):
+            logging.warning(
+                f"Export directory {ultralytics_data_path} already exists. Skipping export."
+            )
+            return
+
+        classes = dataset.distinct(f"{label_field}.detections.label")
+
+        for split in tqdm(
+            ACCEPTED_SPLITS, desc="Exporting data for training with Ultralytics"
+        ):
+            split_view = dataset.match_tags(split)
+
+            if split == "test":  # YOLO expects train and val
+                split = "val"
+
+            split_view.export(
+                export_dir=ultralytics_data_path,
+                dataset_type=fo.types.YOLOv5Dataset,
+                label_field=label_field,
+                classes=classes,
+                split=split,
+            )
 
     def train(self):
-        pass
+        # Export dataset to YOLO format for Ultralytics
+        model = YOLO(self.config["model_name"])
 
     def inference(self):
         pass

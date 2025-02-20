@@ -1,7 +1,7 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["ensemble_selection"]
+SELECTED_WORKFLOW = ["auto_labeling"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -123,6 +123,7 @@ WORKFLOWS = {
             "container_tool": "docker",
         },
         "ultralytics": {
+            "export_dataset_root": "/media/dbogdoll/Datasets/ultralytics_data/",
             "models": {  # Pick from https://docs.ultralytics.com/models/
                 "yolov8n": {},
                 "yolov8x": {},
@@ -130,7 +131,7 @@ WORKFLOWS = {
                 "yolo11x": {},
                 "yolo12n": {},
                 "yolo12x": {},
-            }
+            },
         },
     },
     "auto_labeling_zero_shot": {
