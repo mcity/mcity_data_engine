@@ -16,11 +16,13 @@ from utils.logging import configure_logging
 
 @pytest.fixture(autouse=True)
 def deactivate_hf_sync():
+    """Hugging face deactivation."""
     config.config.HF_DO_UPLOAD = False
 
 
 @pytest.fixture(autouse=True)
 def setup_logging():
+    """Logging setup."""
     configure_logging()
 
 
@@ -44,6 +46,20 @@ def dataset_v51():
 
 
 def test_anomaly_detection_train(dataset_v51):
+    """
+    Test the anomaly detection training process.
+
+    This function prepares the dataset for anomaly detection, configures the
+    training parameters, and runs the anomaly detection workflow. It also
+    verifies that the anomaly detection process identifies at least one
+    anomalous sample.
+
+    Args:
+        dataset_v51: The dataset to be used for anomaly detection training.
+
+    Raises:
+        AssertionError: If no samples are selected through anomaly detection.
+    """
     prep_config = {
         "location": "cam3",
         "rare_classes": ["Bus"],
@@ -96,6 +112,20 @@ def test_anomaly_detection_train(dataset_v51):
 
 @pytest.mark.parametrize("load_local", [True, False])
 def test_anomaly_detection_inference(dataset_v51, load_local):
+    """
+    Test the anomaly detection inference process.
+
+    This function tests the anomaly detection inference using the Padim model on the fisheye8k dataset.
+    It optionally deletes local model weights to ensure they are downloaded from Hugging Face if `load_local` is False.
+    The function configures the model, runs the anomaly detection workflow, and asserts that anomalies are detected.
+
+    Args:
+        dataset_v51: The dataset object to be used for testing.
+        load_local (bool): Flag indicating whether to load local model weights or download them.
+
+    Raises:
+        AssertionError: If no samples are selected through anomaly detection.
+    """
 
     if load_local == False:
         # Delete local weights if they exist so they get downloaded from Hugging Face

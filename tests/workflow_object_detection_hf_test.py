@@ -13,16 +13,19 @@ from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 
 @pytest.fixture(autouse=True)
 def setup_logging():
+    """Logging setup."""
     configure_logging()
 
 
 @pytest.fixture(autouse=True)
 def deactivate_hf_sync():
+    """Hugging face deactivation."""
     config.config.HF_DO_UPLOAD = False
 
 
 @pytest.fixture(autouse=True)
 def deactivate_wandb_sync():
+    """Weights and Biases deactivation."""
     config.config.WANDB_ACTIVE = False
 
 
@@ -55,7 +58,7 @@ def dataset_v51():
 
 @pytest.fixture
 def dataset_hf(dataset_v51):
-
+    """Fixture to load a torch dataset."""
     pytorch_dataset = FiftyOneTorchDatasetCOCO(dataset_v51)
     pt_to_hf_converter = TorchToHFDatasetCOCO(pytorch_dataset)
     hf_dataset = pt_to_hf_converter.convert()
@@ -65,6 +68,21 @@ def dataset_hf(dataset_v51):
 
 @pytest.mark.parametrize("mode", ["train", "inference", "inference_hf"])
 def test_hf_object_detection(dataset_v51, dataset_hf, mode):
+    """
+    Test function for Hugging Face object detection using a specified dataset and mode.
+
+    Args:
+        dataset_v51 (Dataset): The v51 dataset object.
+        dataset_hf (Dataset): The Hugging Face dataset object.
+        mode (str): The mode of operation. Can be "inference_hf" or other modes.
+
+    Returns:
+        None
+
+    This function sets up the configuration for running an object detection workflow using the specified datasets and mode.
+    If the mode is "inference_hf", it deletes the existing model folder to force a download from Hugging Face.
+    The function then constructs a run configuration dictionary and calls the `workflow_auto_labeling` function with the datasets and configuration.
+    """
 
     MODEL_NAME = "microsoft/conditional-detr-resnet-50"
 
@@ -97,3 +115,5 @@ def test_hf_object_detection(dataset_v51, dataset_hf, mode):
     }
 
     workflow_auto_labeling(dataset_v51, dataset_hf, run_config, wandb_activate=False)
+
+    # TODO Add assertions

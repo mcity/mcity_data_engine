@@ -49,6 +49,14 @@ class AnomalyDetectionDataPreparation:
             return None
 
     def fisheye8k(self):
+        """
+        Prepares the Fisheye8K dataset for anomaly detection.
+
+        Configuration options:
+        - location: The camera location to filter the dataset (default: "cam1").
+        - rare_classes: The list of rare classes to be used for validation (default: ["Truck"]).
+        - gt_field: The ground truth field in the dataset (default: "ground_truth").
+        """
         logging.info(
             f"Running anomaly detection data preparation for dataset {self.dataset_name}"
         )

@@ -71,26 +71,22 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
 
 
 def get_split(v51_sample: Union[fo.core.sample.Sample, List[str]]) -> str:
-    if isinstance(v51_sample, fo.core.sample.Sample):
-        sample_tags = v51_sample.tags
-    elif isinstance(v51_sample, list):
-        sample_tags = v51_sample
-    else:
-        logging.error(
-            f"Type {isinstance(v51_sample)} is not supported for split retrieval."
-        )
+    sample_tags = getattr(v51_sample, "tags", v51_sample)
 
-    found_splits = [split for split in ACCEPTED_SPLITS if split in sample_tags]
+    if not isinstance(sample_tags, list):
+        logging.error(f"Unsupported type {type(v51_sample)} for split retrieval.")
+        return None
 
-    if len(found_splits) == 0:
+    found_splits = list(set(sample_tags) & set(ACCEPTED_SPLITS))
+
+    if not found_splits:
         logging.warning(f"No split found in sample tags: {sample_tags}")
         return None
-    elif len(found_splits) > 1:
-        logging.warning(f"Multiple splits found in sample tags: '{found_splits}'")
+    if len(found_splits) > 1:
+        logging.warning(f"Multiple splits found in sample tags: {found_splits}")
         return None
-    else:
-        split = found_splits[0]
-        return split
+
+    return found_splits[0]
 
 
 def _separate_split(dataset, current_split, new_split, split_ratio=2):

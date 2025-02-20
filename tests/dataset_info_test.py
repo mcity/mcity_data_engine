@@ -2,6 +2,18 @@ from utils.dataset_loader import load_dataset_info
 
 
 def test_load_dataset_info():
+    """
+    Test the load_dataset_info function.
+
+    This test verifies that the load_dataset_info function correctly loads the dataset information
+    for a given dataset name.
+
+    Assertions:
+    - Asserts that the dataset information is not None.
+    - Asserts that the dataset information is a dictionary.
+    - Asserts that the dictionary contains a 'name' key.
+    - Asserts that the value of the 'name' key matches the provided dataset name.
+    """
     dataset_name = "mcity_fisheye_2000"
     dataset_info = load_dataset_info(dataset_name)
 

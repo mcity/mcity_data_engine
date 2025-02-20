@@ -14,11 +14,13 @@ from workflows.embedding_selection import BRAIN_TAXONOMY
 
 @pytest.fixture(autouse=True)
 def deactivate_hf_sync():
+    """Hugging face deactivation."""
     config.config.HF_DO_UPLOAD = False
 
 
 @pytest.fixture(autouse=True)
 def setup_logging():
+    """Logging setup."""
     configure_logging()
 
 
@@ -42,6 +44,26 @@ def dataset_v51():
 
 @pytest.mark.parametrize("mode", ["compute", "load", "load_hf"])
 def test_embedding_selection(dataset_v51, mode):
+    """
+    Test the embedding selection process for a given dataset and mode.
+
+    This function tests the workflow of embedding selection by configuring
+    the parameters, loading dataset information, and executing the workflow.
+    It also verifies that samples are selected correctly.
+
+    Args:
+        dataset_v51: The dataset to be used for testing.
+        mode (str): The mode of operation. If "load_hf", it will delete
+                    existing embeddings in the specified local folder and
+                    change the mode to "load".
+
+    Raises:
+        AssertionError: If no samples are selected during the test.
+
+    Side Effects:
+        Deletes files in the local folder if mode is "load_hf".
+        Prints the number of samples found for each value in BRAIN_TAXONOMY.
+    """
 
     MODEL_NAME = "mobilenet-v2-imagenet-torch"
     selected_mode = mode

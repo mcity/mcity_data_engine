@@ -14,11 +14,13 @@ from main import (
 
 @pytest.fixture(autouse=True)
 def deactivate_wandb_sync():
+    """Hugging face deactivation."""
     config.config.WANDB_ACTIVE = False
 
 
 @pytest.fixture(autouse=True)
 def setup_logging():
+    """Logging setup."""
     configure_logging()
 
 
@@ -38,6 +40,22 @@ def dataset_v51():
 
 
 def test_zero_shot_inference(dataset_v51):
+    """
+    Test the zero-shot object detection inference workflow.
+
+    This function configures and runs a zero-shot object detection inference
+    workflow on a given dataset, and performs various assertions to ensure
+    the correctness of the detections.
+
+    Args:
+        dataset_v51 (FiftyOneDataset): The dataset to run the inference on.
+
+    Assertions:
+        - Ensures that fields of interest are present in the dataset after the workflow run.
+        - Ensures that detection labels are within the configured object classes.
+        - Ensures that bounding box coordinates, dimensions, and areas are within valid ranges.
+        - Ensures that all models detected at least one object.
+    """
 
     config = {
         "n_post_processing_worker_per_inference_worker": 1,
@@ -169,6 +187,20 @@ def test_zero_shot_inference(dataset_v51):
 
 
 def test_ensemble_selection(dataset_v51):
+    """
+    Test the ensemble selection workflow for zero-shot object detection models.
+
+    This function sets up a dataset and run configuration for testing the ensemble
+    selection process. It verifies that the ensemble selection workflow correctly
+    populates the dataset with unique instances and tags detections.
+
+    Args:
+        dataset_v51 (FiftyOneDataset): The dataset to be used for testing.
+
+    Raises:
+        AssertionError: If no unique instances are found in a sample or if no samples
+                        with tags are detected.
+    """
 
     dataset_info = {
         "name": "fisheye8k_zero_shot_test",

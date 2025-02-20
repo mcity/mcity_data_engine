@@ -17,29 +17,6 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
     A PyTorch Dataset class for loading and processing a FiftyOne dataset in COCO format.
     This class handles multiprocessing to allow loading data with num_workers > 0 and
     converts the dataset into a format compatible with PyTorch's DataLoader.
-    Attributes:
-        transforms (callable, optional): A function/transform to apply to the images.
-        classes (list): List of class names in the dataset.
-        labels_map_rev (dict): A dictionary mapping class names to their corresponding indices.
-        dataset_length (int): The length of the dataset.
-        img_paths (multiprocessing.Manager().list): A list of image file paths.
-        ids (multiprocessing.Manager().list): A list of sample IDs.
-        metadata (multiprocessing.Manager().list): A list of metadata for each sample.
-        labels (multiprocessing.Manager().dict): A dictionary mapping sample IDs to their ground truth detections.
-        splits (multiprocessing.Manager().dict): A dictionary mapping sample IDs to their split tags.
-    Methods:
-        __init__(self, fiftyone_dataset, transforms=None, gt_field="ground_truth"):
-            Initializes the dataset with the given FiftyOne dataset and optional transforms.
-        __getitem__(self, idx):
-            Retrieves the image and target at the specified index.
-        __getitems__(self, indices):
-            Retrieves a list of (image, target) pairs for the specified indices.
-        __len__(self):
-            Returns the length of the dataset.
-        get_classes(self):
-            Returns the list of class names in the dataset.
-        get_splits(self):
-            Returns a set of unique split tags in the dataset.
 
     References:
         - https://github.com/voxel51/fiftyone-examples/blob/master/examples/pytorch_detection_training.ipynb
@@ -67,7 +44,6 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         self.labels = manager.dict()
         self.splits = manager.dict()
 
-        # Use values() to directly get the required fields from the dataset
         img_paths = fiftyone_dataset.values("filepath")
         ids = fiftyone_dataset.values("id")
         metadata = fiftyone_dataset.values("metadata")
@@ -79,7 +55,6 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
             ground_truths = None
         tags = fiftyone_dataset.values("tags")
 
-        # Process all samples with values() in place of the loop
         for i, sample_id in tqdm(
             enumerate(ids),
             total=len(ids),
@@ -148,22 +123,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
 
 
 class TorchToHFDatasetCOCO:
-    """
-    A class to convert a PyTorch dataset to a Hugging Face dataset in COCO format.
-
-    Attributes:
-    -----------
-    torch_dataset : object
-        The PyTorch dataset to be converted.
-
-    Methods:
-    --------
-    __init__(torch_dataset):
-        Initializes the TorchToHFDatasetCOCO with a PyTorch dataset.
-
-    convert():
-        Converts the PyTorch dataset to a Hugging Face dataset.
-    """
+    """A class to convert a PyTorch dataset to a Hugging Face dataset in COCO format."""
 
     split_mapping = {
         "train": Split.TRAIN,
@@ -176,6 +136,7 @@ class TorchToHFDatasetCOCO:
         self.torch_dataset = torch_dataset
 
     def convert(self):
+        """Converts a Torch dataset to a Hugging Face dataset with optional split handling."""
         try:
             default_split_hf = "test"
             splits = self.torch_dataset.get_splits()
@@ -199,26 +160,7 @@ class TorchToHFDatasetCOCO:
 
 
 def gen_factory(torch_dataset, split_name, default_split_hf):
-    """
-    Factory function to create a generator function for the Hugging Face dataset.
-
-    Args:
-    -----
-    torch_dataset : FiftyOneTorchDatasetCOCO
-        The PyTorch dataset to be converted.
-    split_name : str
-        The name of the split to filter the data.
-
-    Returns:
-    --------
-    function
-        A generator function that yields data samples for the specified split.
-
-    Note:
-    -----
-    This function ensures that all objects used within the generator function are picklable.
-    The FiftyOne dataset is iterated to collect sample data, which is then used within the generator function.
-    """
+    """Factory function to create a generator function for the Hugging Face dataset. This function ensures that all objects used within the generator function are picklable."""
     img_paths = torch_dataset.img_paths
     img_ids = torch_dataset.ids
     splits = torch_dataset.splits
@@ -253,23 +195,7 @@ def gen_factory(torch_dataset, split_name, default_split_hf):
 
 
 def create_target(sample_data, labels_map_rev, idx, convert_to_coco=True):
-    """
-    Creates a target dictionary for a given sample.
-
-    Args:
-    -----
-    sample_data : dict
-        The data of the sample, including detections and metadata.
-    labels_map_rev : dict
-        A dictionary mapping class names to indices.
-    idx : int
-        The index of the sample.
-
-    Returns:
-    --------
-    dict
-        A dictionary containing bounding boxes, category IDs, image ID, area, and iscrowd flags.
-    """
+    """Create a target dictionary for object detection tasks."""
     detections = sample_data.get("detections", [])
     img_width = sample_data["metadata"]["width"]
     img_height = sample_data["metadata"]["height"]
