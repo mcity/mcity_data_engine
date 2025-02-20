@@ -741,7 +741,7 @@ def main():
     dataset.reload()
     dataset.save()
     arrange_fields_in_groups(dataset)
-    logging.info(f"Launching Voxel51 session for dataset {dataset_info['name']}:")
+    logging.info(f"Launching Voxel51 session for dataset {dataset_info['name']}.")
 
     # Dataset stats
     logging.debug(dataset)
