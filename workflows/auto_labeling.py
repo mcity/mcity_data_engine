@@ -232,10 +232,10 @@ class ZeroShotObjectDetection:
     def process_outputs_worker(
         self,
         result_queues,
-        result_queues_sizes,
         largest_queue_index,
         inference_finished,
-        queue_warning_threshold=5,
+        max_queue_size,
+        wandb_activate=False,
     ):
         configure_logging()
         logging.info(f"Process ID: {os.getpid()}. Results processing process started")
@@ -248,7 +248,7 @@ class ZeroShotObjectDetection:
             self.tensorboard_root, self.dataset_name, experiment_name
         )
         wandb.tensorboard.patch(root_logdir=log_directory)
-        if WANDB_ACTIVE:
+        if WANDB_ACTIVE and wandb_activate:
             wandb.init(
                 name=f"post_process_{os.getpid()}",
                 job_type="inference",
@@ -267,8 +267,11 @@ class ZeroShotObjectDetection:
                 n_processed_images,
             )
 
-            # if results_queue.qsize() > queue_warning_threshold:
-            # logging.warning(f"Queue size of {results_queue.qsize()}. Consider increasing number of post-processing workers.")
+            if results_queue.qsize() == max_queue_size:
+                logging.warning(
+                    f"Queue full: {results_queue.qsize()}. Consider increasing number of post-processing workers."
+                )
+
             # Exit only when inference is finished and the queue is empty
             if inference_finished.value and results_queue.empty():
                 dataset_v51.save()
@@ -276,13 +279,13 @@ class ZeroShotObjectDetection:
                     f"Post-processing worker {os.getpid()} has finished all outputs."
                 )
                 break
+
             # Process results from the queue if available
             if not results_queue.empty():
                 try:
                     time_start = time.time()
 
                     result = results_queue.get_nowait()
-                    # result = results_queue.get(block=True, timeout=0.5)
 
                     processing_successful = self.process_outputs(
                         dataset_v51, result, self.object_classes
