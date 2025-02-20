@@ -8,6 +8,7 @@ def arrange_fields_in_groups(dataset):
     task_field_mapping = {  # Prefixes end with a "_"
         "Object Detection": ["pred_od_"],
         "Zero-Shot Object Detection": ["pred_zsod_"],
+        "Ensemble Selection": ["n_unique_ensemble_selection"],
         "Semantic Segmentation": ["pred_ss_"],
         "Depth Estimation": ["pred_de_"],
         "Anomaly Detection": ["pred_anomaly_"],
