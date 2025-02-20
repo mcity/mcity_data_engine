@@ -42,6 +42,7 @@ from workflows.aws_download import AwsDownloader
 from workflows.embedding_selection import EmbeddingSelection
 from workflows.ensemble_selection import EnsembleSelection
 from workflows.teacher_mask import MaskTeacher
+from workflows.class_mapping import ClassMapper
 
 wandb_run = None  # Init globally to make sure it is available
 
@@ -415,6 +416,50 @@ def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activat
 
     return True
 
+def workflow_class_mapping(dataset, dataset_info):
+    """
+    Execute class mapping workflow by delegating all processing to ClassMapper.
+    """
+    config = WORKFLOWS["class_mapping"]
+    model_source = config["model_source"]  # Fetch selected model source.
+    models = config.get(model_source, [])   # Get models under the selected source.
+
+    if not models:
+        logging.error(f"No models found for the selected source: {model_source}")
+        return False
+
+    model_name = models[0]
+    print("\nClass Mapping Workflow")
+    print(f"Selected Model Source: {model_source}")
+
+    # Initialize the mapper and run the mapping process with wandb logging enabled.
+    for model_name in models:
+        print(f"\nRunning model: {model_name}")
+        mapper = ClassMapper(dataset, model_name, config)
+
+        any_success = False
+        try:
+            stats = mapper.run_mapping(interactive=True, wandb_logging=True)
+
+            # Display statistics only if mapping was successful
+            total_vehicles = stats["total_processed"]
+            print("\nVehicle Classification Results (Parent Classes):")
+            for parent, count in stats["parent_class_counts"].items():
+                percentage = (count / total_vehicles) * 100 if total_vehicles > 0 else 0
+                print(f"{parent}: {count} vehicles processed ({percentage:.1f}%)")
+
+            print("\nTag Addition Results (Child Tags):")
+            print(f"Total new tags added: {stats['changes_made']}")
+            for child, tag_count in stats["tags_added_per_category"].items():
+                print(f"{child} tags added: {tag_count}")
+
+            any_success = True
+
+        except Exception as e:
+            logging.error(f"Error during mapping with model {model_name}: {e}")
+            continue
+
+    return any_success
 
 def cleanup_memory():
     logging.info("Starting memory cleanup")
@@ -704,6 +749,25 @@ class WorkflowExecutor:
 
                 elif workflow == "mask_teacher":
                     workflow_mask_teacher(self.dataset, self.dataset_info)
+
+
+                elif workflow == "class_mapping":
+                    wandb_exit_code = 0
+                    try:
+                        # Initialize a wandb run for class mapping
+                        wandb_run, log_dir = wandb_init(
+                            run_name="class_mapping",
+                            project_name="Class Mapping",
+                            dataset_name=self.selected_dataset,
+                            config=WORKFLOWS["class_mapping"]
+                        )
+                        # Run the class mapping workflow
+                        workflow_class_mapping(self.dataset, self.dataset_info)
+                    except Exception as e:
+                        logging.error(f"Error in class_mapping workflow: {e}")
+                        wandb_exit_code = 1
+                    finally:
+                        wandb_close(wandb_run, wandb_exit_code)
 
                 else:
                     logging.error(

@@ -274,6 +274,27 @@ WORKFLOWS = {
             "delivery driver",
         ],
     },
+
+    "class_mapping": {
+        "model_source": "hf_models_zeroshot_classification",  # Choose any number of models from the options below hf_models_zeroshot_classification, to not include a model for class mapping, just comment it out
+        "hf_models_zeroshot_classification": [
+            "Salesforce/blip2-itm-vit-g",
+            "openai/clip-vit-large-patch14",
+            "google/siglip-so400m-patch14-384",
+            "kakaobrain/align-base",
+            "BAAI/AltCLIP",
+            "CIDAS/clipseg-rd64-refined"
+        ],
+        "thresholds": {
+            "confidence": 0.2
+        },
+        "candidate_labels": {
+            #Parent class(Generalized class) : Children classes(specific categories)
+            "Car": ["Car", "Van", "Pickup"],
+            "Truck": ["Truck", "Pickup"]
+            #Can add other class mappings in here
+        }
+    }
 }
 
 # Global settings
