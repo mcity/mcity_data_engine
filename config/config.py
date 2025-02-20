@@ -1,7 +1,7 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["ensemble_selection"]
+SELECTED_WORKFLOW = ["class_mapping"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -276,7 +276,13 @@ WORKFLOWS = {
     },
 
     "class_mapping": {
-        "model_source": "hf_models_zeroshot_classification",  # Choose any number of models from the options below hf_models_zeroshot_classification, to not include a model for class mapping, just comment it out
+        "dataset_source": "Voxel51/fisheye8k",   #// Name of the source dataset (must already exist in FiftyOne)
+        #"dataset_targets": [
+            #"target_dataset_name_1",
+            #"mcity-data-engine/mcity_fisheye_v51"
+        #],
+        "dataset_target": "mcity-data-engine/mcity_fisheye_v51",    # // Name of the target dataset (must already exist in FiftyOne)
+         # Choose any number of models from the options below hf_models_zeroshot_classification, to not include a model for class mapping, just comment it out
         "hf_models_zeroshot_classification": [
             "Salesforce/blip2-itm-vit-g",
             "openai/clip-vit-large-patch14",
@@ -290,8 +296,8 @@ WORKFLOWS = {
         },
         "candidate_labels": {
             #Parent class(Generalized class) : Children classes(specific categories)
-            "Car": ["Car", "Van", "Pickup"],
-            "Truck": ["Truck", "Pickup"]
+            "Car": ["car", "van", "pickup"],
+            "Truck": ["truck", "pickup"]
             #Can add other class mappings in here
         }
     }

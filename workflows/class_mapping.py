@@ -6,6 +6,7 @@ import datetime
 from PIL import Image
 from tqdm import tqdm
 from config.config import WORKFLOWS
+import fiftyone as fo
 import wandb
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
@@ -76,7 +77,8 @@ class ClassMapper:
     def process_detection(self, image, detection, candidate_labels):
         """Process a single detection with the model."""
         # Convert bounding box to pixel coordinates.
-        prob_threshold = 0.2
+        prob_threshold = self.config["thresholds"]["confidence"]
+
         img_width, img_height = image.size
         bbox = detection.bounding_box
         min_x, min_y, width, height = bbox
@@ -84,22 +86,22 @@ class ClassMapper:
         x2, y2 = int((min_x + width) * img_width), int((min_y + height) * img_height)
 
         # Crop image to detection region.
-        vehicle_patch = image.crop((x1, y1, x2, y2))
+        image_patch = image.crop((x1, y1, x2, y2))
 
         # Prepare inputs for the model.
         if self.is_siglip:
-            inputs = self.processor(text=candidate_labels, images=vehicle_patch, padding="max_length", return_tensors="pt")
+            inputs = self.processor(text=candidate_labels, images=image_patch, padding="max_length", return_tensors="pt")
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         elif self.is_clipseg:
-            inputs = self.processor(text=candidate_labels, images=[vehicle_patch]*len(candidate_labels), padding="max_length", return_tensors="pt")
+            inputs = self.processor(text=candidate_labels, images=[image_patch]*len(candidate_labels), padding="max_length", return_tensors="pt")
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
         elif self.is_align:
-            inputs = self.processor(images=vehicle_patch, text=candidate_labels, return_tensors="pt", padding=True)
+            inputs = self.processor(images=image_patch, text=candidate_labels, return_tensors="pt", padding=True)
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         else:
-            inputs = self.processor(images=vehicle_patch, text=candidate_labels, return_tensors="pt", padding=True)
+            inputs = self.processor(images=image_patch, text=candidate_labels, return_tensors="pt", padding=True)
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
 
@@ -168,39 +170,82 @@ class ClassMapper:
 
 
 
-    def run_mapping(self, interactive=True, wandb_logging=False):
+    def run_mapping(self):
         """
         Run the class mapping process on the dataset.
-
-        If 'interactive' is True, a PrintLogger is used to print tag additions in real time.
-        If 'wandb_logging' is True, metrics will be logged to Weights & Biases with TensorBoard syncing.
         """
         if not self.model:
             self.load_model()
 
-        if wandb_logging:
-            experiment_name = f"class_mapping_{os.getpid()}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-            tensorboard_root = self.config.get("tensorboard_root", "./tensorboard_logs")
-            dataset_name = getattr(self.dataset, "name", "default_dataset")
-            log_directory = os.path.join(tensorboard_root, dataset_name, experiment_name)
+        dataset_source_name = self.config.get("dataset_source")
+        dataset_target_name = self.config.get("dataset_target")
 
-            # Unpatch any previous TensorBoard patching before applying a new one
-            try:
-                wandb.tensorboard.unpatch()
-            except Exception as e:
-                logging.warning(f"Error unpatching TensorBoard: {e}")
+        if not dataset_source_name or not dataset_target_name:
+            error_msg = "Both 'dataset_source' and 'dataset_target' must be specified in the config."
+            logging.error(error_msg)
+            raise ValueError(error_msg)
 
-            wandb.tensorboard.patch(root_logdir=log_directory)
-            wandb.init(
-                name=f"class_mapping_{os.getpid()}",
-                #job_type="inference",
-                project="Class_mapping",
-                config=self.config,
-                sync_tensorboard=False  # Disable automatic syncing to avoid conflicts
-            )
-            tb_writer = SummaryWriter(log_dir=log_directory)
-        else:
-            tb_writer = None
+        # Load the datasets from FiftyOne.
+        try:
+            source_dataset = fo.load_dataset(dataset_source_name)
+        except Exception as e:
+            error_msg = f"Failed to load dataset_source '{dataset_source_name}': {e}"
+            logging.error(error_msg)
+            raise ValueError(error_msg)
+
+        try:
+            target_dataset = fo.load_dataset(dataset_target_name)
+        except Exception as e:
+            error_msg = f"Failed to load dataset_target '{dataset_target_name}': {e}"
+            logging.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Get the distinct labels present in each dataset.
+        source_labels = source_dataset.distinct("ground_truth.detections.label")
+        target_labels = target_dataset.distinct("ground_truth.detections.label")
+
+        # Check that all parent labels from the candidate_labels exist in dataset_source.
+        parent_labels = list(self.config["candidate_labels"].keys())
+        missing_parents = [p for p in parent_labels if p not in source_labels]
+        if missing_parents:
+            error_msg = (f"Missing parent labels in dataset_source '{dataset_source_name}': {missing_parents}\n"
+                        f"Expected parents: {parent_labels}\n"
+                        f"Found in dataset_source: {source_labels}")
+            logging.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Check that all child labels from candidate_labels exist in dataset_target.
+        all_child_labels = []
+        for children in self.config["candidate_labels"].values():
+            all_child_labels.extend(children)
+        missing_children = [child for child in all_child_labels if child not in target_labels]
+        if missing_children:
+            error_msg = (f"Missing child labels in dataset_target '{dataset_target_name}': {missing_children}\n"
+                        f"Expected children: {all_child_labels}\n"
+                        f"Found in dataset_target: {target_labels}")
+            logging.error(error_msg)
+            raise ValueError(error_msg)
+
+
+        experiment_name = f"class_mapping_{os.getpid()}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        tensorboard_root = self.config.get("tensorboard_root", "./tensorboard_logs")
+        dataset_name = getattr(self.dataset, "name", "default_dataset")
+        log_directory = os.path.join(tensorboard_root, dataset_name, experiment_name)
+
+        # Unpatch any previous TensorBoard patching before applying a new one
+        try:
+            wandb.tensorboard.unpatch()
+        except Exception as e:
+            logging.warning(f"Error unpatching TensorBoard: {e}")
+
+        wandb.tensorboard.patch(root_logdir=log_directory)
+        wandb.init(
+            name=f"class_mapping_{os.getpid()}",
+            project="Class_mapping",
+            config=self.config,
+            sync_tensorboard=False  # Disable automatic syncing to avoid conflicts
+        )
+        tb_writer = SummaryWriter(log_dir=log_directory)
 
         # Validate parent labels
         parent_labels = list(self.config["candidate_labels"].keys())
@@ -221,19 +266,6 @@ class ClassMapper:
 
         candidate_labels = self.config["candidate_labels"]
         threshold = self.config["thresholds"]["confidence"]
-
-        # Set up interactive logging if enabled
-        if interactive:
-            class PrintLogger:
-                def __init__(self):
-                    self.count = 0
-
-                def log(self, tag, confidence):
-                    self.count += 1
-                    print(f"Tag added: {tag} (Confidence: {confidence:.2f})")
-            print_logger = PrintLogger()
-        else:
-            print_logger = None
 
         sample_count = 0  # For logging steps
 
@@ -258,7 +290,7 @@ class ClassMapper:
                 self.stats["total_processed"] += 1
 
                 # If prediction meets threshold and differs from the original label, add a tag.
-                if confidence > threshold and old_label != predicted_label:
+                if confidence > threshold and old_label.lower() != predicted_label.lower():
                     tag = f"new_class_{self.model_name}_{predicted_label}"
                     if tag not in det.tags:
                         det.tags.append(tag)
@@ -268,35 +300,33 @@ class ClassMapper:
                                 self.stats["tags_added_per_category"].get(predicted_label, 0) + 1
                             )
 
-                        if print_logger:
-                            print_logger.log(tag, confidence)
-
-                        if wandb_logging:
-                            wandb.log({
-                                f"{self.model_name}/Tags_Added/{predicted_label}": self.stats["tags_added_per_category"].get(predicted_label, 0),
-                                f"{self.model_name}/Total_Tags_Added": self.stats["changes_made"]
-                            })
-
-            if wandb_logging:
-                wandb.log({
-                    f"{self.model_name}/Total_Processed_Samples": self.stats["total_processed"],
-                    f"{self.model_name}/Total_Tag_Changes": self.stats["changes_made"],
-                    f"{self.model_name}/Parent_Class_Count/Car": self.stats["parent_class_counts"].get("Car", 0),
-                    f"{self.model_name}/Parent_Class_Count/Truck": self.stats["parent_class_counts"].get("Truck", 0),
-                    f"{self.model_name}/Tags_Added/Van": self.stats["tags_added_per_category"].get("Van", 0),
-                    f"{self.model_name}/Tags_Added/Pickup": self.stats["tags_added_per_category"].get("Pickup", 0)
-                }, step=sample_count)
+                        if tb_writer is not None:
+                            tb_writer.add_scalar(f"{self.model_name}/Tags_Added/{predicted_label}",
+                                                self.stats["tags_added_per_category"].get(predicted_label, 0),
+                                                sample_count)
+                            tb_writer.add_scalar(f"{self.model_name}/Total_Tags_Added",
+                                                self.stats["changes_made"],
+                                                sample_count)
 
             if tb_writer is not None:
-                tb_writer.add_scalar('Metrics/Total_Processed_Detections', self.stats["total_processed"], sample_count)
-                tb_writer.add_scalar('Metrics/Total_Tag_Changes', self.stats["changes_made"], sample_count)
-                tb_writer.add_scalar('Parent_Class_Count/Car', self.stats["parent_class_counts"].get("Car", 0), sample_count)
-                tb_writer.add_scalar('Parent_Class_Count/Truck', self.stats["parent_class_counts"].get("Truck", 0), sample_count)
-                tb_writer.add_scalar('Tags_Added/Van', self.stats["tags_added_per_category"].get("Van", 0), sample_count)
-                tb_writer.add_scalar('Tags_Added/Pickup', self.stats["tags_added_per_category"].get("Pickup", 0), sample_count)
+                tb_writer.add_scalar(f"{self.model_name}/Total_Processed_Samples",
+                                    self.stats["total_processed"],
+                                    sample_count)
+                tb_writer.add_scalar(f"{self.model_name}/Total_Tag_Changes",
+                                    self.stats["changes_made"],
+                                    sample_count)
+
+                # Log parent class counts and child tag counts based on candidate_labels.
+                for parent_label, child_labels in self.config["candidate_labels"].items():
+                    tb_writer.add_scalar(f"{self.model_name}/Parent_Class_Count/{parent_label}",
+                                        self.stats["parent_class_counts"].get(parent_label, 0),
+                                        sample_count)
+                    for child_label in child_labels:
+                        tb_writer.add_scalar(f"{self.model_name}/Tags_Added/{child_label}",
+                                            self.stats["tags_added_per_category"].get(child_label, 0),
+                                            sample_count)
+
 
         if tb_writer is not None:
             tb_writer.close()
-        if wandb_logging:
-            wandb.finish(exit_code=0)
         return self.stats

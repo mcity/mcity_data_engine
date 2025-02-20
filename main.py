@@ -416,48 +416,33 @@ def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activat
 
     return True
 
-def workflow_class_mapping(dataset, dataset_info):
+def workflow_class_mapping(dataset, dataset_info, model_name, config):
     """
-    Execute class mapping workflow by delegating all processing to ClassMapper.
+    Execute class mapping workflow for a single model by delegating all processing to ClassMapper.
     """
-    config = WORKFLOWS["class_mapping"]
-    model_source = config["model_source"]  # Fetch selected model source.
-    models = config.get(model_source, [])   # Get models under the selected source.
+    logging.info("\nClass Mapping Workflow")
+    logging.info(f"\nRunning model: {model_name}")
+    mapper = ClassMapper(dataset, model_name, config)
+    any_success = False
+    try:
+        stats = mapper.run_mapping()
 
-    if not models:
-        logging.error(f"No models found for the selected source: {model_source}")
-        return False
+        # Display statistics only if mapping was successful
+        parent_class_counts = stats["total_processed"]
+        logging.info("\nParent Class Classification Results :")
+        for parent, count in stats["parent_class_counts"].items():
+            percentage = (count / parent_class_counts) * 100 if parent_class_counts > 0 else 0
+            logging.info(f"{parent}: {count} samples processed ({percentage:.1f}%)")
 
-    model_name = models[0]
-    print("\nClass Mapping Workflow")
-    print(f"Selected Model Source: {model_source}")
+        # Display statistics for Child tags
+        logging.info("\nTag Addition Results (Child Tags):")
+        logging.info(f"Total new tags added: {stats['changes_made']}")
+        for child, tag_count in stats["tags_added_per_category"].items():
+            logging.info(f"{child} tags added: {tag_count}")
+        any_success = True
 
-    # Initialize the mapper and run the mapping process with wandb logging enabled.
-    for model_name in models:
-        print(f"\nRunning model: {model_name}")
-        mapper = ClassMapper(dataset, model_name, config)
-
-        any_success = False
-        try:
-            stats = mapper.run_mapping(interactive=True, wandb_logging=True)
-
-            # Display statistics only if mapping was successful
-            total_vehicles = stats["total_processed"]
-            print("\nVehicle Classification Results (Parent Classes):")
-            for parent, count in stats["parent_class_counts"].items():
-                percentage = (count / total_vehicles) * 100 if total_vehicles > 0 else 0
-                print(f"{parent}: {count} vehicles processed ({percentage:.1f}%)")
-
-            print("\nTag Addition Results (Child Tags):")
-            print(f"Total new tags added: {stats['changes_made']}")
-            for child, tag_count in stats["tags_added_per_category"].items():
-                print(f"{child} tags added: {tag_count}")
-
-            any_success = True
-
-        except Exception as e:
-            logging.error(f"Error during mapping with model {model_name}: {e}")
-            continue
+    except Exception as e:
+        logging.error(f"Error during mapping with model {model_name}: {e}")
 
     return any_success
 
@@ -761,13 +746,19 @@ class WorkflowExecutor:
                             dataset_name=self.selected_dataset,
                             config=WORKFLOWS["class_mapping"]
                         )
-                        # Run the class mapping workflow
-                        workflow_class_mapping(self.dataset, self.dataset_info)
+                        config = WORKFLOWS["class_mapping"]
+                        models = config["hf_models_zeroshot_classification"]
+
+                        # Iterate over models and run the workflow for each one
+                        for model_name in models:
+                            workflow_class_mapping(self.dataset, self.dataset_info, model_name, config)
+
                     except Exception as e:
                         logging.error(f"Error in class_mapping workflow: {e}")
                         wandb_exit_code = 1
                     finally:
                         wandb_close(wandb_run, wandb_exit_code)
+
 
                 else:
                     logging.error(
