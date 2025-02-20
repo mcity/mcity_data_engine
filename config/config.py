@@ -55,25 +55,17 @@ WORKFLOWS = {
             "Draem": {},
             "Cfa": {},
         },
-        "anomalib_eval_metrics": [  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/metrics/index.html
+        "anomalib_eval_metrics": [  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/metrics/index.html. Focus on standard metrics, computation of others can be expensive
             "AUPR",
             "AUROC",
             "F1Max",
-            # "AUPRO",      # Focus on standard metrics, computation of others can be expensive
-            # "AnomalyScoreDistribution",
-            # "BinaryPrecisionRecallCurve",
-            # "F1AdaptiveThreshold",
-            # "F1Score",
-            # "ManualThreshold",
-            # "MinMax",
-            # "PRO",
         ],
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
         "mode": ["train", "inference"],  # "train" and "inference" supported
         "model_source": [
-            "hf_models_objectdetection"
+            "ultralytics"
         ],  # "hf_models_objectdetection" and "custom_codetr" and "ultralytics" supported
         "n_worker_dataloader": 3,
         "epochs": 1,
@@ -130,7 +122,16 @@ WORKFLOWS = {
             "n_gpus": "1",
             "container_tool": "docker",
         },
-        "ultralytics": {},
+        "ultralytics": {
+            "models": {  # Pick from https://docs.ultralytics.com/models/
+                "yolov8n": {},
+                "yolov8x": {},
+                "yolo11n": {},
+                "yolo11x": {},
+                "yolo12n": {},
+                "yolo12x": {},
+            }
+        },
     },
     "auto_labeling_zero_shot": {
         "n_post_processing_worker_per_inference_worker": 2,

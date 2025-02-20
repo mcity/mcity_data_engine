@@ -36,6 +36,7 @@ from workflows.anomaly_detection import Anodec
 from workflows.auto_labeling import (
     CustomCoDETRObjectDetection,
     HuggingFaceObjectDetection,
+    UltralyticsObjectDetection,
     ZeroShotObjectDetection,
 )
 from workflows.aws_download import AwsDownloader
@@ -597,6 +598,7 @@ class WorkflowExecutor:
                                 f"Selected model source {model_source} is not supported."
                             )
                     if SUPPORTED_MODEL_SOURCES[0] in selected_model_source:
+                        # Hugging Face Models
                         hf_models = config_autolabel["hf_models_objectdetection"]
 
                         # Dataset Conversion
@@ -651,8 +653,7 @@ class WorkflowExecutor:
                             )
 
                     if SUPPORTED_MODEL_SOURCES[1] in selected_model_source:
-
-                        # Config
+                        # Custom Co-DETR
                         config_codetr = WORKFLOWS["auto_labeling"]["custom_codetr"]
                         run_config = {
                             "export_dataset_root": config_codetr["export_dataset_root"],
@@ -686,6 +687,15 @@ class WorkflowExecutor:
                             workflow_auto_labeling_custom_codetr(
                                 self.dataset_info, run_config
                             )
+                    if SUPPORTED_MODEL_SOURCES[1] in selected_model_source:
+                        # Ultralytics Models
+                        config_ultralytics = WORKFLOWS["auto_labeling"]["ultralytics"]
+
+                        run_config = {}
+
+                        detector = UltralyticsObjectDetection(
+                            self.dataset, self.dataset_info, run_config
+                        )
 
                 elif workflow == "auto_labeling_zero_shot":
                     config = WORKFLOWS["auto_labeling_zero_shot"]

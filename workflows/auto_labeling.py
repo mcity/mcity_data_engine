@@ -20,9 +20,7 @@ import numpy as np
 import psutil
 import torch
 import torch.multiprocessing as mp
-import wandb
 from accelerate.test_utils.testing import get_backend
-from datasets import Split
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
@@ -37,6 +35,7 @@ from transformers import (
     TrainingArguments,
 )
 
+import wandb
 from config.config import (
     GLOBAL_SEED,
     HF_DO_UPLOAD,
@@ -45,6 +44,7 @@ from config.config import (
     WANDB_ACTIVE,
     WORKFLOWS,
 )
+from datasets import Split
 from utils.logging import configure_logging
 
 
@@ -743,6 +743,19 @@ class ZeroShotObjectDetection:
             progress=True,
         )
         return True
+
+
+class UltralyticsObjectDetection:
+    def __init__(self, dataset, dataset_info, config):
+        self.dataset = dataset
+        self.dataset_info = dataset_info
+        self.config = config
+
+    def train(self):
+        pass
+
+    def inference(self):
+        pass
 
 
 class HuggingFaceObjectDetection:
