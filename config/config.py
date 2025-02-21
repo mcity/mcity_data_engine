@@ -5,7 +5,7 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "fisheye8k",
+    "name": "mcity_fisheye_2000",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
@@ -74,7 +74,11 @@ WORKFLOWS = {
         "learning_rate": 5e-05,
         "weight_decay": 0.0001,
         "max_grad_norm": 0.01,
-        "inference_settings": {"do_eval": True, "inference_on_train": True},
+        "inference_settings": {
+            "do_eval": True,
+            "inference_on_evaluation": True,
+            "model_hf": None,  # None (automatic selection) or Hugging Face ID
+        },
         "hf_models_objectdetection": {  # HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
             "microsoft/conditional-detr-resnet-50": {"batch_size": 1},
             "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
@@ -126,8 +130,8 @@ WORKFLOWS = {
         "ultralytics": {
             "export_dataset_root": "/media/dbogdoll/Datasets/ultralytics_data/",
             "models": {  # Pick from https://docs.ultralytics.com/models/
-                "yolo11n": {"batch_size": 32, "img_size": 640},
-                # "yolo11x": {"batch_size": 1, "img_size": 640},
+                # "yolo11n": {"batch_size": 32, "img_size": 640},
+                "yolo11x": {"batch_size": 1, "img_size": 640},
                 # "yolo12n": {"batch_size": 32, "img_size": 640},
                 # "yolo12x": {"batch_size": 1, "img_size": 640},
             },
