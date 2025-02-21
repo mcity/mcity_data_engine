@@ -763,9 +763,8 @@ class UltralyticsObjectDetection:
             + f"{config["v51_dataset_name"]}_{config["model_name"]}".replace("/", "_")
         )
 
-        self.export_folder = (
-            f"output/models/ultralytics/{self.config["v51_dataset_name"]}"
-        )
+        self.export_root = "output/models/ultralytics/"
+        self.export_folder = os.path.join(self.export_root,self.config["v51_dataset_name"])
 
         self.model_path = os.path.join(
             self.export_folder, self.config["model_name"], "weights", "best.pt"
@@ -833,29 +832,56 @@ class UltralyticsObjectDetection:
             )
 
     def inference(self, gt_field="ground_truth"):
-        logging.info(f"Running inference")
+        logging.info(f"Running inference on dataset {self.config['v51_dataset_name']}")
         inference_settings = self.config["inference_settings"]
-        try:
-            if os.path.exists(self.model_path):
-                file_path = self.model_path
-                logging.info(
-                    f"Loading model {self.config['model_name']} from disk: {file_path}"
-                )
-            else:
-                download_dir = self.model_path.replace("best.pt", "")
-                logging.info(
-                    f"Downloading model {self.hf_hub_model_id} from Hugging Face to {download_dir}"
-                )
-                file_path = hf_hub_download(
-                    repo_id=self.hf_hub_model_id,
+
+        dataset_name = None
+
+        model_hf = inference_settings["model_hf"]
+        if model_hf is not None:
+            # Use model manually defined in config.
+            # This way models can be used for inference which were trained on a different dataset
+            # Parse model path components
+            _, model_name = model_hf.split('/')  # e.g. 'mcity_fisheye_2100_yolo11x'
+            dataset_name, model_type = model_name.rsplit('_', 1)  # e.g. 'mcity_fisheye_2100', 'yolo11x'
+
+            # Set up directories
+            download_dir = os.path.join(self.export_root, dataset_name, model_type)
+            self.model_path = os.path.join(download_dir, "weights", "best.pt")
+
+            # Create directories if they don't exist
+            os.makedirs(os.path.join(download_dir, "weights"), exist_ok=True)
+
+            file_path = hf_hub_download(
+                    repo_id=model_hf,
                     filename="best.pt",
                     local_dir=download_dir,
                 )
-        except Exception as e:
-            logging.error(f"Failed to load or download model: {str(e)}.")
-            return False
+        else:
+            # Automatically dertermine model based on dataset
+            dataset_name = self.config["v51_dataset_name"]
+            try:
+                if os.path.exists(self.model_path):
+                    file_path = self.model_path
+                    logging.info(
+                        f"Loading model {self.config['model_name']} from disk: {file_path}"
+                    )
+                else:
+                    download_dir = self.model_path.replace("best.pt", "")
+                    logging.info(
+                        f"Downloading model {self.hf_hub_model_id} from Hugging Face to {download_dir}"
+                    )
+                    file_path = hf_hub_download(
+                        repo_id=self.hf_hub_model_id,
+                        filename="best.pt",
+                        local_dir=download_dir,
+                    )
+            except Exception as e:
+                logging.error(f"Failed to load or download model: {str(e)}.")
+                return False
 
-        label_field = f"pred_od_{self.config['model_name']}"
+        label_field = f"pred_od_{self.config['model_name']}_{dataset_name}"
+        logging.info(f"Using model {self.model_path} for inference.")
         model = YOLO(self.model_path)
 
         if inference_settings["inference_on_evaluation"] == True:
@@ -871,7 +897,7 @@ class UltralyticsObjectDetection:
             results = self.dataset.evaluate_detections(
                 label_field,
                 gt_field=gt_field,
-                eval_key="eval",
+                eval_key=f"eval_{self.config['model_name']}_{dataset_name}",
             )
 
 
