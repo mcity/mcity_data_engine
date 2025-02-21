@@ -732,16 +732,17 @@ class WorkflowExecutor:
                         export_dataset_root = config_ultralytics["export_dataset_root"]
 
                         # Export data into necessary format
-                        try:
-                            UltralyticsObjectDetection.export_data(
-                                self.dataset,
-                                self.dataset_info,
-                                export_dataset_root,
-                            )
-                        except Exception as e:
-                            logging.error(
-                                f"Error during Ultralytics dataset export: {e}"
-                            )
+                        if mode == "train":
+                            try:
+                                UltralyticsObjectDetection.export_data(
+                                    self.dataset,
+                                    self.dataset_info,
+                                    export_dataset_root,
+                                )
+                            except Exception as e:
+                                logging.error(
+                                    f"Error during Ultralytics dataset export: {e}"
+                                )
 
                         for model_name in (
                             pbar := tqdm(
