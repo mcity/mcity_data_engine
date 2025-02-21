@@ -7,7 +7,7 @@ datasets:
     v51_splits: ["train", "val"]
   - name: mcity_fisheye_2100
     loader_fct: load_mcity_fisheye_2100_vru
-    hf_dataset_name: mcity-data-engine/mcity_fisheye_vru_v51
+    hf_dataset_name: mcity-data-engine/mcity-fisheye-vru-2844
   - name: mcity_fisheye_3_months
     loader_fct: load_mcity_fisheye_3_months
     local_path: /media/dbogdoll/Datasets/midadvrb_3_months/
