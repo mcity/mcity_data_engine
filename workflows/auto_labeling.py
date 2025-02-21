@@ -858,9 +858,11 @@ class UltralyticsObjectDetection:
         label_field = f"pred_od_{self.config['model_name']}"
         model = YOLO(self.model_path)
 
-        if inference_settings["inference_on_train"] == False:
+        if inference_settings["inference_on_evaluation"] == True:
             INFERENCE_SPLITS = ["val", "test"]
             dataset_eval_view = self.dataset.match_tags(INFERENCE_SPLITS)
+            if len(dataset_eval_view) == 0:
+                logging.error(f"Dataset misses splits: {INFERENCE_SPLITS}")
             dataset_eval_view.apply_model(model, label_field=label_field)
         else:
             self.dataset.apply_model(model, label_field=label_field)
