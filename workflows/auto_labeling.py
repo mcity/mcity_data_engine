@@ -763,6 +763,14 @@ class UltralyticsObjectDetection:
             + f"{config["v51_dataset_name"]}_{config["model_name"]}".replace("/", "_")
         )
 
+        self.export_folder = (
+            f"output/models/ultralytics/{self.config["v51_dataset_name"]}"
+        )
+
+        self.model_path = os.path.join(
+            self.export_folder, self.config["model_name"], "weights", "best.pt"
+        )
+
     @staticmethod
     def export_data(
         dataset, dataset_info, export_dataset_root, label_field="ground_truth"
@@ -791,42 +799,71 @@ class UltralyticsObjectDetection:
                 split=split,
             )
 
-    def train(self, do_delete=True):
+    def train(self):
         # Export dataset to YOLO format for Ultralytics
         model = YOLO(self.config["model_name"], task="detect")
-        export_folder = f"output/models/ultralytics/{self.config["v51_dataset_name"]}"
         # https://docs.ultralytics.com/modes/train/#train-settings
         results = model.train(
             data=f"{self.ultralytics_data_path}/dataset.yaml",
             epochs=self.config["epochs"],
-            project=export_folder,
+            project=self.export_folder,
             name=self.config["model_name"],
             patience=self.config["patience"],
             batch=self.config["batch_size"],
             imgsz=self.config["img_size"],
             seed=GLOBAL_SEED,
             exist_ok=True,
+            amp=True,
         )
         metrics = model.val()
         logging.info(f"Model Performance: {metrics}")
 
         # Upload model to Hugging Face
         if HF_DO_UPLOAD:
-            best_model_path = str(results.save_dir / "weights/best.pt")
-            logging.info(f"Uploading model {best_model_path} to Hugging Face.")
+            logging.info(f"Uploading model {self.model_path} to Hugging Face.")
             api = HfApi()
             api.create_repo(
                 self.hf_hub_model_id, private=True, repo_type="model", exist_ok=True
             )
             api.upload_file(
-                path_or_fileobj=best_model_path,
+                path_or_fileobj=self.model_path,
                 path_in_repo="best.pt",
                 repo_id=self.hf_hub_model_id,
                 repo_type="model",
             )
 
-    def inference(self):
-        pass
+    def inference(self, do_eval=True):
+        logging.info(f"Running inference")
+        try:
+            if os.path.exists(self.model_path):
+                file_path = self.model_path
+                logging.info(
+                    f"Loading model {self.config['model_name']} from disk: {file_path}"
+                )
+            else:
+                download_dir = self.model_path.replace("best.pt", "")
+                logging.info(
+                    f"Downloading model {self.hf_hub_model_id} from Hugging Face to {download_dir}"
+                )
+                file_path = hf_hub_download(
+                    repo_id=self.hf_hub_model_id,
+                    filename="best.pt",
+                    local_dir=download_dir,
+                )
+        except Exception as e:
+            logging.error(f"Failed to load or download model: {str(e)}.")
+            return False
+
+        label_field = f"pred_od_{self.config['model_name']}"
+        model = YOLO(self.model_path)
+        self.dataset.apply_model(model, label_field=label_field)
+
+        if do_eval:
+            results = self.dataset.evaluate_detections(
+                "predictions",
+                gt_field=label_field,
+                eval_key="eval",
+            )
 
 
 class HuggingFaceObjectDetection:
