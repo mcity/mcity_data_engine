@@ -754,6 +754,11 @@ class WorkflowExecutor:
                                 "model_name": model_name,
                                 "v51_dataset_name": self.dataset_info["name"],
                                 "epochs": epochs,
+                                "patience": config_autolabel["early_stop_threshold"],
+                                "batch_size": models_ultralytics[model_name][
+                                    "batch_size"
+                                ],
+                                "img_size": models_ultralytics[model_name]["img_size"],
                                 "export_dataset_root": export_dataset_root,
                             }
 

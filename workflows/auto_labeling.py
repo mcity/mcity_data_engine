@@ -20,7 +20,10 @@ import numpy as np
 import psutil
 import torch
 import torch.multiprocessing as mp
+import wandb
 from accelerate.test_utils.testing import get_backend
+from datasets import Split
+from huggingface_hub import HfApi, hf_hub_download
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
@@ -37,7 +40,6 @@ from transformers import (
 )
 from ultralytics import YOLO
 
-import wandb
 from config.config import (
     ACCEPTED_SPLITS,
     GLOBAL_SEED,
@@ -47,7 +49,6 @@ from config.config import (
     WANDB_ACTIVE,
     WORKFLOWS,
 )
-from datasets import Split
 from utils.logging import configure_logging
 
 
@@ -753,8 +754,13 @@ class UltralyticsObjectDetection:
     def __init__(self, dataset, config):
         self.dataset = dataset
         self.config = config
-        self.temp_dataset_path = os.path.join(
-            self.DEFAULT_DATASET_ROOT, config["v51_dataset_name"]
+        self.ultralytics_data_path = os.path.join(
+            config["export_dataset_root"], config["v51_dataset_name"]
+        )
+
+        self.hf_hub_model_id = (
+            f"{HF_ROOT}/"
+            + f"{config["v51_dataset_name"]}_{config["model_name"]}".replace("/", "_")
         )
 
     @staticmethod
@@ -769,11 +775,9 @@ class UltralyticsObjectDetection:
             )
             return
 
+        logging.info("Exporting data for training with Ultralytics")
         classes = dataset.distinct(f"{label_field}.detections.label")
-
-        for split in tqdm(
-            ACCEPTED_SPLITS, desc="Exporting data for training with Ultralytics"
-        ):
+        for split in ACCEPTED_SPLITS:
             split_view = dataset.match_tags(split)
 
             if split == "test":  # YOLO expects train and val
@@ -787,9 +791,39 @@ class UltralyticsObjectDetection:
                 split=split,
             )
 
-    def train(self):
+    def train(self, do_delete=True):
         # Export dataset to YOLO format for Ultralytics
-        model = YOLO(self.config["model_name"])
+        model = YOLO(self.config["model_name"], task="detect")
+        export_folder = f"output/models/ultralytics/{self.config["v51_dataset_name"]}"
+        # https://docs.ultralytics.com/modes/train/#train-settings
+        results = model.train(
+            data=f"{self.ultralytics_data_path}/dataset.yaml",
+            epochs=self.config["epochs"],
+            project=export_folder,
+            name=self.config["model_name"],
+            patience=self.config["patience"],
+            batch=self.config["batch_size"],
+            imgsz=self.config["img_size"],
+            seed=GLOBAL_SEED,
+            exist_ok=True,
+        )
+        metrics = model.val()
+        logging.info(f"Model Performance: {metrics}")
+
+        # Upload model to Hugging Face
+        if HF_DO_UPLOAD:
+            best_model_path = str(results.save_dir / "weights/best.pt")
+            logging.info(f"Uploading model {best_model_path} to Hugging Face.")
+            api = HfApi()
+            api.create_repo(
+                self.hf_hub_model_id, private=True, repo_type="model", exist_ok=True
+            )
+            api.upload_file(
+                path_or_fileobj=best_model_path,
+                path_in_repo="best.pt",
+                repo_id=self.hf_hub_model_id,
+                repo_type="model",
+            )
 
     def inference(self):
         pass

@@ -68,7 +68,7 @@ WORKFLOWS = {
             "ultralytics"
         ],  # "hf_models_objectdetection" and "custom_codetr" and "ultralytics" supported
         "n_worker_dataloader": 3,
-        "epochs": 1,
+        "epochs": 32,
         "early_stop_patience": 5,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -125,12 +125,12 @@ WORKFLOWS = {
         "ultralytics": {
             "export_dataset_root": "/media/dbogdoll/Datasets/ultralytics_data/",
             "models": {  # Pick from https://docs.ultralytics.com/models/
-                "yolov8n": {},
-                "yolov8x": {},
-                "yolo11n": {},
-                "yolo11x": {},
-                "yolo12n": {},
-                "yolo12x": {},
+                "yolov8n": {"batch_size": 64, "img_size": 640},
+                "yolov8x": {"batch_size": 1, "img_size": 640},
+                "yolo11n": {"batch_size": 64, "img_size": 640},
+                "yolo11x": {"batch_size": 1, "img_size": 640},
+                "yolo12n": {"batch_size": 64, "img_size": 640},
+                "yolo12x": {"batch_size": 1, "img_size": 640},
             },
         },
     },
@@ -286,7 +286,7 @@ GLOBAL_SEED = 0
 
 # Hugging Face Config
 HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
-HF_DO_UPLOAD = False
+HF_DO_UPLOAD = True
 
 # Weights and Biases Config
 WANDB_ACTIVE = True
