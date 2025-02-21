@@ -732,7 +732,7 @@ class WorkflowExecutor:
                         export_dataset_root = config_ultralytics["export_dataset_root"]
 
                         # Export data into necessary format
-                        if mode == "train":
+                        if "train" in mode:
                             try:
                                 UltralyticsObjectDetection.export_data(
                                     self.dataset,
