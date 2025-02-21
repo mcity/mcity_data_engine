@@ -39,6 +39,7 @@ def test_class_mapping(dataset_v51):
     Test workflow on the sample with the specified filepath,
     verifying that each model has added its specific tag.
     """
+
     # Get the first sample from the dataset.
     sample = dataset_v51.first()
     assert sample is not None, "Target sample not found in dataset"
@@ -53,7 +54,7 @@ def test_class_mapping(dataset_v51):
     # Extract configuration and iterate over models.
     config = WORKFLOWS["class_mapping"]
     models = config["hf_models_zeroshot_classification"]
-    logging.info("Selected Model Source: hf_models_zeroshot_classification")
+
 
     for model_name in models:
         workflow_class_mapping(dataset_v51, dataset_info, model_name, config)
@@ -61,8 +62,8 @@ def test_class_mapping(dataset_v51):
     logging.info("\nAfter workflow:")
     if hasattr(sample, "ground_truth") and sample["ground_truth"].detections:
         logging.info(f"Total number of detections in Sample: {len(sample.ground_truth.detections)}")
-        for i, detection in enumerate(sample["ground_truth"].detections):
-            logging.info(f"Detection {i} tags: {detection.tags if hasattr(detection, 'tags') else 'No tags'}")
+        #for i, detection in enumerate(sample["ground_truth"].detections):
+         #   logging.info(f"Detection {i} tags: {detection.tags if hasattr(detection, 'tags') else 'No tags'}")
 
     # Gather all tags from all detections in the updated sample
     found_tags = set()

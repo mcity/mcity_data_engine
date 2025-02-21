@@ -749,8 +749,13 @@ class WorkflowExecutor:
                         config = WORKFLOWS["class_mapping"]
                         models = config["hf_models_zeroshot_classification"]
 
+
                         # Iterate over models and run the workflow for each one
-                        for model_name in models:
+                        for model_name in (pbar := tqdm(models, desc="Processing Class Mapping")):
+
+                            # Status Update
+                            pbar.set_description(f"Zero Shot Classification model {model_name}")
+
                             workflow_class_mapping(self.dataset, self.dataset_info, model_name, config)
 
                     except Exception as e:

@@ -1,6 +1,6 @@
 import logging
 import torch
-from transformers import AutoProcessor, AutoModelForZeroShotImageClassification, AutoModel, AlignProcessor, AlignModel, AltCLIPModel, AltCLIPProcessor, CLIPSegProcessor, CLIPSegForImageSegmentation
+from transformers import AutoConfig, AutoProcessor, AutoModelForZeroShotImageClassification, AutoModel, AlignProcessor, AlignModel, AltCLIPModel, AltCLIPProcessor, CLIPSegProcessor, CLIPSegForImageSegmentation
 import os
 import datetime
 from PIL import Image
@@ -8,6 +8,7 @@ from tqdm import tqdm
 from config.config import WORKFLOWS
 import fiftyone as fo
 import wandb
+from utils.dataset_loader import load_dataset
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
@@ -42,34 +43,36 @@ class ClassMapper:
     def load_model(self):
         """Load the model and processor from HuggingFace."""
         try:
-            self.is_siglip = "siglip" in self.model_name
-            self.is_align = "align" in self.model_name
-            self.is_altclip = "AltCLIP" in self.model_name
-            self.is_clipseg = "clipseg" in self.model_name
+            self.hf_model_config = AutoConfig.from_pretrained(self.model_name)
+            self.hf_model_config_name = type(self.hf_model_config).__name__
 
-            if self.is_siglip:
+            if self.hf_model_config_name == "SiglipConfig":
                 self.model = AutoModel.from_pretrained(self.model_name)
                 self.processor = AutoProcessor.from_pretrained(self.model_name)
 
-            elif self.is_align:
+            elif self.hf_model_config_name == "AlignConfig":
                 self.processor = AlignProcessor.from_pretrained(self.model_name)
                 self.model = AlignModel.from_pretrained(self.model_name)
 
-            elif self.is_altclip:
+            elif self.hf_model_config_name == "AltCLIPConfig":
                 self.processor = AltCLIPProcessor.from_pretrained(self.model_name)
                 self.model = AltCLIPModel.from_pretrained(self.model_name)
 
-            elif self.is_clipseg:
+            elif self.hf_model_config_name == "CLIPSegConfig":
                 self.processor = CLIPSegProcessor.from_pretrained(self.model_name)
                 self.model = CLIPSegForImageSegmentation.from_pretrained(self.model_name)
 
-            else:
+
+            elif self.hf_model_config_name in ["Blip2Config", "CLIPConfig"]:
                 self.model = AutoModelForZeroShotImageClassification.from_pretrained(self.model_name)
                 self.processor = AutoProcessor.from_pretrained(self.model_name)
 
-            self.model.to(self.device)
+            else:
+                logging.error(f"Invalid Model Name : {self.model_name}")
 
+            self.model.to(self.device)
             logging.info(f"Successfully loaded model {self.model_name}")
+
         except Exception as e:
             logging.error(f"Failed to load model: {str(e)}")
             raise
@@ -78,6 +81,8 @@ class ClassMapper:
         """Process a single detection with the model."""
         # Convert bounding box to pixel coordinates.
         prob_threshold = self.config["thresholds"]["confidence"]
+
+
 
         img_width, img_height = image.size
         bbox = detection.bounding_box
@@ -89,28 +94,24 @@ class ClassMapper:
         image_patch = image.crop((x1, y1, x2, y2))
 
         # Prepare inputs for the model.
-        if self.is_siglip:
+        if self.hf_model_config_name == "SiglipConfig":
             inputs = self.processor(text=candidate_labels, images=image_patch, padding="max_length", return_tensors="pt")
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-        elif self.is_clipseg:
+        elif self.hf_model_config_name == "CLIPSegConfig":
             inputs = self.processor(text=candidate_labels, images=[image_patch]*len(candidate_labels), padding="max_length", return_tensors="pt")
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
-        elif self.is_align:
-            inputs = self.processor(images=image_patch, text=candidate_labels, return_tensors="pt", padding=True)
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         else:
             inputs = self.processor(images=image_patch, text=candidate_labels, return_tensors="pt", padding=True)
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
+        # Ensure all tensors in the processed inputs are moved to the designated device.
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         # Generate classification output.
         with torch.no_grad():
             outputs = self.model(**inputs)
 
 
-        if self.is_siglip:
+        if self.hf_model_config_name == "SiglipConfig":
             # Apply sigmoid for probabilities
             logits = outputs.logits_per_image
             probs = torch.sigmoid(logits)
@@ -118,17 +119,14 @@ class ClassMapper:
             predicted_label = candidate_labels[predicted_idx.item()]
             return predicted_label, max_prob.item()
 
-        elif self.is_align or self.is_altclip:
+        elif self.hf_model_config_name in ["AlignConfig", "AltCLIPConfig"]:
             logits = outputs.logits_per_image
             probs = torch.softmax(logits, dim=1)
             max_prob, predicted_idx = probs[0].max(dim=-1)
             predicted_label = candidate_labels[predicted_idx.item()]
             return predicted_label, max_prob.item()
 
-        elif self.is_clipseg:
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-
+        elif self.hf_model_config_name == "CLIPSegConfig":
             # Get masks and ensure batch dimension exists
             masks = torch.sigmoid(outputs.logits)
             if masks.dim() == 2:  # Handle single-example edge case
@@ -161,7 +159,6 @@ class ClassMapper:
             predicted_idx = scores.index(max_score)
             return candidate_labels[predicted_idx], max_score
 
-
         else:
             logits = outputs.logits_per_image
             max_logit, predicted_idx = logits.max(dim=-1)
@@ -169,8 +166,7 @@ class ClassMapper:
             return predicted_label, max_logit.item()
 
 
-
-    def run_mapping(self):
+    def run_mapping(self, label_field = "ground_truth"):
         """
         Run the class mapping process on the dataset.
         """
@@ -187,22 +183,32 @@ class ClassMapper:
 
         # Load the datasets from FiftyOne.
         try:
-            source_dataset = fo.load_dataset(dataset_source_name)
+            SELECTED_DATASET = {
+                "name": dataset_source_name,
+                "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
+            }
+            source_dataset, source_dataset_info = load_dataset(SELECTED_DATASET)
+
         except Exception as e:
             error_msg = f"Failed to load dataset_source '{dataset_source_name}': {e}"
             logging.error(error_msg)
             raise ValueError(error_msg)
 
         try:
-            target_dataset = fo.load_dataset(dataset_target_name)
+            SELECTED_DATASET = {
+                "name": dataset_target_name,
+                "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
+            }
+            target_dataset, target_dataset_info = load_dataset(SELECTED_DATASET)
+            #target_dataset = fo.load_dataset(dataset_target_name)
         except Exception as e:
             error_msg = f"Failed to load dataset_target '{dataset_target_name}': {e}"
             logging.error(error_msg)
             raise ValueError(error_msg)
 
         # Get the distinct labels present in each dataset.
-        source_labels = source_dataset.distinct("ground_truth.detections.label")
-        target_labels = target_dataset.distinct("ground_truth.detections.label")
+        source_labels = source_dataset.distinct(f"{label_field}.detections.label")
+        target_labels = target_dataset.distinct(f"{label_field}.detections.label")
 
         # Check that all parent labels from the candidate_labels exist in dataset_source.
         parent_labels = list(self.config["candidate_labels"].keys())
@@ -250,7 +256,7 @@ class ClassMapper:
         # Validate parent labels
         parent_labels = list(self.config["candidate_labels"].keys())
         try:
-            existing_labels = self.dataset.distinct("ground_truth.detections.label")
+            existing_labels = self.dataset.distinct(f"{label_field}.detections.label")
         except Exception as e:
             logging.error("Could not retrieve detection labels from dataset")
             raise ValueError("Invalid detection field path") from e
@@ -269,7 +275,7 @@ class ClassMapper:
 
         sample_count = 0  # For logging steps
 
-        for sample in tqdm(self.dataset.iter_samples(progress=True, autosave=True), desc="Processing samples"):
+        for sample in self.dataset.iter_samples(progress=True, autosave=True):
             sample_count += 1
             try:
                 image = Image.open(sample.filepath)
@@ -277,25 +283,25 @@ class ClassMapper:
                 logging.error(f"Error opening image {sample.filepath}: {str(e)}")
                 continue
 
-            detections = sample["ground_truth"]
+            detections = sample[label_field]
             for det in detections.detections:
-                old_label = det.label
-                if old_label not in candidate_labels:
+                current_label = det.label
+                if current_label not in candidate_labels:
                     continue
 
-                label_candidates = candidate_labels[old_label]
+                label_candidates = candidate_labels[current_label]
                 predicted_label, confidence = self.process_detection(image, det, label_candidates)
 
-                self.stats["parent_class_counts"][old_label] = self.stats["parent_class_counts"].get(old_label, 0) + 1
+                self.stats["parent_class_counts"][current_label] = self.stats["parent_class_counts"].get(current_label, 0) + 1
                 self.stats["total_processed"] += 1
 
                 # If prediction meets threshold and differs from the original label, add a tag.
-                if confidence > threshold and old_label.lower() != predicted_label.lower():
+                if confidence > threshold and current_label.lower() != predicted_label.lower():
                     tag = f"new_class_{self.model_name}_{predicted_label}"
                     if tag not in det.tags:
                         det.tags.append(tag)
                         self.stats["changes_made"] += 1
-                        if predicted_label != old_label:
+                        if predicted_label != current_label:
                             self.stats["tags_added_per_category"][predicted_label] = (
                                 self.stats["tags_added_per_category"].get(predicted_label, 0) + 1
                             )
