@@ -760,6 +760,9 @@ class WorkflowExecutor:
                                 ],
                                 "img_size": models_ultralytics[model_name]["img_size"],
                                 "export_dataset_root": export_dataset_root,
+                                "inference_settings": config_autolabel[
+                                    "inference_settings"
+                                ],
                             }
 
                             workflow_auto_labeling_ultralytics(self.dataset, run_config)

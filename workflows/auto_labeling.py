@@ -832,8 +832,9 @@ class UltralyticsObjectDetection:
                 repo_type="model",
             )
 
-    def inference(self, do_eval=True):
+    def inference(self, gt_field="ground_truth"):
         logging.info(f"Running inference")
+        inference_settings = self.config["inference_settings"]
         try:
             if os.path.exists(self.model_path):
                 file_path = self.model_path
@@ -856,12 +857,18 @@ class UltralyticsObjectDetection:
 
         label_field = f"pred_od_{self.config['model_name']}"
         model = YOLO(self.model_path)
-        self.dataset.apply_model(model, label_field=label_field)
 
-        if do_eval:
+        if inference_settings["inference_on_train"] == False:
+            INFERENCE_SPLITS = ["val", "test"]
+            dataset_eval_view = self.dataset.match_tags(INFERENCE_SPLITS)
+            dataset_eval_view.apply_model(model, label_field=label_field)
+        else:
+            self.dataset.apply_model(model, label_field=label_field)
+
+        if inference_settings["do_eval"]:
             results = self.dataset.evaluate_detections(
-                "predictions",
-                gt_field=label_field,
+                label_field,
+                gt_field=gt_field,
                 eval_key="eval",
             )
 

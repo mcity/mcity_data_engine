@@ -63,7 +63,7 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": ["train", "inference"],  # "train" and "inference" supported
+        "mode": ["inference"],  # "train" and "inference" supported
         "model_source": [
             "ultralytics"
         ],  # "hf_models_objectdetection" and "custom_codetr" and "ultralytics" supported
@@ -74,6 +74,7 @@ WORKFLOWS = {
         "learning_rate": 5e-05,
         "weight_decay": 0.0001,
         "max_grad_norm": 0.01,
+        "inference_settings": {"do_eval": True, "inference_on_train": True},
         "hf_models_objectdetection": {  # HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
             "microsoft/conditional-detr-resnet-50": {"batch_size": 1},
             "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
@@ -125,12 +126,10 @@ WORKFLOWS = {
         "ultralytics": {
             "export_dataset_root": "/media/dbogdoll/Datasets/ultralytics_data/",
             "models": {  # Pick from https://docs.ultralytics.com/models/
-                "yolov8n": {"batch_size": 64, "img_size": 640},
-                "yolov8x": {"batch_size": 1, "img_size": 640},
-                "yolo11n": {"batch_size": 64, "img_size": 640},
-                "yolo11x": {"batch_size": 1, "img_size": 640},
-                "yolo12n": {"batch_size": 64, "img_size": 640},
-                "yolo12x": {"batch_size": 1, "img_size": 640},
+                "yolo11n": {"batch_size": 32, "img_size": 640},
+                # "yolo11x": {"batch_size": 1, "img_size": 640},
+                # "yolo12n": {"batch_size": 32, "img_size": 640},
+                # "yolo12x": {"batch_size": 1, "img_size": 640},
             },
         },
     },
