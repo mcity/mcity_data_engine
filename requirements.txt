@@ -50,7 +50,7 @@ cryptography==44.0.1
 cycler==0.12.1
 dacite==1.7.0
 datamodel-code-generator==0.26.1
-datasets==3.3.1
+datasets==3.3.2
 debugpy==1.8.6
 decorator==5.1.1
 defusedxml==0.7.1
