@@ -1,7 +1,6 @@
 import logging
 import torch
 from transformers import AutoConfig, AutoProcessor, AutoModelForZeroShotImageClassification, AutoModel, AlignProcessor, AlignModel, AltCLIPModel, AltCLIPProcessor, CLIPSegProcessor, CLIPSegForImageSegmentation
-from transformers import SiglipModel, SiglipProcessor
 import os
 import datetime
 from PIL import Image
