@@ -41,7 +41,7 @@ def deactivate_wandb_sync():
     {   # Test 2: SAM2 with a prompt
         "semantic_segmentation": {
             "sam2": {
-                "prompt_field": "test_prompt",
+                "prompt_field": "bounding_box_field",
                 "models": ["segment-anything-2.1-hiera-tiny-image-torch"]
             }
         },
@@ -90,10 +90,23 @@ def test_auto_label_mask(dataset_v51, workflow_config):
             assert not hasattr(sample, expected_depth_field), (
                 f"[ERROR] Unexpected depth field '{expected_depth_field}' found on sample ID {sample.id}"
             )
-            assert not hasattr(sample, expected_sam_field), (
-                f"[ERROR] Unexpected segmentation field '{expected_sam_field}' found on sample ID {sample.id}"
+
+            assert hasattr(sample, expected_sam_field), (
+                f"[ERROR] Semantic mask '{expected_sam_field}' not found on sample ID {sample.id}"
             )
 
-        break # Only check the first sample
+            bbox = getattr(sample, "bounding_box_field", None)
+            semantic_mask = getattr(sample, expected_sam_field, None)
+
+            assert bbox is not None, f"[ERROR] No bounding box found for sample ID {sample.id}"
+            assert semantic_mask is not None, f"[ERROR] No semantic mask found for sample ID {sample.id}"
+
+            assert (
+                bbox.contains(semantic_mask)
+            ), f"[ERROR] Semantic mask is outside the bounding box for sample ID {sample.id}"
+
+            assert (
+                bbox.class_name == semantic_mask.class_name
+            ), f"[ERROR] Class name mismatch: bbox='{bbox.class_name}', mask='{semantic_mask.class_name}' on sample ID {sample.id}"
 
     print("[TEST] Verified that new fields are present in the dataset.")

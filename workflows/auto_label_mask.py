@@ -122,11 +122,18 @@ class AutoLabelMask:
             )
 
             depth_map = resized_depth.squeeze().cpu().numpy()
+
+            # different depth estimation models may output depth maps with different scaling, thus specific post-processing to normalize them properly
             if self.model_name in ["dpt", "depth_anything", "depth_pro"]:
                 if np.max(depth_map) > 0: # avoid division by zero
                     depth_map = (255 - depth_map * 255 / np.max(depth_map)).astype("uint8")
-            else:
-                depth_map = (depth_map * 255).astype("uint8")
+
+                elif self.model_name in ["zoe", "glpn"]:
+                    depth_map = (depth_map * 255).astype("uint8")
+
+                else:
+                    logging.error(f"Unsupported model: {self.model_name}")
+                    raise ValueError(f"Unsupported model: {self.model_name}")
             logging.info(f"Saving depth estimation result to field '{out_field}' for sample ID {sample.id}")
 
             sample[out_field] = fo.Heatmap(map=depth_map)

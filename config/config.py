@@ -5,7 +5,6 @@ SELECTED_WORKFLOW = ["auto_label_mask"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
-    # "name": "SUNRGBD-20",
     "name": "fisheye8k",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }

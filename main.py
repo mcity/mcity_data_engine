@@ -363,7 +363,6 @@ def workflow_auto_label_mask(dataset, dataset_info, config):
         seg_config = config["semantic_segmentation"]
 
         for architecture_name, architecture_info in depth_config.items():
-            print(f"Processing depth_estimation arch: {architecture_name}")
             auto_labeler = AutoLabelMask(
                 dataset=dataset,
                 dataset_info=dataset_info,
@@ -374,7 +373,6 @@ def workflow_auto_label_mask(dataset, dataset_info, config):
             auto_labeler.run_inference()
 
         for architecture_name, architecture_info in seg_config.items():
-            print(f"Processing semantic_segmentation arch: {architecture_name}")
             auto_labeler = AutoLabelMask(
                 dataset=dataset,
                 dataset_info=dataset_info,
@@ -382,7 +380,7 @@ def workflow_auto_label_mask(dataset, dataset_info, config):
                 task_type="semantic_segmentation",
                 model_config=architecture_info,
             )
-            auto_labeler .run_inference()
+            auto_labeler.run_inference()
 
     except Exception as e:
         logging.error(f"Auto-labeling mask workflow failed: {e}")
