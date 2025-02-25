@@ -1298,15 +1298,18 @@ class CustomCoDETRObjectDetection:
 
         # Get model from Hugging Face
         try:
-            logging.info(
-                f"Downloading model {self.config_key} trained on {self.dataset_name} from Hugging Face."
-            )
+            if inference_settings["model_hf"] is None:
+                hf_path = self.hf_repo_name
+            else:
+                hf_path = inference_settings["model_hf"]
+
+            logging.info(f"Downloading model {hf_path} from Hugging Face.")
             download_folder = os.path.join(
                 self.root_codetr_models, self.dataset_name, self.config_key
             )
 
             file_path = hf_hub_download(
-                repo_id=self.hf_repo_name,
+                repo_id=hf_path,
                 filename="model.pth",
                 local_dir=download_folder,
             )
