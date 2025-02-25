@@ -4,6 +4,7 @@ aiohttp==3.10.6
 alembic==1.13.3
 anomalib==1.2.0
 boto3==1.35.25
+python-dotenv==1.0.1
 fiftyone
 fiftyone-desktop
 fiftyone-brain
@@ -21,7 +22,7 @@ tensorflow==2.12.0
 torch==2.5.1
 tqdm==4.67.1
 transformers==4.49.0
-nuscenes-devkit
+nuscenes-devkit@git+https://github.com/daniel-bogdoll/nuscenes-devkit.git@e9a832e608484c5496c6236ed78a185be6d7a44b
 datasets
 colorlog
 FrEIA
