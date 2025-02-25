@@ -14,7 +14,17 @@
 
 The Mcity Data Engine is an essential tool in the Mcity makerspace for transportation innovators making AI algorithms and seeking actionable data insights through machine learning. Details on the Data Engine can be found in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki).
 
+
+
 <p align='center'>
+
+<a target="_blank" rel="noopener noreferrer" href="https://colab.research.google.com/github/mcity/mcity_data_engine/blob/main/fish_eye_8k_colab.ipynb">
+<picture>
+  <source srcset="https://github.com/user-attachments/assets/26c12ccc-327a-4702-a49d-76bfeb83bc62" width="15%">
+  <img alt="Mcity Data Engine Google Colab Demo" src="">
+</picture>
+</a>
+  
 <a target="_blank" rel="noopener noreferrer" href="https://github.com/mcity/mcity_data_engine/wiki">
 <picture>
   <source srcset="https://github.com/user-attachments/assets/e3e1cd10-5195-4db7-9147-11b75e078662" width="15%">
@@ -22,7 +32,7 @@ The Mcity Data Engine is an essential tool in the Mcity makerspace for transport
 </picture>
 </a>
   
-<a target="_blank" rel="noopener noreferrer" href="">
+<a target="_blank" rel="noopener noreferrer" href="https://mcity.github.io/mcity_data_engine/">
 <picture>
   <source srcset="https://github.com/user-attachments/assets/b93f0c88-172d-4eed-8dac-3fdb82436f71"
 width="15%">
@@ -45,7 +55,17 @@ width="15%">
 </a>
 </p>
 
-## Instructions
+## Online Demo: Data Selection with Embeddings
+
+To get a first feel of the Mcity Data Engine, we provide an online demo in a [Google Colab](https://colab.research.google.com/github/mcity/mcity_data_engine/blob/main/fish_eye_8k_colab.ipynb) environment. We will load the [Fisheye8K dataset](https://huggingface.co/datasets/Voxel51/fisheye8k) and demonstrate the Mcity Data Engine workflow [Embedding Selection](https://github.com/mcity/mcity_data_engine/wiki/Workflows#embedding-selection). This workflow leverage a set of models to compute image embeddings. Pre-computed embeddings will be loaded from [Hugging Face](https://huggingface.co/mcity-data-engine) and used to determine which samples are both representative and rare. This subset will finally be visualized in the Voxel51 UI, highlighting how often a sample was picked by a model.
+
+Keep in mind that most workflows of the Mcity Data Engine require a more powerful GPU, so the possibilities within the Colab environment are limited. Other workflows might not work.
+
+Online demo on Google Colab: [Mcity Data Engine Web Demo](https://colab.research.google.com/github/mcity/mcity_data_engine/blob/main/fish_eye_8k_colab.ipynb
+)
+
+
+## Local Execution
 
 At least one GPU is required for the Data Engine. Check the hardware setups we have tested in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki/Environments). To download the repository and install requirements run:
 ```
@@ -99,21 +119,16 @@ git add .gitmodules $(git submodule foreach --quiet 'echo $name')
 ## Repository Structure
 ```
 .
-├── main.py                   # Entry point of the framework → Terminal 1
+├── main.py                     # Entry point of the framework → Terminal 1
 ├── session_v51.py              # Script to launch Voxel51 session → Terminal 2
 ├── workflows/                  # Workflows for the Mcity Data Engine
 ├── config/                     # Local configuration files
-├── wandb_runs/                 # Entrypoints and configs for WandB experiments
 ├── utils/                      # General-purpose utility functions
 ├── cloud/                      # Scripts run in the cloud to pre-process data
-├── datasets/                   # Default storage directory for datasets
-├── output/                     # Default storage for models, embeddings, etc.
-├── logs/                       # Default storage for log files
 ├── docs/                       # Documentation generated with `pdoc`
 ├── tests/                      # Tests using Pytest
 ├── custom_models/              # External models with containerized environments
-├── mcity_data_engine_scripts/  # Experiment scripts and one-time operations
-├── Dockerfile.wandb            # Dockerfile for WandB experiments
+├── mcity_data_engine_scripts/  # Experiment scripts and one-time operations (Mcity internal)
 ├── .vscode                     # Settings for VS Code IDE
 ├── .github/workflows/          # GitHub Action workflows
 ├── .gitignore                  # Files and directories to be ignored by Git

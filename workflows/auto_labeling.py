@@ -83,9 +83,7 @@ class ZeroShotInferenceCollateFn:
             # Adjustments for final batch
             n_images = len(images)
             if n_images < self.batch_size:
-                self.batch_classes = ZeroShotObjectDetection._get_batch_classes(
-                    self.hf_model_config_name, self.object_classes, n_images
-                )
+                self.batch_classes = [self.object_classes] * n_images
 
             # Apply PIL transformation for specific models
             if self.hf_model_config_name == "OmDetTurboConfig":
@@ -124,24 +122,9 @@ class ZeroShotObjectDetection:
 
         logging.info(f"Zero-shot models will look for {self.object_classes}")
 
-    @staticmethod  # Also utilized in ZeroShotInferenceCollateFn
-    def _get_batch_classes(hf_model_config_name, object_classes, batch_size):
-        if hf_model_config_name == "GroundingDinoConfig":
-            classes = " . ".join(object_classes) + " . "
-            batch_classes = [classes] * batch_size
-        elif hf_model_config_name == "OmDetTurboConfig":
-            batch_classes = [object_classes] * batch_size
-        elif (
-            hf_model_config_name == "Owlv2Config"
-            or hf_model_config_name == "OwlViTConfig"
-        ):
-            batch_classes = object_classes * batch_size
-        else:
-            logging.error(f"Invalid model name: {hf_model_config_name}")
-
-        return batch_classes
-
-    def exclude_stored_predictions(self, dataset_v51: fo.Dataset, config):
+    def exclude_stored_predictions(
+        self, dataset_v51: fo.Dataset, config, do_exclude=False
+    ):
         dataset_schema = dataset_v51.get_field_schema()
         models_splits_dict = {}
         for model_name, value in config["hf_models_zeroshot_objectdetection"].items():
@@ -150,12 +133,15 @@ class ZeroShotObjectDetection:
                 r"[\W-]+", "_", "pred_zsod_" + model_name
             )  # od for Object Detection
             # Check if data already stored in V51 dataset
-            if pred_key in dataset_schema:
+            if pred_key in dataset_schema and do_exclude is True:
                 logging.warning(
                     f"Skipping model {model_name}. Predictions already stored in Voxel51 dataset."
                 )
             # Check if data already stored on disk
-            elif os.path.isdir(os.path.join(self.detections_root, model_name_key)):
+            elif (
+                os.path.isdir(os.path.join(self.detections_root, model_name_key))
+                and do_exclude is True
+            ):
                 try:
                     logging.info(f"Loading {model_name} predictions from disk.")
                     temp_dataset = fo.Dataset.from_dir(
@@ -466,13 +452,8 @@ class ZeroShotObjectDetection:
             model.eval()
             hf_model_config = AutoConfig.from_pretrained(model_name)
             hf_model_config_name = type(hf_model_config).__name__
+            batch_classes = [object_classes] * batch_size
             logging.info(f"Loaded model type {hf_model_config_name}")
-
-            batch_classes = ZeroShotObjectDetection._get_batch_classes(
-                hf_model_config_name=hf_model_config_name,
-                object_classes=object_classes,
-                batch_size=batch_size,
-            )
 
             # Dataloader
             logging.info("Generating dataloader")
@@ -630,16 +611,17 @@ class ZeroShotObjectDetection:
                     text_threshold=detection_threshold,
                 )
             elif hf_model_config_name in ["Owlv2Config", "OwlViTConfig"]:
-                results = processor.post_process_object_detection(
+                results = processor.post_process_grounded_object_detection(
                     outputs=outputs,
                     threshold=detection_threshold,
                     target_sizes=target_sizes,
+                    text_labels=batch_classes,
                 )
             elif hf_model_config_name == "OmDetTurboConfig":
                 results = processor.post_process_grounded_object_detection(
                     outputs,
-                    classes=batch_classes,
-                    score_threshold=detection_threshold,
+                    text_labels=batch_classes,
+                    threshold=detection_threshold,
                     nms_threshold=detection_threshold,
                     target_sizes=target_sizes,
                 )
@@ -651,15 +633,14 @@ class ZeroShotObjectDetection:
                     f"Lengths of results, target_sizes, and labels do not match: {len(results)}, {len(target_sizes)}, {len(labels)}"
                 )
             for result, size, target in zip(results, target_sizes, labels):
-                boxes, scores = result["boxes"], result["scores"]
+                boxes, scores, labels = (
+                    result["boxes"],
+                    result["scores"],
+                    result["text_labels"],
+                )
 
                 img_height = size[0]
                 img_width = size[1]
-
-                if "labels" in result:
-                    labels = result["labels"]
-                elif "classes" in result:  # OmDet deviates from the other models
-                    labels = result["classes"]
 
                 detections = []
                 for box, score, label in zip(boxes, scores, labels):
@@ -700,14 +681,8 @@ class ZeroShotObjectDetection:
                     elif hf_model_config_name in [
                         "Owlv2Config",
                         "OwlViTConfig",
+                        "OmDetTurboConfig",
                     ]:
-                        label = object_classes[label]  # Label is ID
-                        top_left_x = box[0].item() / img_width
-                        top_left_y = box[1].item() / img_height
-                        box_width = (box[2].item() - box[0].item()) / img_width
-                        box_height = (box[3].item() - box[1].item()) / img_height
-
-                    elif hf_model_config_name == "OmDetTurboConfig":
                         top_left_x = box[0].item() / img_width
                         top_left_y = box[1].item() / img_height
                         box_width = (box[2].item() - box[0].item()) / img_width
