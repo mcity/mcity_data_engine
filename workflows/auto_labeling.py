@@ -770,7 +770,9 @@ class UltralyticsObjectDetection:
         )
 
         self.export_root = "output/models/ultralytics/"
-        self.export_folder = os.path.join(self.export_root,self.config["v51_dataset_name"])
+        self.export_folder = os.path.join(
+            self.export_root, self.config["v51_dataset_name"]
+        )
 
         self.model_path = os.path.join(
             self.export_folder, self.config["model_name"], "weights", "best.pt"
@@ -848,8 +850,10 @@ class UltralyticsObjectDetection:
             # Use model manually defined in config.
             # This way models can be used for inference which were trained on a different dataset
             # Parse model path components
-            _, model_name = model_hf.split('/')  # e.g. 'mcity_fisheye_2100_yolo11x'
-            dataset_name, model_type = model_name.rsplit('_', 1)  # e.g. 'mcity_fisheye_2100', 'yolo11x'
+            _, model_name = model_hf.split("/")  # e.g. 'mcity_fisheye_2100_yolo11x'
+            dataset_name, model_type = model_name.rsplit(
+                "_", 1
+            )  # e.g. 'mcity_fisheye_2100', 'yolo11x'
 
             # Set up directories
             download_dir = os.path.join(self.export_root, dataset_name, model_type)
@@ -859,10 +863,10 @@ class UltralyticsObjectDetection:
             os.makedirs(os.path.join(download_dir, "weights"), exist_ok=True)
 
             file_path = hf_hub_download(
-                    repo_id=model_hf,
-                    filename="best.pt",
-                    local_dir=download_dir,
-                )
+                repo_id=model_hf,
+                filename="best.pt",
+                local_dir=download_dir,
+            )
         else:
             # Automatically dertermine model based on dataset
             dataset_name = self.config["v51_dataset_name"]
@@ -1461,10 +1465,14 @@ class CustomCoDETRObjectDetection:
             dataset_config_str = hf_path.split("/")[-1]
             # All Co-DETR configs start with "co_"
             config_index = dataset_config_str.find("co_")
-            dataset_name = dataset_config_str[:config_index]
+            dataset_name = dataset_config_str[:config_index][
+                :-1
+            ]  # Remove the trailing "_"
             config_key = dataset_config_str[config_index:]
 
-            logging.info(f"Downloading model {hf_path} from Hugging Face.")
+            logging.info(
+                f"Downloading model {hf_path} from Hugging Face: Co-DETR config {config_key} trained on {dataset_name}."
+            )
             download_folder = os.path.join(
                 self.root_codetr_models, dataset_name, config_key
             )
@@ -1485,7 +1493,7 @@ class CustomCoDETRObjectDetection:
             container_tool=container_tool,
             param_inference_dataset_folder=folder_inference,
             param_inference_model_checkpoint=os.path.join(
-                self.root_codetr_models, dataset_name, config_key, "model.pth"
+                dataset_name, config_key, "model.pth"
             ),
         )
 
