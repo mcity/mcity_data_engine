@@ -12,6 +12,7 @@ import sys
 import time
 from difflib import get_close_matches
 from functools import partial
+from pathlib import Path
 from typing import Union
 
 import albumentations as A
@@ -1433,6 +1434,45 @@ class CustomCoDETRObjectDetection:
                     container_tool=container_tool,
                 )
 
+    @staticmethod
+    def _find_file_iteratively(start_path, filename):
+        """Given a filename, look for the full filepath in a dataset folder structure"""
+        # Convert start_path to a Path object
+        start_path = Path(start_path)
+
+        # Check if the file exists in the start_path directly (very fast)
+        file_path = start_path / filename
+        if file_path.exists():
+            return str(file_path)
+
+        # Start with the highest directory and go up iteratively
+        current_dir = start_path
+        checked_dirs = set()
+
+        while current_dir != current_dir.root:
+            # Check if the file is in the current directory
+            file_path = current_dir / filename
+            if file_path.exists():
+                return str(file_path)
+
+            # If we haven't checked the sibling directories, check them as well
+            parent_dir = current_dir.parent
+            if parent_dir not in checked_dirs:
+                # Check sibling directories
+                for sibling in parent_dir.iterdir():
+                    if sibling != current_dir and sibling.is_dir():
+                        sibling_file_path = sibling / filename
+                        if sibling_file_path.exists():
+                            return str(sibling_file_path)
+                checked_dirs.add(parent_dir)
+
+            # Otherwise, go one level up
+            current_dir = current_dir.parent
+
+        # If file is not found after traversing all levels, return None
+        logging.error(f"File {filename} could not be found.")
+        return None
+
     def run_inference(
         self,
         dataset,
@@ -1542,17 +1582,19 @@ class CustomCoDETRObjectDetection:
             for category in data_annotations["categories"]
         ]
 
+        # Match sample filepaths (from exported Co-DETR COCO format) to V51 filepaths
+        sample = dataset.first()
+        root_dir_samples = sample.filepath
+
         # Convert results into V51 file format
         pred_key = f"pred_od_{self.config_key}"
         for key, value in tqdm(data.items(), desc="Processing Co-DETR detection"):
             try:
                 # Get filename
-                file_name = os.path.basename(key)
-                # Find file in V51 dataset
-                sample_view = dataset.match(F("filepath").ends_with((file_name)))
-                if len(sample_view) > 1:
-                    logging.warning(f"More than one sample found: {sample_view}")
-                sample = sample_view.first()
+                filepath = CustomCoDETRObjectDetection._find_file_iteratively(
+                    root_dir_samples, os.path.basename(key)
+                )
+                sample = dataset[filepath]
 
                 img_width = sample.metadata.width
                 img_height = sample.metadata.height
@@ -1585,7 +1627,13 @@ class CustomCoDETRObjectDetection:
         # Run V51 evaluation
         if inference_settings["do_eval"] is True:
             eval_key = f"eval_{self.config_key}"
-            dataset.evaluate_detections(
+
+            if inference_settings["inference_on_evaluation"] is True:
+                dataset_view = dataset.match_tags(["test", "val"])
+            else:
+                dataset_view = dataset
+
+            dataset_view.evaluate_detections(
                 pred_key,
                 gt_field=gt_field,
                 eval_key=eval_key,
