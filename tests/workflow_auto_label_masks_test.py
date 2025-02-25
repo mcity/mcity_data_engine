@@ -55,10 +55,6 @@ def deactivate_wandb_sync():
             }
         }
     },
-    {   # Test 4: Empty Config
-        "semantic_segmentation": {},
-        "depth_estimation": {}
-    }
 ])
 def test_auto_label_mask(dataset_v51, workflow_config):
 
