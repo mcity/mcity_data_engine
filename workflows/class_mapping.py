@@ -1,6 +1,7 @@
 import logging
 import torch
 from transformers import AutoConfig, AutoProcessor, AutoModelForZeroShotImageClassification, AutoModel, AlignProcessor, AlignModel, AltCLIPModel, AltCLIPProcessor, CLIPSegProcessor, CLIPSegForImageSegmentation
+from transformers import SiglipModel, SiglipProcessor
 import os
 import datetime
 from PIL import Image
@@ -47,8 +48,12 @@ class ClassMapper:
             self.hf_model_config_name = type(self.hf_model_config).__name__
 
             if self.hf_model_config_name == "SiglipConfig":
-                self.model = AutoModel.from_pretrained(self.model_name)
-                self.processor = AutoProcessor.from_pretrained(self.model_name)
+                if self.model_name == "google/siglip2-base-patch16-224":
+                    self.model = AutoModel.from_pretrained(self.model_name, device_map="auto").eval()
+                    self.processor = AutoProcessor.from_pretrained(self.model_name)
+                else:
+                    self.model = AutoModel.from_pretrained(self.model_name)
+                    self.processor = AutoProcessor.from_pretrained(self.model_name)
 
             elif self.hf_model_config_name == "AlignConfig":
                 self.processor = AlignProcessor.from_pretrained(self.model_name)
@@ -92,7 +97,10 @@ class ClassMapper:
 
         # Prepare inputs for the model.
         if self.hf_model_config_name == "SiglipConfig":
-            inputs = self.processor(text=candidate_labels, images=image_patch, padding="max_length", return_tensors="pt")
+            if self.model_name == "google/siglip2-base-patch16-224":
+                inputs = self.processor(text=candidate_labels, images=image_patch, padding="max_length", max_length=64, return_tensors="pt")
+            else:
+                inputs = self.processor(text=candidate_labels, images=image_patch, padding="max_length", return_tensors="pt")
 
         elif self.hf_model_config_name == "CLIPSegConfig":
             inputs = self.processor(text=candidate_labels, images=[image_patch]*len(candidate_labels), padding="max_length", return_tensors="pt")
@@ -114,6 +122,7 @@ class ClassMapper:
             # Apply sigmoid for probabilities
             logits = outputs.logits_per_image
             probs = torch.sigmoid(logits)
+            probs = torch.softmax(probs, dim=1)
             max_prob, predicted_idx = probs[0].max(dim=-1)
             predicted_label = candidate_labels[predicted_idx.item()]
             confidence_score = max_prob.item()
@@ -165,7 +174,6 @@ class ClassMapper:
 
         return predicted_label, confidence_score
 
-
     def run_mapping(self, label_field = "ground_truth"):
         """
         Run the class mapping process on the dataset.
@@ -210,25 +218,8 @@ class ClassMapper:
         source_labels = source_dataset.distinct(f"{label_field}.detections.label")
         target_labels = target_dataset.distinct(f"{label_field}.detections.label")
 
-        # Make a copy of candidate labels to work with
-        candidate_labels = self.config["candidate_labels"].copy()
-
-        one_to_one_mapping = {
-            parent: children[0]  # Only pick mappings with exactly 1 child
-            for parent, children in candidate_labels.items()
-            if len(children) == 1
-        }
-
-        # Validate extracted one-to-one mappings
-        valid_one_to_one_mapping = {
-            src: target for src, target in one_to_one_mapping.items()
-            if src in source_labels and target in target_labels
-        }
-
-        # Remove the valid one-to-one mappings from candidate_labels
-        for parent in valid_one_to_one_mapping:
-            if parent in candidate_labels:
-                del candidate_labels[parent]
+        # Access candidate labels from config
+        candidate_labels = self.config["candidate_labels"]
 
         # Check that all parent labels from the candidate_labels exist in dataset_source.
         parent_labels = list(candidate_labels.keys())
@@ -252,6 +243,11 @@ class ClassMapper:
             logging.error(error_msg)
             raise ValueError(error_msg)
 
+        one_to_one_mapping = {
+            parent: children[0]  # Only pick mappings with exactly 1 child
+            for parent, children in candidate_labels.items()
+            if len(children) == 1
+        }
 
         experiment_name = f"class_mapping_{os.getpid()}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         tensorboard_root = self.config.get("tensorboard_root", "./tensorboard_logs")
@@ -273,9 +269,7 @@ class ClassMapper:
         )
         tb_writer = SummaryWriter(log_dir=log_directory)
 
-        candidate_labels = self.config["candidate_labels"]
         threshold = self.config["thresholds"]["confidence"]
-
         sample_count = 0  # For logging steps
 
         for sample in self.dataset.iter_samples(progress=True, autosave=True):
@@ -291,8 +285,8 @@ class ClassMapper:
                 current_label = det.label
 
                 # Check if it is a one-to-one mapping
-                if current_label in valid_one_to_one_mapping:
-                    new_label = valid_one_to_one_mapping[current_label]
+                if current_label in one_to_one_mapping:
+                    new_label = one_to_one_mapping[current_label]
                     tag = f"new_class_{new_label}"
 
                     # Apply new label and add tag
