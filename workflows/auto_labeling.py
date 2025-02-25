@@ -5,7 +5,6 @@ import os
 import queue
 import random
 import re
-import shutil
 import signal
 import subprocess
 import sys
@@ -28,6 +27,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms.functional import to_pil_image
+from tqdm import tqdm
 from transformers import (
     AutoConfig,
     AutoModelForObjectDetection,
@@ -1127,7 +1127,8 @@ class CustomCoDETRObjectDetection:
         self.dataset = dataset
         self.dataset_name = dataset_info["name"]
         self.export_dir_root = run_config["export_dataset_root"]
-        self.hf_repo_name = f"{HF_ROOT}/{self.dataset_name}_{run_config["config"]}"
+        self.config_key = os.path.splitext(os.path.basename(run_config["config"]))[0]
+        self.hf_repo_name = f"{HF_ROOT}/{self.dataset_name}_{self.config_key}"
 
     def convert_data(self):
 
@@ -1219,7 +1220,7 @@ class CustomCoDETRObjectDetection:
             and f.endswith(".pth")
         ]
         if len(matching_files) > 0:
-            logging.info(
+            logging.warning(
                 f"Model {param_config_name} already trained on dataset {self.dataset_name}. Skipping training."
             )
             if len(matching_files) > 1:
@@ -1285,25 +1286,138 @@ class CustomCoDETRObjectDetection:
                 )
 
     def run_inference(
-        self, param_config, param_n_gpus, container_tool, param_function="inference"
+        self,
+        dataset,
+        param_config,
+        param_n_gpus,
+        container_tool,
+        inference_settings,
+        param_function="inference",
+        inference_output_folder="custom_models/CoDETR/Co-DETR/output/inference/",
     ):
         logging.info(f"Launching inference for Co-DETR config {param_config}.")
         volume_data = os.path.join(self.export_dir_root, self.dataset_name)
+
+        if inference_settings["inference_on_evaluation"] is True:
+            folder_inference = os.path.join("coco", "val2017")
+        else:
+            folder_inference = os.path.join("coco")
+
         inference_result = self._run_container(
             volume_data=volume_data,
             param_function=param_function,
             param_config=param_config,
             param_n_gpus=param_n_gpus,
             container_tool=container_tool,
+            param_inference_dataset_folder=folder_inference,
+            param_inference_model_checkpoint="",
         )
+
+        # Convert results from JSON output into V51 dataset
+        # Files follow format inference_results_{timestamp}.json (run_inference.py)
+        output_files = [
+            f
+            for f in os.listdir(inference_output_folder)
+            if f.startswith("inference_results_") and f.endswith(".json")
+        ]
+
+        if not output_files:
+            logging.error(
+                f"No inference result files found in {inference_output_folder}"
+            )
+
+        # Get full path for each file
+        file_paths = [os.path.join(inference_output_folder, f) for f in output_files]
+
+        # Extract timestamp from the filename and sort based on the timestamp
+        file_paths_sorted = sorted(
+            file_paths,
+            key=lambda f: datetime.datetime.strptime(
+                f.split("_")[-2] + "_" + f.split("_")[-1].replace(".json", ""),
+                "%Y%m%d_%H%M%S",
+            ),
+            reverse=True,
+        )
+
+        # Use the most recent file based on timestamp
+        latest_file = file_paths_sorted[0]
+        logging.info(f"Using inference results from: {latest_file}")
+        with open(latest_file, "r") as file:
+            data = json.load(file)
+
+        # Get root filepath for dataset
+        sample = dataset.first()
+        filepath_dataset = sample.filepath
+        local_data_root = os.path.dirname(filepath_dataset)
+
+        # Get conversion for annotated classes
+        annotations_path = os.path.join(
+            volume_data_root, "annotations/instances_train2017.json"
+        )
+
+        with open(annotations_path, "r") as file:
+            data_annotations = json.load(file)
+
+        class_ids_and_names = [
+            (category["id"], category["name"])
+            for category in data_annotations["categories"]
+        ]
+
+        # Convert results into V51 file format
+        pred_key = f"pred_od_{param_config}"
+        for key, value in tqdm(data.items(), desc="Processing Co-DETR detection"):
+            try:
+                if "train2017" in key:
+                    file_path = key.replace(
+                        "/launch/data/coco/train2017", local_data_root
+                    )
+                elif "val2017" in key:
+                    file_path = key.replace(
+                        "/launch/data/coco/val2017", local_data_root
+                    )
+
+                sample = dataset[file_path]
+                img_width = sample.metadata.width
+                img_height = sample.metadata.height
+
+                detections_v51 = []
+                for class_id, class_detections in enumerate(data[key]):  # Starts with 0
+                    if len(class_detections) > 0:
+                        objects_class = class_ids_and_names[class_id]
+                        for detection in class_detections:
+
+                            detection_v51 = fo.Detection(
+                                label=objects_class[1],
+                                bounding_box=[
+                                    detection[0] / img_width,
+                                    detection[1] / img_height,
+                                    (detection[2] - detection[0]) / img_width,
+                                    (detection[3] - detection[1]) / img_height,
+                                ],
+                                confidence=detection[4],
+                            )
+                            detections_v51.append(detection_v51)
+
+                sample[pred_key] = fo.Detections(detections=detections_v51)
+                sample.save()
+            except Exception as e:
+                logging.error(
+                    f"An erro occured during the conversion of Co-DETR inference results to the V51 dataset: {e}"
+                )
+
+        # Run V51 evaluation
+        if inference_settings["do_eval"] is True:
+            pass  # TODO Implement V51 evaluation
 
     def _run_container(
         self,
         volume_data,
         param_function,
-        param_config,
+        param_config="",
         param_n_gpus="1",
         param_dataset_name="default_dataset",
+        param_inference_dataset_folder="",
+        param_inference_model_checkpoint="",
         image="dbogdollresearch/codetr",
         workdir="/launch",
         container_tool="docker",
@@ -1328,6 +1442,8 @@ class CustomCoDETRObjectDetection:
                     param_config,
                     param_n_gpus,
                     param_dataset_name,
+                    param_inference_dataset_folder,
+                    param_inference_model_checkpoint,
                 ]
             elif container_tool == "singularity":
                 command = [
@@ -1345,6 +1461,8 @@ class CustomCoDETRObjectDetection:
                     param_config,
                     param_n_gpus,
                     param_dataset_name,
+                    param_inference_dataset_folder,
+                    param_inference_model_checkpoint,
                 ]
             else:
                 raise ValueError(

@@ -5,7 +5,7 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "fisheye8k",
+    "name": "mcity_fisheye_2000",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
@@ -71,17 +71,22 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": ["train", "inference"],  # "train" and "inference" supported
+        "mode": ["train"],  # "train" and "inference" supported
         "model_source": [
             "custom_codetr"
         ],  # "hf_models_objectdetection" and "custom_codetr" and "ultralytics" supported
         "n_worker_dataloader": 3,
         "epochs": 1,
-        "early_stop_patience": 5,
+        "early_stop_patience": 10,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
         "weight_decay": 0.0001,
         "max_grad_norm": 0.01,
+        "inference_settings": {
+            "do_eval": True,
+            "inference_on_evaluation": True,
+            "model_hf": None,  # None (automatic selection) or Hugging Face ID
+        },
         "hf_models_objectdetection": {  # HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
             "microsoft/conditional-detr-resnet-50": {"batch_size": 1},
             "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
@@ -125,7 +130,7 @@ WORKFLOWS = {
             "export_dataset_root": "/media/dbogdoll/Datasets/codetr_data/",
             "configs": [
                 "projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py",
-                # "projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
+                "projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
             ],
             "n_gpus": "1",
             "container_tool": "docker",
@@ -231,7 +236,7 @@ GLOBAL_SEED = 0
 
 # Hugging Face Config
 HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
-HF_DO_UPLOAD = False
+HF_DO_UPLOAD = True
 
 # Weights and Biases Config
 WANDB_ACTIVE = True

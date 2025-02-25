@@ -294,7 +294,11 @@ def workflow_auto_labeling_custom_codetr(
             )
         if "inference" in mode:
             detector.run_inference(
-                run_config["config"], run_config["n_gpus"], run_config["container_tool"]
+                dataset,
+                run_config["config"],
+                run_config["n_gpus"],
+                run_config["container_tool"],
+                run_config["inference_settings"],
             )
     except Exception as e:
         logging.error(f"Error during CoDETR training: {e}")
@@ -611,13 +615,16 @@ class WorkflowExecutor:
                     if SUPPORTED_MODEL_SOURCES[1] in selected_model_source:
 
                         # Config
-                        config_codetr = WORKFLOWS["auto_labeling"]["custom_codetr"]
+                        config_codetr = config_autolabel["custom_codetr"]
                         run_config = {
                             "export_dataset_root": config_codetr["export_dataset_root"],
                             "container_tool": config_codetr["container_tool"],
                             "n_gpus": config_codetr["n_gpus"],
-                            "mode": WORKFLOWS["auto_labeling"]["mode"],
-                            "epochs": WORKFLOWS["auto_labeling"]["epochs"],
+                            "mode": config_autolabel["mode"],
+                            "epochs": config_autolabel["epochs"],
+                            "inference_settings": config_autolabel[
+                                "inference_settings"
+                            ],
                             "config": None,
                         }
                         codetr_configs = config_codetr["configs"]
