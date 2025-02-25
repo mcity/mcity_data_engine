@@ -1102,16 +1102,14 @@ class HuggingFaceObjectDetection:
 
 
 class CustomCoDETRObjectDetection:
-    def __init__(self, dataset, dataset_name, splits, export_dir_root):
+    def __init__(self, dataset, dataset_info, run_config):
         self.root_codetr = "./custom_models/CoDETR/Co-DETR"
+        self.root_codetr_models = "./output/models/codetr"
         self.dataset = dataset
-        self.dataset_name = dataset_name
-        self.splits = splits
-
-        if "train" not in splits or "test" not in splits:
-            logging.error("Co-DETR training requires a train and test split.")
-
-        self.export_dir_root = export_dir_root
+        self.dataset_name = dataset_info["name"]
+        self.export_dir_root = run_config["export_dataset_root"]
+        self.config_key = os.path.splitext(os.path.basename(run_config["config"]))[0]
+        self.hf_repo_name = f"{HF_ROOT}/{self.dataset_name}_{self.config_key}"
 
     def convert_data(self):
 
@@ -1120,11 +1118,14 @@ class CustomCoDETRObjectDetection:
         # Check if folder already exists
         if not os.path.exists(export_dir):
             logging.info(f"Exporting data to {export_dir}")
-            splits = ["train", "val"]  # Expects train and val tags in FiftyOne dataset
+            splits = [
+                "train",
+                "val",
+                "test",
+            ]  # CoDETR expects data in 'train' and 'val' folder
             for split in splits:
                 split_view = self.dataset.match_tags(split)
-                # Utilize expected 'val' split for export
-                if split == "test":
+                if split == "test":  # Assign 'test' split to 'val'
                     split = "val"
                 split_view.export(
                     dataset_type=fo.types.COCODetectionDataset,
@@ -1135,9 +1136,11 @@ class CustomCoDETRObjectDetection:
                     label_field="ground_truth",
                 )
         else:
-            logging.info(f"Folder {export_dir} already exists, skipping data export.")
+            logging.warning(
+                f"Folder {export_dir} already exists, skipping data export."
+            )
 
-    def update_config_file(self, dataset_name, config_file, max_epochs=12):
+    def update_config_file(self, dataset_name, config_file, max_epochs):
         config_path = os.path.join(self.root_codetr, config_file)
 
         # Get classes from exported data
@@ -1161,7 +1164,7 @@ class CustomCoDETRObjectDetection:
             content = file.read()
 
         # Update the classes tuple
-        content = re.sub(r"classes = \([^\)]+\)", f"classes = {class_names}", content)
+        content = re.sub(r"classes\s*=\s*\(.*?\)", f"classes = {class_names}", content)
 
         # Update all instances of num_classes
         content = re.sub(r"num_classes=\d+", f"num_classes={num_classes}", content)
@@ -1172,39 +1175,42 @@ class CustomCoDETRObjectDetection:
         with open(config_path, "w") as file:
             file.write(content)
 
-        logging.info(
-            f"Updated {config_path} with classes={class_names} and num_classes={num_classes}"
+        logging.warning(
+            f"Updated {config_path} with classes={class_names} and num_classes={num_classes} and max_epochs={max_epochs}"
         )
 
     def train(self, param_config, param_n_gpus, container_tool, param_function="train"):
 
-        volume_data = os.path.join(self.export_dir_root, self.dataset_name)
-        train_result = self._run_container(
-            volume_data=volume_data,
-            param_function=param_function,
-            param_config=param_config,
-            param_n_gpus=param_n_gpus,
-            container_tool=container_tool,
+        # Check if model already exists
+        output_folder_codetr = os.path.join(self.root_codetr, "output")
+        param_config_name = os.path.splitext(os.path.basename(param_config))[0]
+        best_models_dir = os.path.join(output_folder_codetr, "best")
+        # Best model files follow the naming scheme "config_dataset.pth"
+        pth_model_files = (
+            [f for f in os.listdir(best_models_dir) if f.endswith(".pth")]
+            if os.path.exists(best_models_dir) and os.path.isdir(best_models_dir)
+            else []
         )
 
-        # Find the best_bbox checkpoint file
-        output_folder_codetr = os.path.join(self.root_codetr, "output")
-        checkpoint_files = [
+        # Best model files are stored in the format "config_dataset.pth"
+        matching_files = [
             f
-            for f in os.listdir(output_folder_codetr)
-            if "best_bbox" in f and f.endswith(".pth")
+            for f in pth_model_files
+            if f.startswith(param_config_name)
+            and self.dataset_name in f
+            and f.endswith(".pth")
         ]
-        if not checkpoint_files:
-            logging.error(
-                "CoDETR was not trained, model pth file missing. No checkpoint file with 'best_bbox' found."
+        if len(matching_files) > 0:
+            logging.warning(
+                f"Model {param_config_name} already trained on dataset {self.dataset_name}. Skipping training."
             )
+            if len(matching_files) > 1:
+                logging.warning(f"Multiple weights found: {matching_files}")
         else:
-            if len(checkpoint_files) > 1:
-                logging.warning(
-                    f"Found {len(checkpoint_files)} checkpoint files. Selecting {checkpoint_files[0]}."
-                )
-            checkpoint = checkpoint_files[0]
-            checkpoint_path = os.path.join(output_folder_codetr, checkpoint)
+            logging.info(
+                f"Launching training for Co-DETR config {param_config} and dataset {self.dataset_name}."
+            )
+            volume_data = os.path.join(self.export_dir_root, self.dataset_name)
 
             # Train model, store checkpoints in 'output_folder_codetr'
             train_result = self._run_container(
@@ -1215,41 +1221,196 @@ class CustomCoDETRObjectDetection:
                 container_tool=container_tool,
             )
 
-            # Move model file
-            param_config_clean = os.path.splitext(os.path.basename(param_config))[0]
-            output_dir = os.path.join(
-                "output",
-                "models",
-                "object_detection",
-                "codetr",
-                self.dataset_name,
-                param_config_clean,
-            )
-            os.makedirs(output_dir, exist_ok=True)
-            shutil.copy(checkpoint_path, output_dir)
+            # Find the best_bbox checkpoint file
+            checkpoint_files = [
+                f
+                for f in os.listdir(output_folder_codetr)
+                if "best_bbox" in f and f.endswith(".pth")
+            ]
+            if not checkpoint_files:
+                logging.error(
+                    "Co-DETR was not trained, model pth file missing. No checkpoint file with 'best_bbox' found."
+                )
+            else:
+                if len(checkpoint_files) > 1:
+                    logging.warning(
+                        f"Found {len(checkpoint_files)} checkpoint files. Selecting {checkpoint_files[0]}."
+                    )
+                checkpoint = checkpoint_files[0]
+                checkpoint_path = os.path.join(output_folder_codetr, checkpoint)
+                logging.info("Co-DETR was trained successfully.")
+
+                # Upload best model to Hugging Face
+                if HF_DO_UPLOAD == True:
+                    logging.info("Uploading Co-DETR model to Hugging Face.")
+                    api = HfApi()
+                    api.create_repo(
+                        self.hf_repo_name,
+                        private=True,
+                        repo_type="model",
+                        exist_ok=True,
+                    )
+                    api.upload_file(
+                        path_or_fileobj=checkpoint_path,
+                        path_in_repo="model.pth",
+                        repo_id=self.hf_repo_name,
+                        repo_type="model",
+                    )
+
+                # Move best model file and clear output folder
+                self._run_container(
+                    volume_data=volume_data,
+                    param_function="clear-output",
+                    param_config=param_config,
+                    param_dataset_name=self.dataset_name,
+                    container_tool=container_tool,
+                )
 
     def run_inference(
         self,
-        volume_data,
+        dataset,
         param_config,
         param_n_gpus,
         container_tool,
+        inference_settings,
         param_function="inference",
+        inference_output_folder="custom_models/CoDETR/Co-DETR/output/inference/",
     ):
+        logging.info(f"Launching inference for Co-DETR config {param_config}.")
+        volume_data = os.path.join(self.export_dir_root, self.dataset_name)
+
+        if inference_settings["inference_on_evaluation"] is True:
+            folder_inference = os.path.join("coco", "val2017")
+        else:
+            folder_inference = os.path.join("coco")
+
+        # Get model from Hugging Face
+        try:
+            logging.info(
+                f"Downloading model {self.config_key} trained on {self.dataset_name} from Hugging Face."
+            )
+            download_folder = os.path.join(
+                self.root_codetr_models, self.dataset_name, self.config_key
+            )
+
+            file_path = hf_hub_download(
+                repo_id=self.hf_repo_name,
+                filename="model.pth",
+                local_dir=download_folder,
+            )
+        except Exception as e:
+            logging.error(f"An error occured during model download: {e}")
+
         inference_result = self._run_container(
             volume_data=volume_data,
             param_function=param_function,
             param_config=param_config,
             param_n_gpus=param_n_gpus,
             container_tool=container_tool,
+            param_inference_dataset_folder=folder_inference,
+            param_inference_model_checkpoint=os.path.join(
+                self.dataset_name, self.config_key, "model.pth"
+            ),
         )
+
+        # Convert results from JSON output into V51 dataset
+        # Files follow format inference_results_{timestamp}.json (run_inference.py)
+        output_files = [
+            f
+            for f in os.listdir(inference_output_folder)
+            if f.startswith("inference_results_") and f.endswith(".json")
+        ]
+
+        if not output_files:
+            logging.error(
+                f"No inference result files found in {inference_output_folder}"
+            )
+
+        # Get full path for each file
+        file_paths = [os.path.join(inference_output_folder, f) for f in output_files]
+
+        # Extract timestamp from the filename and sort based on the timestamp
+        file_paths_sorted = sorted(
+            file_paths,
+            key=lambda f: datetime.datetime.strptime(
+                f.split("_")[-2] + "_" + f.split("_")[-1].replace(".json", ""),
+                "%Y%m%d_%H%M%S",
+            ),
+            reverse=True,
+        )
+
+        # Use the most recent file based on timestamp
+        latest_file = file_paths_sorted[0]
+        logging.info(f"Using inference results from: {latest_file}")
+        with open(latest_file, "r") as file:
+            data = json.load(file)
+
+        # Get conversion for annotated classes
+        annotations_path = os.path.join(
+            volume_data, "coco", "annotations", "instances_train2017.json"
+        )
+
+        with open(annotations_path, "r") as file:
+            data_annotations = json.load(file)
+
+        class_ids_and_names = [
+            (category["id"], category["name"])
+            for category in data_annotations["categories"]
+        ]
+
+        # Convert results into V51 file format
+        pred_key = f"pred_od_{self.config_key}"
+        for key, value in tqdm(data.items(), desc="Processing Co-DETR detection"):
+            try:
+                # Get filename
+                file_name = os.path.basename(key)
+                # Find file in V51 dataset
+                sample_view = dataset.match(F("filepath").ends_with((file_name)))
+                if len(sample_view) > 1:
+                    logging.warning(f"More than one sample found: {sample_view}")
+                sample = sample_view.first()
+
+                img_width = sample.metadata.width
+                img_height = sample.metadata.height
+
+                detections_v51 = []
+                for class_id, class_detections in enumerate(data[key]):  # Starts with 0
+                    if len(class_detections) > 0:
+                        objects_class = class_ids_and_names[class_id]
+                        for detection in class_detections:
+
+                            detection_v51 = fo.Detection(
+                                label=objects_class[1],
+                                bounding_box=[
+                                    detection[0] / img_width,
+                                    detection[1] / img_height,
+                                    (detection[2] - detection[0]) / img_width,
+                                    (detection[3] - detection[1]) / img_height,
+                                ],
+                                confidence=detection[4],
+                            )
+                            detections_v51.append(detection_v51)
+
+                sample[pred_key] = fo.Detections(detections=detections_v51)
+                sample.save()
+            except Exception as e:
+                logging.error(
+                    f"An error occured during the conversion of Co-DETR inference results to the V51 dataset: {e}"
+                )
+
+        # Run V51 evaluation
+        if inference_settings["do_eval"] is True:
+            pass  # TODO Implement V51 evaluation
 
     def _run_container(
         self,
         volume_data,
         param_function,
-        param_config,
+        param_config="",
         param_n_gpus="1",
+        param_dataset_name="",
+        param_inference_dataset_folder="",
+        param_inference_model_checkpoint="",
         image="dbogdollresearch/codetr",
         workdir="/launch",
         container_tool="docker",
@@ -1267,12 +1428,17 @@ class CustomCoDETRObjectDetection:
                     "--volume",
                     f"{self.root_codetr}:{workdir}",
                     "--volume",
-                    f"{volume_data}:{workdir}/data",
+                    f"{volume_data}:{workdir}/data:ro",
+                    "--volume",
+                    f"{self.root_codetr_models}:{workdir}/hf_models:ro",
                     "--shm-size=8g",
                     image,
                     param_function,
                     param_config,
                     param_n_gpus,
+                    param_dataset_name,
+                    param_inference_dataset_folder,
+                    param_inference_model_checkpoint,
                 ]
             elif container_tool == "singularity":
                 command = [
@@ -1284,11 +1450,16 @@ class CustomCoDETRObjectDetection:
                     "--bind",
                     f"{self.root_codetr}:{workdir}",
                     "--bind",
-                    f"{volume_data}:{workdir}/data",
+                    f"{volume_data}:{workdir}/data:ro",
+                    "--bind",
+                    f"{self.root_codetr_models}:{workdir}/hf_models:ro",
                     f"docker://{image}",
                     param_function,
                     param_config,
                     param_n_gpus,
+                    param_dataset_name,
+                    param_inference_dataset_folder,
+                    param_inference_model_checkpoint,
                 ]
             else:
                 raise ValueError(

@@ -74,6 +74,11 @@ WORKFLOWS = {
         "learning_rate": 5e-05,
         "weight_decay": 0.0001,
         "max_grad_norm": 0.01,
+        "inference_settings": {
+            "do_eval": True,
+            "inference_on_evaluation": True,
+            "model_hf": None,  # None (automatic selection) or Hugging Face ID
+        },
         "hf_models_objectdetection": {  # HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
             "microsoft/conditional-detr-resnet-50": {"batch_size": 1},
             "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
