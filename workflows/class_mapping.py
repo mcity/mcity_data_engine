@@ -62,7 +62,6 @@ class ClassMapper:
                 self.processor = CLIPSegProcessor.from_pretrained(self.model_name)
                 self.model = CLIPSegForImageSegmentation.from_pretrained(self.model_name)
 
-
             elif self.hf_model_config_name in ["Blip2Config", "CLIPConfig"]:
                 self.model = AutoModelForZeroShotImageClassification.from_pretrained(self.model_name)
                 self.processor = AutoProcessor.from_pretrained(self.model_name)
@@ -81,8 +80,6 @@ class ClassMapper:
         """Process a single detection with the model."""
         # Convert bounding box to pixel coordinates.
         prob_threshold = self.config["thresholds"]["confidence"]
-
-
 
         img_width, img_height = image.size
         bbox = detection.bounding_box
@@ -110,6 +107,8 @@ class ClassMapper:
         with torch.no_grad():
             outputs = self.model(**inputs)
 
+        predicted_label = None
+        confidence_score = None
 
         if self.hf_model_config_name == "SiglipConfig":
             # Apply sigmoid for probabilities
@@ -117,14 +116,14 @@ class ClassMapper:
             probs = torch.sigmoid(logits)
             max_prob, predicted_idx = probs[0].max(dim=-1)
             predicted_label = candidate_labels[predicted_idx.item()]
-            return predicted_label, max_prob.item()
+            confidence_score = max_prob.item()
 
         elif self.hf_model_config_name in ["AlignConfig", "AltCLIPConfig"]:
             logits = outputs.logits_per_image
             probs = torch.softmax(logits, dim=1)
             max_prob, predicted_idx = probs[0].max(dim=-1)
             predicted_label = candidate_labels[predicted_idx.item()]
-            return predicted_label, max_prob.item()
+            confidence_score = max_prob.item()
 
         elif self.hf_model_config_name == "CLIPSegConfig":
             # Get masks and ensure batch dimension exists
@@ -151,19 +150,20 @@ class ClassMapper:
                 if label_mask.numel() == 0:
                     scores.append(0.0)
                     continue
-
                 scores.append(label_mask.mean().item())
 
             # Find best match
-            max_score = max(scores)
-            predicted_idx = scores.index(max_score)
-            return candidate_labels[predicted_idx], max_score
+            confidence_score = max(scores)
+            predicted_idx = scores.index(confidence_score)
+            predicted_label = candidate_labels[predicted_idx]
 
         else:
             logits = outputs.logits_per_image
             max_logit, predicted_idx = logits.max(dim=-1)
             predicted_label = candidate_labels[predicted_idx.item()]
-            return predicted_label, max_logit.item()
+            confidence_score = max_logit.item()
+
+        return predicted_label, confidence_score
 
 
     def run_mapping(self, label_field = "ground_truth"):
@@ -210,8 +210,28 @@ class ClassMapper:
         source_labels = source_dataset.distinct(f"{label_field}.detections.label")
         target_labels = target_dataset.distinct(f"{label_field}.detections.label")
 
+        # Make a copy of candidate labels to work with
+        candidate_labels = self.config["candidate_labels"].copy()
+
+        one_to_one_mapping = {
+            parent: children[0]  # Only pick mappings with exactly 1 child
+            for parent, children in candidate_labels.items()
+            if len(children) == 1
+        }
+
+        # Validate extracted one-to-one mappings
+        valid_one_to_one_mapping = {
+            src: target for src, target in one_to_one_mapping.items()
+            if src in source_labels and target in target_labels
+        }
+
+        # Remove the valid one-to-one mappings from candidate_labels
+        for parent in valid_one_to_one_mapping:
+            if parent in candidate_labels:
+                del candidate_labels[parent]
+
         # Check that all parent labels from the candidate_labels exist in dataset_source.
-        parent_labels = list(self.config["candidate_labels"].keys())
+        parent_labels = list(candidate_labels.keys())
         missing_parents = [p for p in parent_labels if p not in source_labels]
         if missing_parents:
             error_msg = (f"Missing parent labels in dataset_source '{dataset_source_name}': {missing_parents}\n"
@@ -222,7 +242,7 @@ class ClassMapper:
 
         # Check that all child labels from candidate_labels exist in dataset_target.
         all_child_labels = []
-        for children in self.config["candidate_labels"].values():
+        for children in candidate_labels.values():
             all_child_labels.extend(children)
         missing_children = [child for child in all_child_labels if child not in target_labels]
         if missing_children:
@@ -253,23 +273,6 @@ class ClassMapper:
         )
         tb_writer = SummaryWriter(log_dir=log_directory)
 
-        # Validate parent labels
-        parent_labels = list(self.config["candidate_labels"].keys())
-        try:
-            existing_labels = self.dataset.distinct(f"{label_field}.detections.label")
-        except Exception as e:
-            logging.error("Could not retrieve detection labels from dataset")
-            raise ValueError("Invalid detection field path") from e
-
-        missing_parents = [label for label in parent_labels if label not in existing_labels]
-        if len(missing_parents) == len(parent_labels):
-            error_msg = (f"No parent labels from config found in dataset!\n"
-                         f"Config parents: {parent_labels}\nDataset labels: {existing_labels}")
-            logging.error(error_msg)
-            raise ValueError("Parent label mismatch")
-        if missing_parents:
-            logging.warning(f"Some parent labels not found in dataset: {missing_parents}")
-
         candidate_labels = self.config["candidate_labels"]
         threshold = self.config["thresholds"]["confidence"]
 
@@ -286,6 +289,26 @@ class ClassMapper:
             detections = sample[label_field]
             for det in detections.detections:
                 current_label = det.label
+
+                # Check if it is a one-to-one mapping
+                if current_label in valid_one_to_one_mapping:
+                    new_label = valid_one_to_one_mapping[current_label]
+                    tag = f"new_class_{new_label}"
+
+                    # Apply new label and add tag
+                    if tag not in det.tags:
+                        det.tags.append(tag)
+                        det.label = new_label  # Replace label directly
+
+                        self.stats["tags_added_per_category"][new_label] = (
+                            self.stats["tags_added_per_category"].get(new_label, 0) + 1
+                        )
+                        # Log tag changes
+                        tb_writer.add_scalar(f"Tags_Added/{new_label}",
+                                            self.stats["tags_added_per_category"].get(new_label, 0),
+                                            sample_count)
+                    continue
+
                 if current_label not in candidate_labels:
                     continue
 

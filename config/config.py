@@ -278,10 +278,6 @@ WORKFLOWS = {
     "class_mapping": {
         # get the source and target dataset names from datasets.yaml
         "dataset_source": "fisheye8k",
-        #"dataset_targets": [
-            #"target_dataset_name_1",
-         #   "mcity_fisheye_2000"
-        #],
         "dataset_target": "mcity_fisheye_2000",
          # Choose any number of models from the options below hf_models_zeroshot_classification, to not include a model for class mapping, just comment it out
          #https://huggingface.co/docs/transformers/model_doc/auto#transformers.AutoModelForZeroShotImageClassification
@@ -289,6 +285,7 @@ WORKFLOWS = {
             "Salesforce/blip2-itm-vit-g",
             "openai/clip-vit-large-patch14",
             "google/siglip-so400m-patch14-384",
+            #"google/siglip2-so400m-patch14-384",
             "kakaobrain/align-base",
             "BAAI/AltCLIP",
             "CIDAS/clipseg-rd64-refined"
@@ -299,14 +296,11 @@ WORKFLOWS = {
         "candidate_labels": {
             #Parent class(Generalized class) : Children classes(specific categories)
             "Car": ["car", "van", "pickup"],
-            "Truck": ["truck", "pickup"]
+            "Truck": ["truck", "pickup"],
+            #One_to_one_mapping
+            "Bike" : ["motorbike/cycler"]
             #Can add other class mappings in here
-        },
-
-        #"one_to_one_mapping":{
-        #    "Bike" : ["motorbike/cycler"]
-
-        #}
+        }
     }
 }
 

@@ -62,8 +62,6 @@ def test_class_mapping(dataset_v51):
     logging.info("\nAfter workflow:")
     if hasattr(sample, "ground_truth") and sample["ground_truth"].detections:
         logging.info(f"Total number of detections in Sample: {len(sample.ground_truth.detections)}")
-        #for i, detection in enumerate(sample["ground_truth"].detections):
-         #   logging.info(f"Detection {i} tags: {detection.tags if hasattr(detection, 'tags') else 'No tags'}")
 
     # Gather all tags from all detections in the updated sample
     found_tags = set()
