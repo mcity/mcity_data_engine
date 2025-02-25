@@ -47,12 +47,8 @@ class ClassMapper:
             self.hf_model_config_name = type(self.hf_model_config).__name__
 
             if self.hf_model_config_name == "SiglipConfig":
-                if self.model_name == "google/siglip2-base-patch16-224":
-                    self.model = AutoModel.from_pretrained(self.model_name, device_map="auto").eval()
-                    self.processor = AutoProcessor.from_pretrained(self.model_name)
-                else:
-                    self.model = AutoModel.from_pretrained(self.model_name)
-                    self.processor = AutoProcessor.from_pretrained(self.model_name)
+                self.model = AutoModel.from_pretrained(self.model_name)
+                self.processor = AutoProcessor.from_pretrained(self.model_name)
 
             elif self.hf_model_config_name == "AlignConfig":
                 self.processor = AlignProcessor.from_pretrained(self.model_name)
@@ -96,10 +92,7 @@ class ClassMapper:
 
         # Prepare inputs for the model.
         if self.hf_model_config_name == "SiglipConfig":
-            if self.model_name == "google/siglip2-base-patch16-224":
-                inputs = self.processor(text=candidate_labels, images=image_patch, padding="max_length", max_length=64, return_tensors="pt")
-            else:
-                inputs = self.processor(text=candidate_labels, images=image_patch, padding="max_length", return_tensors="pt")
+            inputs = self.processor(text=candidate_labels, images=image_patch, padding="max_length", return_tensors="pt")
 
         elif self.hf_model_config_name == "CLIPSegConfig":
             inputs = self.processor(text=candidate_labels, images=[image_patch]*len(candidate_labels), padding="max_length", return_tensors="pt")
@@ -184,9 +177,8 @@ class ClassMapper:
         dataset_target_name = self.config.get("dataset_target")
 
         if not dataset_source_name or not dataset_target_name:
-            error_msg = "Both 'dataset_source' and 'dataset_target' must be specified in the config."
-            logging.error(error_msg)
-            raise ValueError(error_msg)
+            logging.error("Both 'dataset_source' and 'dataset_target' must be specified in the config.")
+            raise ValueError("Both 'dataset_source' and 'dataset_target' must be specified in the config.")
 
         # Load the datasets from FiftyOne.
         try:
@@ -197,9 +189,8 @@ class ClassMapper:
             source_dataset, source_dataset_info = load_dataset(SELECTED_DATASET)
 
         except Exception as e:
-            error_msg = f"Failed to load dataset_source '{dataset_source_name}': {e}"
-            logging.error(error_msg)
-            raise ValueError(error_msg)
+            logging.error(f"Failed to load dataset_source '{dataset_source_name}': {e}")
+            raise ValueError(f"Failed to load dataset_source '{dataset_source_name}': {e}")
 
         try:
             SELECTED_DATASET = {
@@ -207,11 +198,10 @@ class ClassMapper:
                 "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
             }
             target_dataset, target_dataset_info = load_dataset(SELECTED_DATASET)
-            #target_dataset = fo.load_dataset(dataset_target_name)
+
         except Exception as e:
-            error_msg = f"Failed to load dataset_target '{dataset_target_name}': {e}"
-            logging.error(error_msg)
-            raise ValueError(error_msg)
+            logging.error(f"Failed to load dataset_target '{dataset_target_name}': {e}")
+            raise ValueError(f"Failed to load dataset_target '{dataset_target_name}': {e}")
 
         # Get the distinct labels present in each dataset.
         source_labels = source_dataset.distinct(f"{label_field}.detections.label")
