@@ -23,10 +23,12 @@ import torch.multiprocessing as mp
 import wandb
 from accelerate.test_utils.testing import get_backend
 from datasets import Split
+from huggingface_hub import HfApi, hf_hub_download
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms.functional import to_pil_image
+from tqdm import tqdm
 from transformers import (
     AutoConfig,
     AutoModelForObjectDetection,
@@ -36,8 +38,10 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+from ultralytics import YOLO
 
 from config.config import (
+    ACCEPTED_SPLITS,
     GLOBAL_SEED,
     HF_DO_UPLOAD,
     HF_ROOT,
@@ -231,10 +235,10 @@ class ZeroShotObjectDetection:
     def process_outputs_worker(
         self,
         result_queues,
-        result_queues_sizes,
         largest_queue_index,
         inference_finished,
-        queue_warning_threshold=5,
+        max_queue_size,
+        wandb_activate=False,
     ):
         configure_logging()
         logging.info(f"Process ID: {os.getpid()}. Results processing process started")
@@ -247,7 +251,7 @@ class ZeroShotObjectDetection:
             self.tensorboard_root, self.dataset_name, experiment_name
         )
         wandb.tensorboard.patch(root_logdir=log_directory)
-        if WANDB_ACTIVE:
+        if WANDB_ACTIVE and wandb_activate:
             wandb.init(
                 name=f"post_process_{os.getpid()}",
                 job_type="inference",
@@ -266,8 +270,11 @@ class ZeroShotObjectDetection:
                 n_processed_images,
             )
 
-            # if results_queue.qsize() > queue_warning_threshold:
-            # logging.warning(f"Queue size of {results_queue.qsize()}. Consider increasing number of post-processing workers.")
+            if results_queue.qsize() == max_queue_size:
+                logging.warning(
+                    f"Queue full: {results_queue.qsize()}. Consider increasing number of post-processing workers."
+                )
+
             # Exit only when inference is finished and the queue is empty
             if inference_finished.value and results_queue.empty():
                 dataset_v51.save()
@@ -275,13 +282,13 @@ class ZeroShotObjectDetection:
                     f"Post-processing worker {os.getpid()} has finished all outputs."
                 )
                 break
+
             # Process results from the queue if available
             if not results_queue.empty():
                 try:
                     time_start = time.time()
 
                     result = results_queue.get_nowait()
-                    # result = results_queue.get(block=True, timeout=0.5)
 
                     processing_successful = self.process_outputs(
                         dataset_v51, result, self.object_classes
@@ -507,9 +514,11 @@ class ZeroShotObjectDetection:
             writer = SummaryWriter(log_dir=log_directory)
 
             # Inference Loop
-            logging.info(f"{os.getpid()}: Starting inference loop")
+            logging.info(f"{os.getpid()}: Starting inference loop5")
             n_processed_images = 0
-            for inputs, labels, target_sizes, batch_classes in dataloader:
+            for inputs, labels, target_sizes, batch_classes in tqdm(
+                dataloader, desc="Inference Loop"
+            ):
                 signal.alarm(dataloader_timeout)
                 try:
                     time_start = time.time()
@@ -673,7 +682,7 @@ class ZeroShotObjectDetection:
                                 box_width = (box[2] - box[0]).item()
                                 box_height = (box[3] - box[1]).item()
                             else:
-                                logging.warning(
+                                logging.debug(
                                     f"Skipped detection with {hf_model_config_name} due to unclear output: {label}"
                                 )
                                 processing_successful = False
@@ -743,6 +752,158 @@ class ZeroShotObjectDetection:
             progress=True,
         )
         return True
+
+
+class UltralyticsObjectDetection:
+
+    def __init__(self, dataset, config):
+        self.dataset = dataset
+        self.config = config
+        self.ultralytics_data_path = os.path.join(
+            config["export_dataset_root"], config["v51_dataset_name"]
+        )
+
+        self.hf_hub_model_id = (
+            f"{HF_ROOT}/"
+            + f"{config["v51_dataset_name"]}_{config["model_name"]}".replace("/", "_")
+        )
+
+        self.export_root = "output/models/ultralytics/"
+        self.export_folder = os.path.join(self.export_root,self.config["v51_dataset_name"])
+
+        self.model_path = os.path.join(
+            self.export_folder, self.config["model_name"], "weights", "best.pt"
+        )
+
+    @staticmethod
+    def export_data(
+        dataset, dataset_info, export_dataset_root, label_field="ground_truth"
+    ):
+        ultralytics_data_path = os.path.join(export_dataset_root, dataset_info["name"])
+        # Check if export directory already exists
+        if os.path.exists(ultralytics_data_path):
+            logging.warning(
+                f"Export directory {ultralytics_data_path} already exists. Skipping export."
+            )
+            return
+
+        logging.info("Exporting data for training with Ultralytics")
+        classes = dataset.distinct(f"{label_field}.detections.label")
+        for split in ACCEPTED_SPLITS:
+            split_view = dataset.match_tags(split)
+
+            if split == "test":  # YOLO expects train and val
+                split = "val"
+
+            split_view.export(
+                export_dir=ultralytics_data_path,
+                dataset_type=fo.types.YOLOv5Dataset,
+                label_field=label_field,
+                classes=classes,
+                split=split,
+            )
+
+    def train(self):
+        # Export dataset to YOLO format for Ultralytics
+        model = YOLO(self.config["model_name"], task="detect")
+        # https://docs.ultralytics.com/modes/train/#train-settings
+        results = model.train(
+            data=f"{self.ultralytics_data_path}/dataset.yaml",
+            epochs=self.config["epochs"],
+            project=self.export_folder,
+            name=self.config["model_name"],
+            patience=self.config["patience"],
+            batch=self.config["batch_size"],
+            imgsz=self.config["img_size"],
+            seed=GLOBAL_SEED,
+            exist_ok=True,
+            amp=True,
+        )
+        metrics = model.val()
+        logging.info(f"Model Performance: {metrics}")
+
+        # Upload model to Hugging Face
+        if HF_DO_UPLOAD:
+            logging.info(f"Uploading model {self.model_path} to Hugging Face.")
+            api = HfApi()
+            api.create_repo(
+                self.hf_hub_model_id, private=True, repo_type="model", exist_ok=True
+            )
+            api.upload_file(
+                path_or_fileobj=self.model_path,
+                path_in_repo="best.pt",
+                repo_id=self.hf_hub_model_id,
+                repo_type="model",
+            )
+
+    def inference(self, gt_field="ground_truth"):
+        logging.info(f"Running inference on dataset {self.config['v51_dataset_name']}")
+        inference_settings = self.config["inference_settings"]
+
+        dataset_name = None
+
+        model_hf = inference_settings["model_hf"]
+        if model_hf is not None:
+            # Use model manually defined in config.
+            # This way models can be used for inference which were trained on a different dataset
+            # Parse model path components
+            _, model_name = model_hf.split('/')  # e.g. 'mcity_fisheye_2100_yolo11x'
+            dataset_name, model_type = model_name.rsplit('_', 1)  # e.g. 'mcity_fisheye_2100', 'yolo11x'
+
+            # Set up directories
+            download_dir = os.path.join(self.export_root, dataset_name, model_type)
+            self.model_path = os.path.join(download_dir, "weights", "best.pt")
+
+            # Create directories if they don't exist
+            os.makedirs(os.path.join(download_dir, "weights"), exist_ok=True)
+
+            file_path = hf_hub_download(
+                    repo_id=model_hf,
+                    filename="best.pt",
+                    local_dir=download_dir,
+                )
+        else:
+            # Automatically dertermine model based on dataset
+            dataset_name = self.config["v51_dataset_name"]
+            try:
+                if os.path.exists(self.model_path):
+                    file_path = self.model_path
+                    logging.info(
+                        f"Loading model {self.config['model_name']} from disk: {file_path}"
+                    )
+                else:
+                    download_dir = self.model_path.replace("best.pt", "")
+                    logging.info(
+                        f"Downloading model {self.hf_hub_model_id} from Hugging Face to {download_dir}"
+                    )
+                    file_path = hf_hub_download(
+                        repo_id=self.hf_hub_model_id,
+                        filename="best.pt",
+                        local_dir=download_dir,
+                    )
+            except Exception as e:
+                logging.error(f"Failed to load or download model: {str(e)}.")
+                return False
+
+        label_field = f"pred_od_{self.config['model_name']}_{dataset_name}"
+        logging.info(f"Using model {self.model_path} for inference.")
+        model = YOLO(self.model_path)
+
+        if inference_settings["inference_on_evaluation"] == True:
+            INFERENCE_SPLITS = ["val", "test"]
+            dataset_eval_view = self.dataset.match_tags(INFERENCE_SPLITS)
+            if len(dataset_eval_view) == 0:
+                logging.error(f"Dataset misses splits: {INFERENCE_SPLITS}")
+            dataset_eval_view.apply_model(model, label_field=label_field)
+        else:
+            self.dataset.apply_model(model, label_field=label_field)
+
+        if inference_settings["do_eval"]:
+            results = self.dataset.evaluate_detections(
+                label_field,
+                gt_field=gt_field,
+                eval_key=f"eval_{self.config['model_name']}_{dataset_name}",
+            )
 
 
 class HuggingFaceObjectDetection:

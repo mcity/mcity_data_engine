@@ -37,6 +37,7 @@ from workflows.anomaly_detection import Anodec
 from workflows.auto_labeling import (
     CustomCoDETRObjectDetection,
     HuggingFaceObjectDetection,
+    UltralyticsObjectDetection,
     ZeroShotObjectDetection,
 )
 from workflows.aws_download import AwsDownloader
@@ -226,7 +227,43 @@ def workflow_embedding_selection(
     return True
 
 
-def workflow_auto_labeling(dataset, hf_dataset, run_config, wandb_activate=True):
+def workflow_auto_labeling_ultralytics(dataset, run_config, wandb_activate=True):
+    try:
+        wandb_exit_code = 0
+        wandb_run = wandb_init(
+            run_name=run_config["model_name"],
+            project_name="Auto Labeling Ultralytics",
+            dataset_name=run_config["v51_dataset_name"],
+            config=run_config,
+            wandb_activate=wandb_activate,
+        )
+
+        detector = UltralyticsObjectDetection(dataset=dataset, config=run_config)
+
+        # Check if all selected modes are supported
+        SUPPORTED_MODES = ["train", "inference"]
+        for mode in run_config["mode"]:
+            if mode not in SUPPORTED_MODES:
+                logging.error(f"Selected mode {mode} is not supported.")
+
+        if SUPPORTED_MODES[0] in run_config["mode"]:
+            logging.info(f"Training model {run_config['model_name']}")
+            detector.train()
+        if SUPPORTED_MODES[1] in run_config["mode"]:
+            logging.info(f"Running inference for model {run_config['model_name']}")
+            detector.inference()
+
+    except Exception as e:
+        logging.error(f"An error occurred with model {run_config['model_name']}: {e}")
+        wandb_exit_code = 1
+
+    finally:
+        wandb_close(wandb_exit_code)
+
+    return True
+
+
+def workflow_auto_labeling_hf(dataset, hf_dataset, run_config, wandb_activate=True):
     try:
         wandb_exit_code = 0
         wandb_run = wandb_init(
@@ -236,8 +273,6 @@ def workflow_auto_labeling(dataset, hf_dataset, run_config, wandb_activate=True)
             config=run_config,
             wandb_activate=wandb_activate,
         )
-
-        logging.error
 
         detector = HuggingFaceObjectDetection(
             dataset=dataset,
@@ -582,15 +617,21 @@ class WorkflowExecutor:
                         "ultralytics",
                     ]
 
-                    # Check if all selected modes are supported
+                    # Common parameters between models
                     config_autolabel = WORKFLOWS["auto_labeling"]
+                    mode = config_autolabel["mode"]
+                    epochs = config_autolabel["epochs"]
                     selected_model_source = config_autolabel["model_source"]
+
+                    # Check if all selected modes are supported
                     for model_source in selected_model_source:
                         if model_source not in SUPPORTED_MODEL_SOURCES:
                             logging.error(
                                 f"Selected model source {model_source} is not supported."
                             )
+
                     if SUPPORTED_MODEL_SOURCES[0] in selected_model_source:
+                        # Hugging Face Models
                         hf_models = config_autolabel["hf_models_objectdetection"]
 
                         # Dataset Conversion
@@ -602,7 +643,6 @@ class WorkflowExecutor:
                         except Exception as e:
                             logging.error(f"Error during dataset conversion: {e}")
 
-                        # Train models
                         for MODEL_NAME in (
                             pbar := tqdm(hf_models, desc="Auto Labeling Models")
                         ):
@@ -617,10 +657,10 @@ class WorkflowExecutor:
                             ][MODEL_NAME]
 
                             run_config = {
-                                "mode": config_autolabel["mode"],
+                                "mode": mode,
                                 "model_name": MODEL_NAME,
                                 "v51_dataset_name": self.selected_dataset,
-                                "epochs": config_autolabel["epochs"],
+                                "epochs": epochs,
                                 "early_stop_threshold": config_autolabel[
                                     "early_stop_threshold"
                                 ],
@@ -638,16 +678,15 @@ class WorkflowExecutor:
                             }
 
                             # Workflow
-                            workflow_auto_labeling(
+                            workflow_auto_labeling_hf(
                                 self.dataset,
                                 hf_dataset,
                                 run_config,
                             )
 
                     if SUPPORTED_MODEL_SOURCES[1] in selected_model_source:
-
-                        # Config
-                        config_codetr = WORKFLOWS["auto_labeling"]["custom_codetr"]
+                        # Custom Co-DETR
+                        config_codetr = config_autolabel["custom_codetr"]
                         run_config = {
                             "export_dataset_root": config_codetr["export_dataset_root"],
                             "container_tool": config_codetr["container_tool"],
@@ -680,6 +719,48 @@ class WorkflowExecutor:
                             workflow_auto_labeling_custom_codetr(
                                 self.dataset_info, run_config
                             )
+                    if SUPPORTED_MODEL_SOURCES[2] in selected_model_source:
+                        # Ultralytics Models
+                        config_ultralytics = config_autolabel["ultralytics"]
+                        models_ultralytics = config_ultralytics["models"]
+                        export_dataset_root = config_ultralytics["export_dataset_root"]
+
+                        # Export data into necessary format
+                        if "train" in mode:
+                            try:
+                                UltralyticsObjectDetection.export_data(
+                                    self.dataset,
+                                    self.dataset_info,
+                                    export_dataset_root,
+                                )
+                            except Exception as e:
+                                logging.error(
+                                    f"Error during Ultralytics dataset export: {e}"
+                                )
+
+                        for model_name in (
+                            pbar := tqdm(
+                                models_ultralytics, desc="Ultralytics training"
+                            )
+                        ):
+                            pbar.set_description(f"Ultralytics model {model_name}")
+                            run_config = {
+                                "mode": mode,
+                                "model_name": model_name,
+                                "v51_dataset_name": self.dataset_info["name"],
+                                "epochs": epochs,
+                                "patience": config_autolabel["early_stop_threshold"],
+                                "batch_size": models_ultralytics[model_name][
+                                    "batch_size"
+                                ],
+                                "img_size": models_ultralytics[model_name]["img_size"],
+                                "export_dataset_root": export_dataset_root,
+                                "inference_settings": config_autolabel[
+                                    "inference_settings"
+                                ],
+                            }
+
+                            workflow_auto_labeling_ultralytics(self.dataset, run_config)
 
                 elif workflow == "auto_labeling_zero_shot":
                     config = WORKFLOWS["auto_labeling_zero_shot"]

@@ -7,7 +7,7 @@ import pytest
 from fiftyone.utils.huggingface import load_from_hub
 
 import config.config
-from main import workflow_auto_labeling
+from main import workflow_auto_labeling_hf
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 
 
@@ -96,4 +96,6 @@ def test_hf_object_detection(dataset_v51, dataset_hf, mode):
         "n_worker_dataloader": 1,
     }
 
-    workflow_auto_labeling(dataset_v51, dataset_hf, run_config, wandb_activate=False)
+    workflow_auto_labeling_hf(dataset_v51, dataset_hf, run_config, wandb_activate=False)
+
+    # TODO Add asserts
