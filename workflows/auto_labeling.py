@@ -1303,9 +1303,16 @@ class CustomCoDETRObjectDetection:
             else:
                 hf_path = inference_settings["model_hf"]
 
+            # Extract dataset and config from hf_path
+            dataset_config_str = hf_path.split("/")[-1]
+            # All Co-DETR configs start with "co_"
+            config_index = dataset_config_str.find("co_")
+            dataset_name = dataset_config_str[:config_index]
+            config_key = dataset_config_str[config_index:]
+
             logging.info(f"Downloading model {hf_path} from Hugging Face.")
             download_folder = os.path.join(
-                self.root_codetr_models, self.dataset_name, self.config_key
+                self.root_codetr_models, dataset_name, config_key
             )
 
             file_path = hf_hub_download(
@@ -1324,7 +1331,7 @@ class CustomCoDETRObjectDetection:
             container_tool=container_tool,
             param_inference_dataset_folder=folder_inference,
             param_inference_model_checkpoint=os.path.join(
-                self.dataset_name, self.config_key, "model.pth"
+                self.root_codetr_models, dataset_name, config_key, "model.pth"
             ),
         )
 
