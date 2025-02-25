@@ -23,6 +23,8 @@ import torch.multiprocessing as mp
 import wandb
 from accelerate.test_utils.testing import get_backend
 from datasets import Split
+from fiftyone import ViewField as F
+from huggingface_hub import HfApi, hf_hub_download
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
