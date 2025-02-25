@@ -59,6 +59,7 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
                 )
                 # FIXME Returning a view instead of a dataset introduces problems
                 # Return a dataset, maybe name it {dataset.name}-{len(view)}
+                # Or detect at some places if it is a view and access the inderlying dataset instead
                 return combined_view, dataset_info
 
     else:
@@ -159,8 +160,8 @@ def _align_splits(dataset):
             f"Dataset had no 'val' split. Split {n_samples_current_split} 'test' into {n_samples_current_split_changed} 'val' and {n_samples_new_split} 'test'."
         )
     if "train" in splits and "test" not in splits and "val" not in splits:
-        logging.error(
-            "Found 'train' split, but 'test' and 'val' splits are missing. Training will fail."
+        logging.warning(
+            "Found 'train' split, but 'test' and 'val' splits are missing. Training might fail."
         )
 
     # Logging of available splits
@@ -205,12 +206,13 @@ def _align_ground_truth(dataset, gt_field="ground_truth"):
 
 
 def _post_process_dataset(dataset):
+    logging.info(f"Running dataset post-processing.")
     # Set persistance
     # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
     dataset.persistent = PERSISTENT
 
     # Compute metadata
-    dataset.compute_metadata(num_workers=NUM_WORKERS)
+    dataset.compute_metadata(num_workers=NUM_WORKERS, overwrite=False, progress=True)
 
     # Align split names
     splits = _align_splits(dataset)
@@ -259,8 +261,9 @@ def load_annarbor_rolling(dataset_info):
             dataset_dir=dataset_dir,
             dataset_type=dataset_type,
         )
+        _post_process_dataset(dataset)
 
-    return _post_process_dataset(dataset)
+    return dataset
 
 
 def load_mcity_fisheye_2000(dataset_info):
@@ -308,6 +311,7 @@ def load_mcity_fisheye_2000(dataset_info):
                 "Provide your Hugging Face 'HF_TOKEN' in the .secret file to load private datasets."
             )
         dataset = load_from_hub(hf_dataset_name, name=dataset_name, token=hf_token)
+        _post_process_dataset(dataset)
     else:
         dataset = fo.Dataset(dataset_name)
         for split in dataset_splits:
@@ -325,7 +329,9 @@ def load_mcity_fisheye_2000(dataset_info):
             sample["name"] = metadata["name"]
             sample["timestamp"] = metadata["timestamp"]
 
-    return _post_process_dataset(dataset)
+        _post_process_dataset(dataset)
+
+    return dataset
 
 
 def load_mcity_fisheye_2100_vru(dataset_info):
@@ -355,15 +361,9 @@ def load_mcity_fisheye_2100_vru(dataset_info):
                 "Provide your Hugging Face 'HF_TOKEN' in the .secret file to load private datasets."
             )
         dataset = load_from_hub(hf_dataset_name, name=dataset_name, token=hf_token)
+        _post_process_dataset(dataset)
 
-    # Add dataset specific metadata based on filename
-    for sample in dataset.iter_samples(progress=True, autosave=True):
-        metadata = _process_mcity_fisheye_filename(sample["filepath"])
-        sample["location"] = metadata["location"]
-        sample["name"] = metadata["name"]
-        sample["timestamp"] = metadata["timestamp"]
-
-    return _post_process_dataset(dataset)
+    return dataset
 
 
 def _process_mcity_fisheye_filename(filename):
@@ -496,7 +496,9 @@ def load_mcity_fisheye_3_months(dataset_info):
             sample["name"] = metadata["name"]
             sample["timestamp"] = metadata["timestamp"]
 
-    return _post_process_dataset(dataset)
+        _post_process_dataset(dataset)
+
+    return dataset
 
 
 def load_fisheye_8k(dataset_info):
@@ -526,16 +528,18 @@ def load_fisheye_8k(dataset_info):
         logging.info("Existing dataset " + dataset_name + " was loaded.")
     else:
         dataset = load_from_hub(hf_dataset_name, name=dataset_name)
+        _post_process_dataset(dataset)
 
-    return _post_process_dataset(dataset)
+    return dataset
 
 
 def load_mars_multiagent(dataset_info):
     hugging_face_id = "ai4ce/MARS/Multiagent_53scene"
 
     dataset = None  # TODO Implement loading
+    _post_process_dataset(dataset)
 
-    return _post_process_dataset(dataset)
+    return dataset
 
 
 def load_mars_multitraversal(dataset_info):
@@ -544,5 +548,6 @@ def load_mars_multitraversal(dataset_info):
     nusc = NuScenes(version="v1.0", dataroot=f"data_root/{location}", verbose=True)
 
     dataset = None  # TODO Implement loading
+    _post_process_dataset(dataset)
 
-    return _post_process_dataset(dataset)
+    return dataset
