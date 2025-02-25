@@ -22,6 +22,7 @@ import torch.multiprocessing as mp
 import wandb
 from accelerate.test_utils.testing import get_backend
 from datasets import Split
+from fiftyone import ViewField as F
 from huggingface_hub import HfApi, hf_hub_download
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
@@ -1124,6 +1125,7 @@ class HuggingFaceObjectDetection:
 class CustomCoDETRObjectDetection:
     def __init__(self, dataset, dataset_info, run_config):
         self.root_codetr = "./custom_models/CoDETR/Co-DETR"
+        self.root_codetr_models = "./output/models/codetr"
         self.dataset = dataset
         self.dataset_name = dataset_info["name"]
         self.export_dir_root = run_config["export_dataset_root"]
@@ -1271,7 +1273,7 @@ class CustomCoDETRObjectDetection:
                     )
                     api.upload_file(
                         path_or_fileobj=checkpoint_path,
-                        path_in_repo=checkpoint,
+                        path_in_repo="model.pth",
                         repo_id=self.hf_repo_name,
                         repo_type="model",
                     )
@@ -1303,6 +1305,23 @@ class CustomCoDETRObjectDetection:
         else:
             folder_inference = os.path.join("coco")
 
+        # Get model from Hugging Face
+        try:
+            logging.info(
+                f"Downloading model {self.config_key} trained on {self.dataset_name} from Hugging Face."
+            )
+            download_folder = os.path.join(
+                self.root_codetr_models, self.dataset_name, self.config_key
+            )
+
+            file_path = hf_hub_download(
+                repo_id=self.hf_repo_name,
+                filename="model.pth",
+                local_dir=download_folder,
+            )
+        except Exception as e:
+            logging.error(f"An error occured during model download: {e}")
+
         inference_result = self._run_container(
             volume_data=volume_data,
             param_function=param_function,
@@ -1310,7 +1329,9 @@ class CustomCoDETRObjectDetection:
             param_n_gpus=param_n_gpus,
             container_tool=container_tool,
             param_inference_dataset_folder=folder_inference,
-            param_inference_model_checkpoint="",
+            param_inference_model_checkpoint=os.path.join(
+                self.dataset_name, self.config_key, "model.pth"
+            ),
         )
 
         # Convert results from JSON output into V51 dataset
@@ -1345,14 +1366,9 @@ class CustomCoDETRObjectDetection:
         with open(latest_file, "r") as file:
             data = json.load(file)
 
-        # Get root filepath for dataset
-        sample = dataset.first()
-        filepath_dataset = sample.filepath
-        local_data_root = os.path.dirname(filepath_dataset)
-
         # Get conversion for annotated classes
         annotations_path = os.path.join(
-            volume_data_root, "annotations/instances_train2017.json"
+            volume_data, "coco", "annotations", "instances_train2017.json"
         )
 
         with open(annotations_path, "r") as file:
@@ -1364,19 +1380,27 @@ class CustomCoDETRObjectDetection:
         ]
 
         # Convert results into V51 file format
-        pred_key = f"pred_od_{param_config}"
+        pred_key = f"pred_od_{self.config_key}"
         for key, value in tqdm(data.items(), desc="Processing Co-DETR detection"):
             try:
-                if "train2017" in key:
-                    file_path = key.replace(
-                        "/launch/data/coco/train2017", local_data_root
-                    )
-                elif "val2017" in key:
-                    file_path = key.replace(
-                        "/launch/data/coco/val2017", local_data_root
-                    )
+                # Get filename
+                file_name = os.path.basename(key)
+                # Find file in V51 dataset
+                sample_view = dataset.match(F("filepath").ends_with((file_name)))
+                if len(sample_view) > 1:
+                    logging.warning(f"More than one sample found: {sample_view}")
+                sample = sample_view.first()
 
-                sample = dataset[file_path]
+                # if "train2017" in key:
+                #    file_path = key.replace(
+                #        "/launch/data/coco/train2017", local_data_root
+                #   )
+                # elif "val2017" in key:
+                #    file_path = key.replace(
+                #        "/launch/data/coco/val2017", local_data_root
+                #    )
+                # sample = dataset[file_path]
+
                 img_width = sample.metadata.width
                 img_height = sample.metadata.height
 
@@ -1402,7 +1426,7 @@ class CustomCoDETRObjectDetection:
                 sample.save()
             except Exception as e:
                 logging.error(
-                    f"An erro occured during the conversion of Co-DETR inference results to the V51 dataset: {e}"
+                    f"An error occured during the conversion of Co-DETR inference results to the V51 dataset: {e}"
                 )
 
         # Run V51 evaluation
@@ -1415,7 +1439,7 @@ class CustomCoDETRObjectDetection:
         param_function,
         param_config="",
         param_n_gpus="1",
-        param_dataset_name="default_dataset",
+        param_dataset_name="",
         param_inference_dataset_folder="",
         param_inference_model_checkpoint="",
         image="dbogdollresearch/codetr",
@@ -1435,7 +1459,9 @@ class CustomCoDETRObjectDetection:
                     "--volume",
                     f"{self.root_codetr}:{workdir}",
                     "--volume",
-                    f"{volume_data}:{workdir}/data",
+                    f"{volume_data}:{workdir}/data:ro",
+                    "--volume",
+                    f"{self.root_codetr_models}:{workdir}/models:ro",
                     "--shm-size=8g",
                     image,
                     param_function,
@@ -1455,7 +1481,9 @@ class CustomCoDETRObjectDetection:
                     "--bind",
                     f"{self.root_codetr}:{workdir}",
                     "--bind",
-                    f"{volume_data}:{workdir}/data",
+                    f"{volume_data}:{workdir}/data:ro",
+                    "--bind",
+                    f"{self.root_codetr_models}:{workdir}/models:ro",
                     f"docker://{image}",
                     param_function,
                     param_config,

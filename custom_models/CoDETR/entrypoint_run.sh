@@ -9,9 +9,9 @@ chmod +x tools/dist_test.sh
 pip install -e .
 
 # Default config and number of GPUs
-CONFIG_FILE=${2:-projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py}
+CONFIG_FILE=${2:-"projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py"}
 NUM_GPUS=${3:-1}
-DATASET_NAME=${4:-"default_dataset_name"}
+DATASET_NAME=${4:-"no_name"}
 INFERENCE_DATASET_FOLDER=${5:-""}
 INFERENCE_MODEL_CHECKPOINT=${6:-""}
 
@@ -30,12 +30,12 @@ elif [ "$1" == "test-output" ]; then
     ./tools/dist_test.sh $CONFIG_FILE output/latest.pth $NUM_GPUS --format-only --options "jsonfile_prefix=./output/co_detr_test_results"
 elif [ "$1" == "inference" ]; then
     # Run inference
-    python demo/run_inference.py --data_folder_root $INFERENCE_DATASET_FOLDER --model_checkpoint $INFERENCE_MODEL_CHECKPOINT
+    python mcity_data_engine/run_inference.py --config_file $CONFIG_FILE --data_folder_root $INFERENCE_DATASET_FOLDER --model_checkpoint $INFERENCE_MODEL_CHECKPOINT
 elif [ "$1" == "interactive" ]; then
     # Start an interactive shell
     /bin/bash
 elif [ "$1" == "clear-output" ]; then
-    python demo/clear_output.py --config_file $CONFIG_FILE --dataset_name $DATASET_NAME
+    python mcity_data_engine/clear_output.py --config_file $CONFIG_FILE --dataset_name $DATASET_NAME
 else
     echo "Invalid argument. Use 'train', 'slurm_train', 'test', 'test-output', 'inference', 'clear-output', or 'interactive'."
     exit 1
