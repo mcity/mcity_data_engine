@@ -1104,7 +1104,10 @@ class HuggingFaceObjectDetection:
 
 
 class CustomCoDETRObjectDetection:
+    """Interface for running Co-DETR object detection model training and inference in containers"""
+
     def __init__(self, dataset, dataset_info, run_config):
+        """Initialize Co-DETR interface with dataset and configuration"""
         self.root_codetr = "./custom_models/CoDETR/Co-DETR"
         self.root_codetr_models = "./output/models/codetr"
         self.dataset = dataset
@@ -1114,6 +1117,7 @@ class CustomCoDETRObjectDetection:
         self.hf_repo_name = f"{HF_ROOT}/{self.dataset_name}_{self.config_key}"
 
     def convert_data(self):
+        """Convert dataset to COCO format required by Co-DETR"""
 
         export_dir = os.path.join(self.export_dir_root, self.dataset_name, "coco")
 
@@ -1143,6 +1147,8 @@ class CustomCoDETRObjectDetection:
             )
 
     def update_config_file(self, dataset_name, config_file, max_epochs):
+        """Update Co-DETR config file with dataset-specific parameters"""
+
         config_path = os.path.join(self.root_codetr, config_file)
 
         # Get classes from exported data
@@ -1182,6 +1188,7 @@ class CustomCoDETRObjectDetection:
         )
 
     def train(self, param_config, param_n_gpus, container_tool, param_function="train"):
+        """Train Co-DETR model using containerized environment"""
 
         # Check if model already exists
         output_folder_codetr = os.path.join(self.root_codetr, "output")
@@ -1278,6 +1285,8 @@ class CustomCoDETRObjectDetection:
         param_function="inference",
         inference_output_folder="custom_models/CoDETR/Co-DETR/output/inference/",
     ):
+        """Run inference using trained Co-DETR model and convert results to FiftyOne format"""
+
         logging.info(f"Launching inference for Co-DETR config {param_config}.")
         volume_data = os.path.join(self.export_dir_root, self.dataset_name)
 
@@ -1417,6 +1426,8 @@ class CustomCoDETRObjectDetection:
         workdir="/launch",
         container_tool="docker",
     ):
+        """Execute Co-DETR container with specified parameters using Docker or Singularity"""
+
         try:
             # Check if using Docker or Singularity and define the appropriate command
             if container_tool == "docker":
