@@ -5,7 +5,7 @@ SELECTED_WORKFLOW = ["embedding_selection"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "fisheye8k",
+    "name": "mcity_fisheye_2000",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
@@ -55,7 +55,7 @@ WORKFLOWS = {
             "Draem": {},
             "Cfa": {},
         },
-        "anomalib_eval_metrics": [  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/metrics/index.html Focus on standard metrics, computation of others can be expensive
+        "anomalib_eval_metrics": [  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/metrics/index.html. Focus on standard metrics, computation of others can be expensive
             "AUPR",
             "AUROC",
             "F1Max",
@@ -65,15 +65,20 @@ WORKFLOWS = {
     "auto_labeling": {
         "mode": ["inference"],  # "train" and "inference" supported
         "model_source": [
-            "hf_models_objectdetection"
+            "ultralytics"
         ],  # "hf_models_objectdetection" and "custom_codetr" and "ultralytics" supported
         "n_worker_dataloader": 3,
-        "epochs": 36,
+        "epochs": 32,
         "early_stop_patience": 5,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
         "weight_decay": 0.0001,
         "max_grad_norm": 0.01,
+        "inference_settings": {
+            "do_eval": True,
+            "inference_on_evaluation": True,
+            "model_hf": None,  # None (automatic selection) or Hugging Face ID
+        },
         "hf_models_objectdetection": {  # HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
             "microsoft/conditional-detr-resnet-50": {"batch_size": 1},
             "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
@@ -122,7 +127,15 @@ WORKFLOWS = {
             "n_gpus": "1",
             "container_tool": "docker",
         },
-        "ultralytics": {},
+        "ultralytics": {
+            "export_dataset_root": "/media/dbogdoll/Datasets/ultralytics_data/",
+            "models": {  # Pick from https://docs.ultralytics.com/models/
+                # "yolo11n": {"batch_size": 32, "img_size": 640},
+                "yolo11x": {"batch_size": 1, "img_size": 640},
+                # "yolo12n": {"batch_size": 32, "img_size": 640},
+                # "yolo12x": {"batch_size": 1, "img_size": 640},
+            },
+        },
     },
     "auto_labeling_zero_shot": {
         "n_post_processing_worker_per_inference_worker": 5,
@@ -268,7 +281,7 @@ GLOBAL_SEED = 0
 
 # Hugging Face Config
 HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
-HF_DO_UPLOAD = False
+HF_DO_UPLOAD = True
 
 # Weights and Biases Config
 WANDB_ACTIVE = True
