@@ -160,8 +160,8 @@ def _align_splits(dataset):
             f"Dataset had no 'val' split. Split {n_samples_current_split} 'test' into {n_samples_current_split_changed} 'val' and {n_samples_new_split} 'test'."
         )
     if "train" in splits and "test" not in splits and "val" not in splits:
-        logging.error(
-            "Found 'train' split, but 'test' and 'val' splits are missing. Training will fail."
+        logging.warning(
+            "Found 'train' split, but 'test' and 'val' splits are missing. Training might fail."
         )
 
     # Logging of available splits

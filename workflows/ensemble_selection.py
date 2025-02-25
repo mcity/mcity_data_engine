@@ -317,8 +317,7 @@ class EnsembleSelection:
         ):
             self.view.set_values(field + ".detections", field_detections)
 
-        # Calculate number of unique detections per sample
-        # TODO Avoid additional iteration over dataset, integrate in prior loop
+        logging.info("Calculate number of unique detections per sample")
         try:
             self.dataset.delete_sample_field(self.n_unique_field)
         except:
