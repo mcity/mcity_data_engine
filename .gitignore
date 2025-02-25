@@ -180,3 +180,5 @@ cloud/wandb/
 wandb/
 # Anomalib
 pre_trained/
+# Ultralytics cannot change the default download folder during Init()
+yolo*.pt
