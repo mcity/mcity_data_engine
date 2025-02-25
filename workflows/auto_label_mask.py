@@ -15,6 +15,8 @@ class AutoLabelMask:
         self.model_config = model_config
 
     def _sanitize_model_name(self, model_name: str) -> str:
+        """Replacing special characters with underscores"""
+
         return (
             model_name
             .replace("/", "_")
@@ -30,10 +32,10 @@ class AutoLabelMask:
         else:
             logging.error(f"Task type '{self.task_type}' is not supported")
 
-    # ---------------------------
-    # SEMANTIC SEGMENTATION
-    # ---------------------------
+
     def _run_semantic_segmentation(self):
+        """Handles semantic segmentation inference using SAM2 models"""
+
         if self.model_name == "sam2":
             self._handle_sam2_segmentation()
         else:
@@ -42,6 +44,8 @@ class AutoLabelMask:
             )
 
     def _handle_sam2_segmentation(self):
+        """Runs SAM2 segmentation inference for all specified models"""
+
         sam_config = self.model_config
         prompt_field = sam_config.get("prompt_field", None)
         sam_models = sam_config["models"]
@@ -58,24 +62,23 @@ class AutoLabelMask:
 
             self._inference_sam2(self.dataset, sam_model, label_field, prompt_field)
 
-        logging.info("Semantic segmentation completed for all SAM2 models.")
-
     def _inference_sam2(self, dataset, sam_model, label_field, prompt_field=None):
+        """Applies SAM2 model to the dataset, optionally using prompt field"""
+
         logging.info(f"Starting SAM2 inference for model '{sam_model}'")
         model = foz.load_zoo_model(sam_model)
 
         if prompt_field:
-            logging.info(f"Running SAM2 with prompt_field '{prompt_field}'")
-            dataset.apply_model(model, label_field=label_field, prompt_field=prompt_field)
+            logging.info(f"Running SAM2 with model '{sam_model}' and prompt_field '{prompt_field}'")
+            dataset.apply_model(model, label_field=label_field, prompt_field=prompt_field, progress=True)
         else:
-            logging.info("Running SAM2 without prompt_field")
-            dataset.apply_model(model, label_field=label_field)
+            logging.info(f"Running SAM2 with model '{sam_model}' without prompt_field")
+            dataset.apply_model(model, label_field=label_field, progress=True)
 
-    # ---------------------------
-    # DEPTH ESTIMATION
-    # ---------------------------
     def _run_depth_estimation(self):
-        if self.model_name not in ["dpt", "depth_anything", "glpn", "zoe_depth"]:
+        """Handles depth estimation inference for supported models"""
+
+        if self.model_name not in ["dpt", "depth_anything", "depth_pro", "glpn", "zoe_depth"]:
             logging.error(f"Depth estimation model '{self.model_name}' not supported")
             return
 
@@ -93,6 +96,8 @@ class AutoLabelMask:
         logging.info(f"Depth estimation completed for all '{self.model_name}' models.")
 
     def _inference_depth_estimation(self, dataset, model_name, label_field):
+        """Applies depth estimation model to each sample in dataset"""
+
         logging.info(f"Starting depth estimation for HF model '{model_name}'")
         image_processor = AutoImageProcessor.from_pretrained(model_name)
         model = AutoModelForDepthEstimation.from_pretrained(
@@ -117,10 +122,14 @@ class AutoLabelMask:
             )
 
             depth_map = resized_depth.squeeze().cpu().numpy()
+            if self.model_name in ["dpt", "depth_anything", "depth_pro"]:
+                if np.max(depth_map) > 0: # avoid division by zero
+                    depth_map = (255 - depth_map * 255 / np.max(depth_map)).astype("uint8")
+            else:
+                depth_map = (depth_map * 255).astype("uint8")
+            logging.info(f"Saving depth estimation result to field '{out_field}' for sample ID {sample.id}")
 
-            inverted_depth_map = (255 - depth_map * 255 / np.max(depth_map)).astype("uint8")
-
-            sample[out_field] = fo.Heatmap(map=inverted_depth_map)
+            sample[out_field] = fo.Heatmap(map=depth_map)
             sample.save()
 
         for sample in dataset.iter_samples(autosave=True, progress=True):

@@ -5,6 +5,7 @@ SELECTED_WORKFLOW = ["auto_label_mask"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
+    # "name": "SUNRGBD-20",
     "name": "fisheye8k",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
@@ -231,6 +232,11 @@ WORKFLOWS = {
                     "LiheYoung/depth-anything-large-hf",
                     "LiheYoung/depth-anything-small-hf",
                 },
+            },
+            "depth_pro": {
+                "models": {
+                    "apple/DepthPro-hf",
+                }
             },
             "glpn": {
                 "models": {"vinvino02/glpn-nyu",

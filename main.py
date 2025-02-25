@@ -45,12 +45,6 @@ from workflows.auto_label_mask import AutoLabelMask
 
 wandb_run = None  # Init globally to make sure it is available
 
-import os
-
-os.environ["WANDB_MODE"] = "disabled"
-os.environ["WANDB_DISABLED"] = "true"
-
-
 def signal_handler(sig, frame):
     logging.error("You pressed Ctrl+C!")
     try:
@@ -367,33 +361,30 @@ def workflow_auto_label_mask(dataset, dataset_info, config):
         depth_config = config["depth_estimation"]
         seg_config = config["semantic_segmentation"]
 
-        for arch_name, arch_info in depth_config.items():
-            logging.info(f"Processing depth_estimation arch: {arch_name}")
-            mask = AutoLabelMask(
+        for architecture_name, architecture_info in depth_config.items():
+            print(f"Processing depth_estimation arch: {architecture_name}")
+            auto_labeler = AutoLabelMask(
                 dataset=dataset,
                 dataset_info=dataset_info,
-                model_name=arch_name,
+                model_name=architecture_name,
                 task_type="depth_estimation",
-                model_config=arch_info,
+                model_config=architecture_info,
             )
-            mask.run_inference()
+            auto_labeler.run_inference()
 
-        for arch_name, arch_info in seg_config.items():
-            logging.info(f"Processing semantic_segmentation arch: {arch_name}")
-            mask = AutoLabelMask(
+        for architecture_name, architecture_info in seg_config.items():
+            print(f"Processing semantic_segmentation arch: {architecture_name}")
+            auto_labeler = AutoLabelMask(
                 dataset=dataset,
                 dataset_info=dataset_info,
-                model_name=arch_name,
+                model_name=architecture_name,
                 task_type="semantic_segmentation",
-                model_config=arch_info,
+                model_config=architecture_info,
             )
-            mask.run_inference()
-
-        logging.info("workflow_auto_label_mask completed successfully")
-        return dataset
+            auto_labeler .run_inference()
 
     except Exception as e:
-        logging.error(f"Auto-labeling mask workflow failed: {e}", exc_info=True)
+        logging.error(f"Auto-labeling mask workflow failed: {e}")
         raise
 
 
@@ -737,7 +728,6 @@ def main():
 
     # Execute workflows
     dataset, dataset_info = load_dataset(SELECTED_DATASET)
-    dataset = dataset.limit(10)
 
     executor = WorkflowExecutor(
         SELECTED_WORKFLOW, SELECTED_DATASET["name"], dataset, dataset_info
