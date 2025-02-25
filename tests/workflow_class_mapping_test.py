@@ -55,7 +55,6 @@ def test_class_mapping(dataset_v51):
     config = WORKFLOWS["class_mapping"]
     models = config["hf_models_zeroshot_classification"]
 
-
     for model_name in models:
         workflow_class_mapping(dataset_v51, dataset_info, model_name, config)
 
