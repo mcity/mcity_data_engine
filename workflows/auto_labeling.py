@@ -1284,6 +1284,7 @@ class CustomCoDETRObjectDetection:
         inference_settings,
         param_function="inference",
         inference_output_folder="custom_models/CoDETR/Co-DETR/output/inference/",
+        gt_field="ground_truth",
     ):
         """Run inference using trained Co-DETR model and convert results to FiftyOne format"""
 
@@ -1411,7 +1412,13 @@ class CustomCoDETRObjectDetection:
 
         # Run V51 evaluation
         if inference_settings["do_eval"] is True:
-            pass  # TODO Implement V51 evaluation
+            eval_key = f"eval_{self.config_key}"
+            dataset.evaluate_detections(
+                pred_key,
+                gt_field=gt_field,
+                eval_key=eval_key,
+                compute_mAP=True,
+            )
 
     def _run_container(
         self,
