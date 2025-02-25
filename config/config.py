@@ -270,7 +270,7 @@ WORKFLOWS = {
             "Salesforce/blip2-itm-vit-g",
             "openai/clip-vit-large-patch14",
             "google/siglip-so400m-patch14-384",
-            "google/siglip2-base-patch16-224",
+            #"google/siglip2-base-patch16-224",
             "kakaobrain/align-base",
             "BAAI/AltCLIP",
             "CIDAS/clipseg-rd64-refined"
