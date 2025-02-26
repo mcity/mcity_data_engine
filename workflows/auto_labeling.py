@@ -763,10 +763,7 @@ class UltralyticsObjectDetection:
             config["export_dataset_root"], config["v51_dataset_name"]
         )
 
-        self.hf_hub_model_id = (
-            f"{HF_ROOT}/"
-            + f"{config["v51_dataset_name"]}_{config["model_name"]}".replace("/", "_")
-        )
+        self.hf_hub_model_id = ( f"{HF_ROOT}/" + f"{config['v51_dataset_name']}_{config['model_name']}".replace("/", "_") )
 
         self.export_root = "output/models/ultralytics/"
         self.export_folder = os.path.join(self.export_root,self.config["v51_dataset_name"])

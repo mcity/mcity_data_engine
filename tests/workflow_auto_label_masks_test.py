@@ -41,7 +41,7 @@ def deactivate_wandb_sync():
     {   # Test 2: SAM2 with a prompt
         "semantic_segmentation": {
             "sam2": {
-                "prompt_field": "bounding_box_field",
+                "prompt_field": "detections",
                 "models": ["segment-anything-2.1-hiera-tiny-image-torch"]
             }
         },
@@ -56,6 +56,7 @@ def deactivate_wandb_sync():
         }
     },
 ])
+
 def test_auto_label_mask(dataset_v51, workflow_config):
 
     dataset_info = {"name": "fisheye8k_mask_test"}
@@ -64,13 +65,6 @@ def test_auto_label_mask(dataset_v51, workflow_config):
     print(f"[TEST] Dataset Name: {dataset_v51.name}")
     print(f"[TEST] Number of samples: {len(dataset_v51)}")
 
-    # Ensure 'test_prompt' exists
-    prompt_field_name = workflow_config["semantic_segmentation"].get("sam2", {}).get("prompt_field")
-    if prompt_field_name:
-        for sample in dataset_v51:
-            sample[prompt_field_name] = "This is a sample prompt."
-            sample.save()
-            print(f"[DEBUG] Added test_prompt to sample {sample.id}: {sample[prompt_field_name]}")
 
     # Run if valid config
     if workflow_config["semantic_segmentation"] or workflow_config["depth_estimation"]:
