@@ -290,7 +290,7 @@ def workflow_auto_labeling_hf(dataset, hf_dataset, run_config, wandb_activate=Tr
             detector.train(hf_dataset)
         if SUPPORTED_MODES[1] in run_config["mode"]:
             logging.info(f"Running inference for model {run_config['model_name']}")
-            detector.inference()
+            detector.inference(inference_settings=run_config["inference_settings"])
 
     except Exception as e:
         logging.error(f"An error occurred with model {run_config['model_name']}: {e}")
@@ -678,6 +678,9 @@ class WorkflowExecutor:
                                 "image_size": config_model.get("image_size", None),
                                 "n_worker_dataloader": config_autolabel[
                                     "n_worker_dataloader"
+                                ],
+                                "inference_settings": config_autolabel[
+                                    "inference_settings"
                                 ],
                             }
 

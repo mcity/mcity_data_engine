@@ -293,7 +293,10 @@ class ZeroShotObjectDetection:
                     result = results_queue.get_nowait()
 
                     processing_successful = self.process_outputs(
-                        dataset_v51, result, self.object_classes
+                        dataset_v51,
+                        result,
+                        self.object_classes,
+                        self.detection_threshold,
                     )
 
                     # Performance logging
@@ -600,9 +603,7 @@ class ZeroShotObjectDetection:
                 writer.close()
             return run_successful
 
-    def process_outputs(
-        self, dataset_v51, result, object_classes, detection_threshold=0.2
-    ):
+    def process_outputs(self, dataset_v51, result, object_classes, detection_threshold):
         try:
             inputs = result["inputs"]
             outputs = result["outputs"]
@@ -895,14 +896,19 @@ class UltralyticsObjectDetection:
         logging.info(f"Using model {self.model_path} for inference.")
         model = YOLO(self.model_path)
 
+        detection_threshold = inference_settings["detection_threshold"]
         if inference_settings["inference_on_evaluation"] == True:
             INFERENCE_SPLITS = ["val", "test"]
             dataset_eval_view = self.dataset.match_tags(INFERENCE_SPLITS)
             if len(dataset_eval_view) == 0:
                 logging.error(f"Dataset misses splits: {INFERENCE_SPLITS}")
-            dataset_eval_view.apply_model(model, label_field=label_field)
+            dataset_eval_view.apply_model(
+                model, label_field=label_field, confidence_thresh=detection_threshold
+            )
         else:
-            self.dataset.apply_model(model, label_field=label_field)
+            self.dataset.apply_model(
+                model, label_field=label_field, confidence_thresh=detection_threshold
+            )
 
         if inference_settings["do_eval"]:
             results = self.dataset.evaluate_detections(
@@ -1152,7 +1158,10 @@ class HuggingFaceObjectDetection:
         metrics = trainer.evaluate(eval_dataset=hf_dataset[Split.TEST])
         logging.info(f"Model training completed. Evaluation results: {metrics}")
 
-    def inference(self, detection_threshold=0.2, load_from_hf=True):
+    def inference(self, inference_settings, load_from_hf=True):
+
+        detection_threshold = inference_settings["inference_settings"]
+
         torch.cuda.empty_cache()
         # Load trained model from Hugging Face
         load_from_hf_successful = None
@@ -1587,6 +1596,7 @@ class CustomCoDETRObjectDetection:
         root_dir_samples = sample.filepath
 
         # Convert results into V51 file format
+        detection_threshold = inference_settings["inference_settings"]
         pred_key = f"pred_od_{self.config_key}"
         for key, value in tqdm(data.items(), desc="Processing Co-DETR detection"):
             try:
@@ -1604,7 +1614,7 @@ class CustomCoDETRObjectDetection:
                     if len(class_detections) > 0:
                         objects_class = class_ids_and_names[class_id]
                         for detection in class_detections:
-
+                            confidence = detection[4]
                             detection_v51 = fo.Detection(
                                 label=objects_class[1],
                                 bounding_box=[
@@ -1613,9 +1623,10 @@ class CustomCoDETRObjectDetection:
                                     (detection[2] - detection[0]) / img_width,
                                     (detection[3] - detection[1]) / img_height,
                                 ],
-                                confidence=detection[4],
+                                confidence=confidence,
                             )
-                            detections_v51.append(detection_v51)
+                            if confidence >= detection_threshold:
+                                detections_v51.append(detection_v51)
 
                 sample[pred_key] = fo.Detections(detections=detections_v51)
                 sample.save()
