@@ -116,7 +116,7 @@ def test_hf_object_detection(dataset_v51, dataset_hf, mode):
             dataset_v51, dataset_hf, run_config, wandb_activate=False
         )
 
-        if mode is not "train":
+        if mode != "train":
             # Check results
             # Get fields with predictions
             predictions_fields = []
