@@ -3,11 +3,15 @@ import logging
 import os
 import re
 from typing import List, Union
+from glob import glob
+import numpy as np
+from PIL import Image
 
 import fiftyone as fo
 import yaml
 from fiftyone.utils.huggingface import load_from_hub
 from nuscenes.nuscenes import NuScenes
+import fiftyone as fo
 
 from config.config import ACCEPTED_SPLITS, GLOBAL_SEED, NUM_WORKERS, PERSISTENT
 
@@ -551,3 +555,42 @@ def load_mars_multitraversal(dataset_info):
     _post_process_dataset(dataset)
 
     return dataset
+    return _post_process_dataset(dataset)
+
+def load_sunrgbd_20(dataset_info):
+    dataset_name = dataset_info["name"]
+    dataset_root = dataset_info["local_path"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info(f"Existing dataset {dataset_name} was loaded.")
+        return dataset
+    else:
+        dataset = fo.Dataset(dataset_name)
+        dataset.persistent = True
+
+    scene_dirs = glob("SUNRGBD/k*/*/*")[:20]
+    samples = []
+    for scene_dir in scene_dirs:
+        image_files = glob(os.path.join(scene_dir, "image", "*"))
+        depth_files = glob(os.path.join(scene_dir, "depth_bfx", "*"))
+
+        if not image_files or not depth_files:
+            continue
+
+        image_path = image_files[0]
+        depth_path = depth_files[0]
+
+        depth_map = np.array(Image.open(depth_path))
+        if depth_map.max() > 0:
+            depth_map = (depth_map * 255 / depth_map.max()).astype("uint8")
+
+        sample = fo.Sample(
+            filepath=image_path,
+            gt_depth=fo.Heatmap(map=depth_map),
+        )
+        samples.append(sample)
+
+    dataset.add_samples(samples)
+
+    return _post_process_dataset(dataset)
