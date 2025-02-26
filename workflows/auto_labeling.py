@@ -892,29 +892,37 @@ class UltralyticsObjectDetection:
                 logging.error(f"Failed to load or download model: {str(e)}.")
                 return False
 
-        label_field = f"pred_od_{self.config['model_name']}_{dataset_name}"
+        pred_key = f"pred_od_{self.config['model_name']}_{dataset_name}"
         logging.info(f"Using model {self.model_path} for inference.")
         model = YOLO(self.model_path)
 
         detection_threshold = inference_settings["detection_threshold"]
-        if inference_settings["inference_on_evaluation"] == True:
+        if inference_settings["inference_on_evaluation"] is True:
             INFERENCE_SPLITS = ["val", "test"]
             dataset_eval_view = self.dataset.match_tags(INFERENCE_SPLITS)
             if len(dataset_eval_view) == 0:
                 logging.error(f"Dataset misses splits: {INFERENCE_SPLITS}")
             dataset_eval_view.apply_model(
-                model, label_field=label_field, confidence_thresh=detection_threshold
+                model, label_field=pred_key, confidence_thresh=detection_threshold
             )
         else:
             self.dataset.apply_model(
-                model, label_field=label_field, confidence_thresh=detection_threshold
+                model, label_field=pred_key, confidence_thresh=detection_threshold
             )
 
         if inference_settings["do_eval"]:
-            results = self.dataset.evaluate_detections(
-                label_field,
+            eval_key = f"eval_{self.config['model_name']}_{dataset_name}"
+
+            if inference_settings["inference_on_evaluation"] is True:
+                dataset_view = self.dataset.match_tags(["test", "val"])
+            else:
+                dataset_view = self.dataset
+
+            dataset_view.evaluate_detections(
+                pred_key,
                 gt_field=gt_field,
-                eval_key=f"eval_{self.config['model_name']}_{dataset_name}",
+                eval_key=eval_key,
+                compute_mAP=True,
             )
 
 
@@ -1158,7 +1166,7 @@ class HuggingFaceObjectDetection:
         metrics = trainer.evaluate(eval_dataset=hf_dataset[Split.TEST])
         logging.info(f"Model training completed. Evaluation results: {metrics}")
 
-    def inference(self, inference_settings, load_from_hf=True):
+    def inference(self, inference_settings, load_from_hf=True, gt_field="ground_truth"):
 
         detection_threshold = inference_settings["inference_settings"]
 
@@ -1225,11 +1233,19 @@ class HuggingFaceObjectDetection:
         model = model.to(device)
         model.eval()
 
-        pred_key = re.sub(r"[\W-]+", "_", "pred_od_" + self.model_name)
+        pred_key = re.sub(
+            r"[\W-]+", "_", "pred_od_" + self.model_name + "_" + self.dataset_name
+        )
+
+        if inference_settings["inference_on_evaluation"] is True:
+            INFERENCE_SPLITS = ["val", "test"]
+            dataset_eval_view = self.dataset.match_tags(INFERENCE_SPLITS)
+        else:
+            dataset_eval_view = self.dataset
 
         # TODO Improve GPU utilization similar to ZeroShotInference
         with torch.amp.autocast("cuda"), torch.inference_mode():
-            for sample in self.dataset.iter_samples(progress=True, autosave=True):
+            for sample in dataset_eval_view.iter_samples(progress=True, autosave=True):
                 image_width = sample.metadata.width
                 image_height = sample.metadata.height
                 img_filepath = sample.filepath
@@ -1269,6 +1285,21 @@ class HuggingFaceObjectDetection:
                     detections.append(detection)
 
                 sample[pred_key] = fo.Detections(detections=detections)
+
+        if inference_settings["do_eval"] is True:
+            eval_key = f"eval_{self.config['model_name']}_{self.dataset_name}"
+
+            if inference_settings["inference_on_evaluation"] is True:
+                dataset_view = self.dataset.match_tags(["test", "val"])
+            else:
+                dataset_view = self.dataset
+
+            dataset_view.evaluate_detections(
+                pred_key,
+                gt_field=gt_field,
+                eval_key=eval_key,
+                compute_mAP=True,
+            )
 
 
 class CustomCoDETRObjectDetection:
@@ -1597,7 +1628,7 @@ class CustomCoDETRObjectDetection:
 
         # Convert results into V51 file format
         detection_threshold = inference_settings["inference_settings"]
-        pred_key = f"pred_od_{self.config_key}"
+        pred_key = f"pred_od_{self.config_key}_{self.dataset_name}"
         for key, value in tqdm(data.items(), desc="Processing Co-DETR detection"):
             try:
                 # Get filename
@@ -1637,7 +1668,7 @@ class CustomCoDETRObjectDetection:
 
         # Run V51 evaluation
         if inference_settings["do_eval"] is True:
-            eval_key = f"eval_{self.config_key}"
+            eval_key = f"eval_{self.config_key}_{self.dataset_name}"
 
             if inference_settings["inference_on_evaluation"] is True:
                 dataset_view = dataset.match_tags(["test", "val"])
