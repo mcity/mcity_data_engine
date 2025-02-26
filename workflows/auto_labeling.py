@@ -1168,8 +1168,6 @@ class HuggingFaceObjectDetection:
 
     def inference(self, inference_settings, load_from_hf=True, gt_field="ground_truth"):
 
-        detection_threshold = inference_settings["inference_settings"]
-
         torch.cuda.empty_cache()
         # Load trained model from Hugging Face
         load_from_hf_successful = None
@@ -1243,7 +1241,8 @@ class HuggingFaceObjectDetection:
         else:
             dataset_eval_view = self.dataset
 
-        # TODO Improve GPU utilization similar to ZeroShotInference
+        detection_threshold = inference_settings["detection_threshold"]
+
         with torch.amp.autocast("cuda"), torch.inference_mode():
             for sample in dataset_eval_view.iter_samples(progress=True, autosave=True):
                 image_width = sample.metadata.width
@@ -1287,7 +1286,9 @@ class HuggingFaceObjectDetection:
                 sample[pred_key] = fo.Detections(detections=detections)
 
         if inference_settings["do_eval"] is True:
-            eval_key = f"eval_{self.config['model_name']}_{self.dataset_name}"
+            eval_key = re.sub(
+                r"[\W-]+", "_", "eval_" + self.model_name + "_" + self.dataset_name
+            )
 
             if inference_settings["inference_on_evaluation"] is True:
                 dataset_view = self.dataset.match_tags(["test", "val"])
