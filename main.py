@@ -290,7 +290,7 @@ def workflow_auto_labeling_hf(dataset, hf_dataset, run_config, wandb_activate=Tr
             detector.train(hf_dataset)
         if SUPPORTED_MODES[1] in run_config["mode"]:
             logging.info(f"Running inference for model {run_config['model_name']}")
-            detector.inference()
+            detector.inference(inference_settings=run_config["inference_settings"])
 
     except Exception as e:
         logging.error(f"An error occurred with model {run_config['model_name']}: {e}")
@@ -303,43 +303,40 @@ def workflow_auto_labeling_hf(dataset, hf_dataset, run_config, wandb_activate=Tr
 
 
 def workflow_auto_labeling_custom_codetr(
-    dataset_info, run_config, dataset=None, detector=None, wandb_activate=True
+    dataset, dataset_info, run_config, wandb_activate=True
 ):
-    try:
-        if detector is None:
-            # Export dataset into the format Co-DETR expects
-            try:
-                if dataset is None:
-                    logging.error(
-                        f"Dataset is '{dataset}' but needs to be passed for dataset conversion."
-                    )
-                detector = CustomCoDETRObjectDetection(
-                    dataset,
-                    dataset_info["name"],
-                    dataset_info["v51_splits"],
-                    run_config["export_dataset_root"],
-                )
-                detector.convert_data()
-            except Exception as e:
-                logging.error(f"Error during CoDETR dataset export: {e}")
 
+    try:
         wandb_exit_code = 0
         wandb_run = wandb_init(
-            run_name="MODEL_NAME",
-            project_name="Selection by Embedding",
+            run_name=run_config["config"],
+            project_name="Co-DETR Auto Labeling",
             dataset_name=dataset_info["name"],
             config=run_config,
             wandb_activate=wandb_activate,
         )
 
-        detector.update_config_file(
-            dataset_name=dataset_info["name"], config_file=run_config["codetr_config"]
-        )
-        detector.train(
-            run_config["codetr_config"],
-            run_config["n_gpus"],
-            run_config["container_tool"],
-        )
+        mode = run_config["mode"]
+
+        detector = CustomCoDETRObjectDetection(dataset, dataset_info, run_config)
+        if "train" in mode:
+            detector.convert_data()
+            detector.update_config_file(
+                dataset_name=dataset_info["name"],
+                config_file=run_config["config"],
+                max_epochs=run_config["epochs"],
+            )
+            detector.train(
+                run_config["config"], run_config["n_gpus"], run_config["container_tool"]
+            )
+        if "inference" in mode:
+            detector.run_inference(
+                dataset,
+                run_config["config"],
+                run_config["n_gpus"],
+                run_config["container_tool"],
+                run_config["inference_settings"],
+            )
     except Exception as e:
         logging.error(f"Error during CoDETR training: {e}")
         wandb_exit_code = 1
@@ -681,6 +678,9 @@ class WorkflowExecutor:
                                 "n_worker_dataloader": config_autolabel[
                                     "n_worker_dataloader"
                                 ],
+                                "inference_settings": config_autolabel[
+                                    "inference_settings"
+                                ],
                             }
 
                             # Workflow
@@ -697,33 +697,22 @@ class WorkflowExecutor:
                             "export_dataset_root": config_codetr["export_dataset_root"],
                             "container_tool": config_codetr["container_tool"],
                             "n_gpus": config_codetr["n_gpus"],
+                            "mode": config_autolabel["mode"],
+                            "epochs": config_autolabel["epochs"],
+                            "inference_settings": config_autolabel[
+                                "inference_settings"
+                            ],
+                            "config": None,
                         }
-                        codetr_models = config_codetr["configs"]
+                        codetr_configs = config_codetr["configs"]
 
-                        # Export dataset into the format Co-DETR expects
-                        try:
-                            detector = CustomCoDETRObjectDetection(
-                                dataset,
-                                dataset_info["name"],
-                                dataset_info["v51_splits"],
-                                config_codetr["export_dataset_root"],
-                            )
-                            detector.convert_data()
-                        except Exception as e:
-                            logging.error(f"Error during CoDETR dataset export: {e}")
-
-                        for MODEL_NAME in (
-                            pbar := tqdm(codetr_models, desc="CoDETR training")
+                        for config in tqdm(
+                            codetr_configs, desc="Processing Co-DETR configurations"
                         ):
-                            # Status Update
-                            pbar.set_description(f"Co-DETR model {MODEL_NAME}")
-
-                            # Update config
-                            run_config["codetr_config"] = MODEL_NAME
-
-                            # Workflow
+                            pbar.set_description(f"Co-DETR model {MODEL_NAME}")                          
+                            run_config["config"] = config
                             workflow_auto_labeling_custom_codetr(
-                                self.dataset_info, run_config
+                                self.dataset, self.dataset_info, run_config
                             )
                     if SUPPORTED_MODEL_SOURCES[2] in selected_model_source:
                         # Ultralytics Models
