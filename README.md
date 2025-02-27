@@ -14,8 +14,6 @@
 
 The Mcity Data Engine is an essential tool in the Mcity makerspace for transportation innovators making AI algorithms and seeking actionable data insights through machine learning. Details on the Data Engine can be found in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki).
 
-
-
 <p align='center'>
 
 <a target="_blank" rel="noopener noreferrer" href="https://colab.research.google.com/github/mcity/mcity_data_engine/blob/main/fish_eye_8k_colab.ipynb">
@@ -55,15 +53,22 @@ width="15%">
 </a>
 </p>
 
+On February 24 2025, Daniel Bogdoll held a talk about the initial release of the Mcity Data Engine in Ann Arbor, Michigan. The recording provides insights into the general architecture, it's features and eco-system integrations, and demonstrates successful data curation and model training for improved detection of vulnerable road users (VRU):
+
+<div align="center">
+      <a href="https://www.youtube.com/watch?v=ciT8YwQCHwo">
+         <img src="https://github.com/user-attachments/assets/dcd2cd42-9cc0-4cf0-abab-a4d4ebd14198" style="width:60%;">
+      </a>
+</div>
+
 ## Online Demo: Data Selection with Embeddings
 
-To get a first feel of the Mcity Data Engine, we provide an online demo in a [Google Colab](https://colab.research.google.com/github/mcity/mcity_data_engine/blob/main/fish_eye_8k_colab.ipynb) environment. We will load the [Fisheye8K dataset](https://huggingface.co/datasets/Voxel51/fisheye8k) and demonstrate the Mcity Data Engine workflow [Embedding Selection](https://github.com/mcity/mcity_data_engine/wiki/Workflows#embedding-selection). This workflow leverage a set of models to compute image embeddings. Pre-computed embeddings will be loaded from [Hugging Face](https://huggingface.co/mcity-data-engine) and used to determine which samples are both representative and rare. This subset will finally be visualized in the Voxel51 UI, highlighting how often a sample was picked by a model.
+To get a first feel of the Mcity Data Engine, we provide an online demo in a [Google Colab](https://colab.research.google.com/github/mcity/mcity_data_engine/blob/main/fish_eye_8k_colab.ipynb) environment. We will load the [Fisheye8K dataset](https://huggingface.co/datasets/Voxel51/fisheye8k) and demonstrate the Mcity Data Engine workflow [Embedding Selection](https://github.com/mcity/mcity_data_engine/wiki/Workflows#embedding-selection). This workflow leverages a set of models to compute image embeddings which are used to determine which samples are both representative and rare. This subset will finally be visualized in the Voxel51 UI, highlighting how often a sample was picked by a model.
 
 Keep in mind that most workflows of the Mcity Data Engine require a more powerful GPU, so the possibilities within the Colab environment are limited. Other workflows might not work.
 
 Online demo on Google Colab: [Mcity Data Engine Web Demo](https://colab.research.google.com/github/mcity/mcity_data_engine/blob/main/fish_eye_8k_colab.ipynb
 )
-
 
 ## Local Execution
 

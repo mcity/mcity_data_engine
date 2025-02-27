@@ -1,13 +1,12 @@
 import os
 
 # Selection from WORKFLOWS
-
-
 SELECTED_WORKFLOW = ["embedding_selection"]
+
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "mcity_fisheye_2000",
+    "name": "fisheye8k",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
@@ -67,10 +66,10 @@ WORKFLOWS = {
     "auto_labeling": {
         "mode": ["inference"],  # "train" and "inference" supported
         "model_source": [
-            "ultralytics"
+            "custom_codetr"
         ],  # "hf_models_objectdetection" and "custom_codetr" and "ultralytics" supported
         "n_worker_dataloader": 3,
-        "epochs": 32,
+        "epochs": 36,
         "early_stop_patience": 5,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -80,6 +79,7 @@ WORKFLOWS = {
             "do_eval": True,
             "inference_on_evaluation": True,
             "model_hf": None,  # None (automatic selection) or Hugging Face ID
+            "detection_threshold": 0.2,
         },
         "hf_models_objectdetection": {  # HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
             "microsoft/conditional-detr-resnet-50": {"batch_size": 1},
