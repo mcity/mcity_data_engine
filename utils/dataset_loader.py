@@ -20,7 +20,7 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
         loader_function = dataset_info.get("loader_fct")
         dataset = globals()[loader_function](dataset_info)
         n_samples_original = len(dataset)
-        n_samples_requested = int(selected_dataset["n_samples"])
+        n_samples_requested = selected_dataset["n_samples"]
 
         if (
             n_samples_requested is not None
