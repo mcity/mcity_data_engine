@@ -10,6 +10,7 @@ from fiftyone.utils.huggingface import load_from_hub
 from nuscenes.nuscenes import NuScenes
 
 from config.config import ACCEPTED_SPLITS, GLOBAL_SEED, NUM_WORKERS, PERSISTENT
+from utils.sample_field_operations import rename_sample_field
 
 
 def load_dataset(selected_dataset: str) -> fo.Dataset:
@@ -19,7 +20,7 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
         loader_function = dataset_info.get("loader_fct")
         dataset = globals()[loader_function](dataset_info)
         n_samples_original = len(dataset)
-        n_samples_requested = selected_dataset["n_samples"]
+        n_samples_requested = int(selected_dataset["n_samples"])
 
         if (
             n_samples_requested is not None
@@ -30,12 +31,11 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
             split_views = []
 
             # Get split distribution
-            n_samples = len(dataset)
             tags_count_dataset_dict = dataset.count_sample_tags()
             for tag in tags_count_dataset_dict:
                 if tag in ACCEPTED_SPLITS:
                     count = tags_count_dataset_dict[tag]
-                    percentage = count / n_samples
+                    percentage = count / n_samples_original
                     n_split_samples = int(n_samples_requested * percentage)
                     logging.info(f"Split {tag}: {n_split_samples} samples")
 
@@ -57,9 +57,6 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
                 logging.warning(
                     f"Dataset size was reduced from {len(dataset)} to {len(combined_view)} samples."
                 )
-                # FIXME Returning a view instead of a dataset introduces problems
-                # Return a dataset, maybe name it {dataset.name}-{len(view)}
-                # Or detect at some places if it is a view and access the inderlying dataset instead
                 return combined_view, dataset_info
 
     else:
@@ -195,13 +192,13 @@ def _align_ground_truth(dataset, gt_field="ground_truth"):
         }
         if len(label_fields) == 1:
             gt_label_old = next(iter(label_fields))
-            dataset.rename_sample_field(gt_label_old, gt_field)
+            rename_sample_field(dataset, gt_label_old, gt_field)
             logging.warning(
                 f"Label field '{gt_label_old}' renamed to '{gt_field}' for training."
             )
         elif len(label_fields) > 1:
             logging.warning(
-                f"The dataset has {len(label_fields)} fields with detections: {label_fields}. Rename one to {gt_field} with the command 'dataset.rename_sample_field(<field>, {gt_field})' to use it for training."
+                f"The dataset has {len(label_fields)} fields with detections: {label_fields}. Rename one to {gt_field} with the command 'dataset.rename_sample_field(<your_field>, {gt_field})' to use it for training."
             )
 
 

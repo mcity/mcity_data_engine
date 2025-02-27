@@ -14,6 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from config.config import GLOBAL_SEED, HF_DO_UPLOAD, HF_ROOT, NUM_WORKERS
+from utils.sample_field_operations import add_sample_field
 
 """
 Implementing Voxel51 brain methods.
@@ -79,11 +80,10 @@ class EmbeddingSelection:
         )
 
         # Add fields to dataset
-        self.dataset.add_sample_field(BRAIN_TAXONOMY["field"], fo.StringField)
-        self.dataset.add_sample_field(BRAIN_TAXONOMY["field_model"], fo.StringField)
-        self.dataset.add_sample_field(
-            BRAIN_TAXONOMY["field_count"], fo.FloatField
-        )  # Float instead of Int for visualization in US
+        add_sample_field(self.dataset, BRAIN_TAXONOMY["field"], fo.StringField)
+        add_sample_field(self.dataset, BRAIN_TAXONOMY["field_model"], fo.StringField)
+        # Float instead of Int for visualization style in UI, color gradient instead of color palette
+        add_sample_field(self.dataset, BRAIN_TAXONOMY["field_count"], fo.FloatField)
 
         # Init count for samples only once. Is intilized with None by add_sample_field
         test_sample = self.dataset.first()
