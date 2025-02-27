@@ -796,6 +796,10 @@ class UltralyticsObjectDetection:
 
         logging.info("Exporting data for training with Ultralytics")
         classes = dataset.distinct(f"{label_field}.detections.label")
+
+        # Make directory
+        os.makedirs(ultralytics_data_path, exist_ok=True)
+
         for split in ACCEPTED_SPLITS:
             split_view = dataset.match_tags(split)
 
@@ -928,6 +932,71 @@ class UltralyticsObjectDetection:
             )
 
 
+def transform_batch_standalone(
+    batch,
+    image_processor,
+    do_convert_annotations=True,
+    return_pixel_mask=False,
+):
+    """Apply format annotations in COCO format for object detection task. Outside of class so it can be pickled."""
+    images = []
+    annotations = []
+
+    for image_path, annotation in zip(batch["image_path"], batch["objects"]):
+        image = Image.open(image_path).convert("RGB")
+        image_np = np.array(image)
+        images.append(image_np)
+
+        coco_annotations = []
+        for i, bbox in enumerate(annotation["bbox"]):
+
+            # Conversion from HF dataset bounding boxes to DETR:
+            # Input: HF dataset bbox is COCO (top_left_x, top_left_y, width, height) in absolute coordinates
+            # Output:
+            # DETR expects COCO (top_left_x, top_left_y, width, height) in absolute coordinates if 'do_convert_annotations == True'
+            # DETR expects YOLO (center_x, center_y, width, height) in relative coordinates between [0,1] if 'do_convert_annotations == False'
+
+            if do_convert_annotations == False:
+                x, y, w, h = bbox
+                img_height, img_width = image_np.shape[:2]
+                center_x = (x + w / 2) / img_width
+                center_y = (y + h / 2) / img_height
+                width = w / img_width
+                height = h / img_height
+                bbox = [center_x, center_y, width, height]
+
+                # Ensure bbox values are within the expected range
+                assert all(0 <= coord <= 1 for coord in bbox), f"Invalid bbox: {bbox}"
+
+                logging.debug(
+                    f"Converted {[x, y, w, h]} to {[center_x, center_y, width, height]} with 'do_convert_annotations' = {do_convert_annotations}"
+                )
+
+            coco_annotation = {
+                "image_id": annotation["image_id"],
+                "bbox": bbox,
+                "category_id": annotation["category_id"][i],
+                "area": annotation["area"][i],
+                "iscrowd": 0,
+            }
+            coco_annotations.append(coco_annotation)
+        detr_annotation = {
+            "image_id": annotation["image_id"],
+            "annotations": coco_annotations,
+        }
+        annotations.append(detr_annotation)
+
+        # Apply the image processor transformations: resizing, rescaling, normalization
+        result = image_processor(
+            images=images, annotations=annotations, return_tensors="pt"
+        )
+
+    if not return_pixel_mask:
+        result.pop("pixel_mask", None)
+
+    return result
+
+
 class HuggingFaceObjectDetection:
     def __init__(
         self,
@@ -958,72 +1027,6 @@ class HuggingFaceObjectDetection:
         self.categories = dataset.default_classes
         self.id2label = {index: x for index, x in enumerate(self.categories, start=0)}
         self.label2id = {v: k for k, v in self.id2label.items()}
-
-    def transform_batch(
-        self,
-        batch,
-        image_processor,
-        return_pixel_mask=False,
-    ):
-        """Apply format annotations in COCO format for object detection task"""
-        images = []
-        annotations = []
-
-        for image_path, annotation in zip(batch["image_path"], batch["objects"]):
-            image = Image.open(image_path).convert("RGB")
-            image_np = np.array(image)
-            images.append(image_np)
-
-            coco_annotations = []
-            for i, bbox in enumerate(annotation["bbox"]):
-
-                # Conversion from HF dataset bounding boxes to DETR:
-                # Input: HF dataset bbox is COCO (top_left_x, top_left_y, width, height) in absolute coordinates
-                # Output:
-                # DETR expects COCO (top_left_x, top_left_y, width, height) in absolute coordinates if 'do_convert_annotations == True'
-                # DETR expects YOLO (center_x, center_y, width, height) in relative coordinates between [0,1] if 'do_convert_annotations == False'
-
-                if self.do_convert_annotations == False:
-                    x, y, w, h = bbox
-                    img_height, img_width = image_np.shape[:2]
-                    center_x = (x + w / 2) / img_width
-                    center_y = (y + h / 2) / img_height
-                    width = w / img_width
-                    height = h / img_height
-                    bbox = [center_x, center_y, width, height]
-
-                    # Ensure bbox values are within the expected range
-                    assert all(
-                        0 <= coord <= 1 for coord in bbox
-                    ), f"Invalid bbox: {bbox}"
-
-                    logging.debug(
-                        f"Converted {[x, y, w, h]} to {[center_x, center_y, width, height]} with 'do_convert_annotations' = {self.do_convert_annotations}"
-                    )
-
-                coco_annotation = {
-                    "image_id": annotation["image_id"],
-                    "bbox": bbox,
-                    "category_id": annotation["category_id"][i],
-                    "area": annotation["area"][i],
-                    "iscrowd": 0,
-                }
-                coco_annotations.append(coco_annotation)
-            detr_annotation = {
-                "image_id": annotation["image_id"],
-                "annotations": coco_annotations,
-            }
-            annotations.append(detr_annotation)
-
-            # Apply the image processor transformations: resizing, rescaling, normalization
-            result = image_processor(
-                images=images, annotations=annotations, return_tensors="pt"
-            )
-
-        if not return_pixel_mask:
-            result.pop("pixel_mask", None)
-
-        return result
 
     def collate_fn(self, batch):
         """
@@ -1074,14 +1077,14 @@ class HuggingFaceObjectDetection:
             )
 
         train_transform_batch = partial(
-            self.transform_batch,
-            # transform=None,  # TODO train_augmentation_and_transform,
+            transform_batch_standalone,
             image_processor=image_processor,
+            do_convert_annotations=self.do_convert_annotations,
         )
         val_test_transform_batch = partial(
-            self.transform_batch,
-            # transform=None,  # TODO validation_transform,
+            transform_batch_standalone,
             image_processor=image_processor,
+            do_convert_annotations=self.do_convert_annotations,
         )
 
         hf_dataset[Split.TRAIN] = hf_dataset[Split.TRAIN].with_transform(
@@ -1112,7 +1115,7 @@ class HuggingFaceObjectDetection:
 
         if overwrite_output == True:
             logging.warning(
-                f"Training will overwrite existing results in {self.model_root}"
+                f"Training will potentially overwrite existing results in {self.model_root}"
             )
 
         training_args = TrainingArguments(
@@ -1325,6 +1328,8 @@ class CustomCoDETRObjectDetection:
 
         # Check if folder already exists
         if not os.path.exists(export_dir):
+            # Make directory
+            os.makedirs(export_dir, exist_ok=True)
             logging.info(f"Exporting data to {export_dir}")
             splits = [
                 "train",
