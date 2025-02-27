@@ -49,9 +49,9 @@ WORKFLOWS = {
         "early_stop_patience": 5,
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
             "Padim": {},
-            "EfficientAd": {},
-            "Draem": {},
-            "Cfa": {},
+            # "EfficientAd": {},
+            # "Draem": {},
+            # "Cfa": {},
         },
         "anomalib_eval_metrics": [  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/metrics/index.html. Focus on standard metrics, computation of others can be expensive
             "AUPR",
