@@ -50,6 +50,7 @@ from config.config import (
     WORKFLOWS,
 )
 from utils.logging import configure_logging
+from utils.sample_field_operations import add_sample_field
 
 
 # Handling timeouts
@@ -157,7 +158,8 @@ class ZeroShotObjectDetection:
 
                     # Copy all detections from stored dataset into our dataset
                     detections = temp_dataset.values("detections.detections")
-                    dataset_v51.add_sample_field(
+                    add_sample_field(
+                        dataset_v51,
                         pred_key,
                         fo.EmbeddedDocumentField,
                         embedded_doc_type=fo.Detections,
@@ -769,7 +771,9 @@ class UltralyticsObjectDetection:
         )
 
         self.export_root = "output/models/ultralytics/"
-        self.export_folder = os.path.join(self.export_root,self.config["v51_dataset_name"])
+        self.export_folder = os.path.join(
+            self.export_root, self.config["v51_dataset_name"]
+        )
 
         self.model_path = os.path.join(
             self.export_folder, self.config["model_name"], "weights", "best.pt"
@@ -847,8 +851,10 @@ class UltralyticsObjectDetection:
             # Use model manually defined in config.
             # This way models can be used for inference which were trained on a different dataset
             # Parse model path components
-            _, model_name = model_hf.split('/')  # e.g. 'mcity_fisheye_2100_yolo11x'
-            dataset_name, model_type = model_name.rsplit('_', 1)  # e.g. 'mcity_fisheye_2100', 'yolo11x'
+            _, model_name = model_hf.split("/")  # e.g. 'mcity_fisheye_2100_yolo11x'
+            dataset_name, model_type = model_name.rsplit(
+                "_", 1
+            )  # e.g. 'mcity_fisheye_2100', 'yolo11x'
 
             # Set up directories
             download_dir = os.path.join(self.export_root, dataset_name, model_type)
@@ -858,10 +864,10 @@ class UltralyticsObjectDetection:
             os.makedirs(os.path.join(download_dir, "weights"), exist_ok=True)
 
             file_path = hf_hub_download(
-                    repo_id=model_hf,
-                    filename="best.pt",
-                    local_dir=download_dir,
-                )
+                repo_id=model_hf,
+                filename="best.pt",
+                local_dir=download_dir,
+            )
         else:
             # Automatically dertermine model based on dataset
             dataset_name = self.config["v51_dataset_name"]
