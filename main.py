@@ -449,9 +449,9 @@ def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activat
     return True
 
 
-def cleanup_memory():
+def cleanup_memory(do_extensive_cleanup=False):
     logging.info("Starting memory cleanup")
-    """Clean up memory after workflow execution"""
+    """Clean up memory after workflow execution. 'do_extensive_cleanup' recommended for multiple training sessions in a row."""
     # Clear CUDA cache
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -459,22 +459,24 @@ def cleanup_memory():
     # Force garbage collection
     gc.collect()
 
-    # Clear any leftover tensors
-    n_deleted_torch_objects = 0
-    for obj in tqdm(
-        gc.get_objects(), desc="Deleting objects from Python Garbage Collector"
-    ):
-        try:
-            if torch.is_tensor(obj):
-                del obj
-                n_deleted_torch_objects += 1
-        except:
-            pass
+    if do_extensive_cleanup:
 
-    logging.info(f"Deleted {n_deleted_torch_objects} torch objects")
+        # Clear any leftover tensors
+        n_deleted_torch_objects = 0
+        for obj in tqdm(
+            gc.get_objects(), desc="Deleting objects from Python Garbage Collector"
+        ):
+            try:
+                if torch.is_tensor(obj):
+                    del obj
+                    n_deleted_torch_objects += 1
+            except:
+                pass
 
-    # Final garbage collection
-    gc.collect()
+        logging.info(f"Deleted {n_deleted_torch_objects} torch objects")
+
+        # Final garbage collection
+        gc.collect()
 
 
 class WorkflowExecutor:
@@ -506,7 +508,7 @@ class WorkflowExecutor:
                     parameter_group = "mcity"
                     parameters = WORKFLOWS["aws_download"].get(parameter_group, None)
                     if parameter_group == "mcity":
-                        dataset, dataset_name = workflow_aws_download(parameters)
+                        dataset, dataset_name, _ = workflow_aws_download(parameters)
                     else:
                         logging.error(
                             f"The parameter group {parameter_group} is not supported. As AWS are highly specific, please provide a separate set of parameters and a workflow."
@@ -514,10 +516,7 @@ class WorkflowExecutor:
 
                     # Select downloaded dataset for further workflows if configured
                     if dataset is not None:
-                        if (
-                            WORKFLOWS["aws_download"]["selected_dataset_overwrite"]
-                            == True
-                        ):
+                        if parameters["selected_dataset_overwrite"] == True:
 
                             dataset_info = {
                                 "name": dataset_name,
@@ -710,6 +709,7 @@ class WorkflowExecutor:
                         for config in tqdm(
                             codetr_configs, desc="Processing Co-DETR configurations"
                         ):
+                            pbar.set_description(f"Co-DETR model {MODEL_NAME}")                          
                             run_config["config"] = config
                             workflow_auto_labeling_custom_codetr(
                                 self.dataset, self.dataset_info, run_config

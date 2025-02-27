@@ -52,6 +52,7 @@ from config.config import (
     WORKFLOWS,
 )
 from utils.logging import configure_logging
+from utils.sample_field_operations import add_sample_field
 
 
 # Handling timeouts
@@ -159,7 +160,8 @@ class ZeroShotObjectDetection:
 
                     # Copy all detections from stored dataset into our dataset
                     detections = temp_dataset.values("detections.detections")
-                    dataset_v51.add_sample_field(
+                    add_sample_field(
+                        dataset_v51,
                         pred_key,
                         fo.EmbeddedDocumentField,
                         embedded_doc_type=fo.Detections,
