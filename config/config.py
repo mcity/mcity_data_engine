@@ -268,7 +268,7 @@ WORKFLOWS = {
 # Global settings
 PERSISTENT = True  # If V51 database is stored
 ACCEPTED_SPLITS = ["train", "val", "test"]
-cpu_count = psutil.Process().cpu_affinity()
+cpu_count = len(psutil.Process().cpu_affinity())
 NUM_WORKERS_MAX = 32
 NUM_WORKERS = NUM_WORKERS_MAX if cpu_count > NUM_WORKERS_MAX else cpu_count
 GLOBAL_SEED = 0
