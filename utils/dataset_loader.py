@@ -11,7 +11,6 @@ import fiftyone as fo
 import yaml
 from fiftyone.utils.huggingface import load_from_hub
 from nuscenes.nuscenes import NuScenes
-import fiftyone as fo
 
 from config.config import ACCEPTED_SPLITS, GLOBAL_SEED, NUM_WORKERS, PERSISTENT
 
@@ -555,21 +554,21 @@ def load_mars_multitraversal(dataset_info):
     _post_process_dataset(dataset)
 
     return dataset
-    return _post_process_dataset(dataset)
 
-def load_sunrgbd_20(dataset_info):
+def load_sunrgbd(dataset_info):
     dataset_name = dataset_info["name"]
     dataset_root = dataset_info["local_path"]
 
     if dataset_name in fo.list_datasets():
         dataset = fo.load_dataset(dataset_name)
         logging.info(f"Existing dataset {dataset_name} was loaded.")
-        return dataset
+        freshly_created = False
+
     else:
         dataset = fo.Dataset(dataset_name)
-        dataset.persistent = True
+        freshly_created = True
 
-    scene_dirs = glob("SUNRGBD/k*/*/*")[:20]
+    scene_dirs = glob("SUNRGBD/k*/*/*")
     samples = []
     for scene_dir in scene_dirs:
         image_files = glob(os.path.join(scene_dir, "image", "*"))
@@ -593,4 +592,7 @@ def load_sunrgbd_20(dataset_info):
 
     dataset.add_samples(samples)
 
-    return _post_process_dataset(dataset)
+    if freshly_created:
+        dataset = _post_process_dataset(dataset)
+
+    return dataset
