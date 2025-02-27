@@ -1,7 +1,7 @@
 import psutil
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["auto_labeling"]
+SELECTED_WORKFLOW = ["embedding_selection", "auto_labeling"]
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
@@ -45,7 +45,7 @@ WORKFLOWS = {
     },
     "anomaly_detection": {
         "mode": ["train", "inference"],  # "train" and "inference" supported
-        "epochs": 36,
+        "epochs": 12,
         "early_stop_patience": 5,
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
             "Padim": {},
@@ -68,7 +68,7 @@ WORKFLOWS = {
             "custom_codetr",
         ],
         "n_worker_dataloader": 3,
-        "epochs": 36,
+        "epochs": 12,
         "early_stop_patience": 5,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
