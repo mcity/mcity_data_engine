@@ -1,4 +1,4 @@
-import os
+import psutil
 
 # Selection from WORKFLOWS
 SELECTED_WORKFLOW = ["auto_labeling"]
@@ -8,8 +8,6 @@ SELECTED_DATASET = {
     "name": "fisheye8k",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
-
-PERSISTENT = True  # If V51 database is stored
 
 # Workflows and associated parameters
 WORKFLOWS = {
@@ -23,7 +21,7 @@ WORKFLOWS = {
         }
     },
     "embedding_selection": {
-        "mode": "load",  # "compute" or "load"
+        "mode": "compute",  # "compute" or "load"
         "parameters": {
             "compute_representativeness": 0.99,
             "compute_unique_images_greedy": 0.01,
@@ -46,7 +44,7 @@ WORKFLOWS = {
         ],
     },
     "anomaly_detection": {
-        "mode": ["inference"],  # "train" and "inference" supported
+        "mode": ["train", "inference"],  # "train" and "inference" supported
         "epochs": 36,
         "early_stop_patience": 5,
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
@@ -63,10 +61,12 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": ["inference"],  # "train" and "inference" supported
+        "mode": ["train", "inference"],  # "train" and "inference" supported
         "model_source": [
-            "custom_codetr"
-        ],  # "hf_models_objectdetection" and "custom_codetr" and "ultralytics" supported
+            "hf_models_objectdetection",
+            "ultralytics",
+            "custom_codetr",
+        ],
         "n_worker_dataloader": 3,
         "epochs": 36,
         "early_stop_patience": 5,
@@ -82,58 +82,49 @@ WORKFLOWS = {
         },
         "hf_models_objectdetection": {  # HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
             "microsoft/conditional-detr-resnet-50": {"batch_size": 1},
-            "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
-            "facebook/detr-resnet-50": {"batch_size": 1},
-            "facebook/detr-resnet-50-dc5": {"batch_size": 1, "image_size": [960, 960]},
-            "facebook/detr-resnet-101": {"batch_size": 1, "image_size": [960, 960]},
-            "facebook/detr-resnet-101-dc5": {"batch_size": 1, "image_size": [960, 960]},
-            "facebook/deformable-detr-detic": {
-                "batch_size": 1,
-                "image_size": [960, 960],
-            },
-            "facebook/deformable-detr-box-supervised": {
-                "batch_size": 1,
-                "image_size": [960, 960],
-            },
-            "SenseTime/deformable-detr": {"batch_size": 1, "image_size": [960, 960]},
-            "SenseTime/deformable-detr-with-box-refine-two-stage": {
-                "batch_size": 1,
-                "image_size": [960, 960],
-            },
-            "SenseTime/deformable-detr-with-box-refine": {
-                "batch_size": 1,
-                "image_size": [960, 960],
-            },
-            "jozhang97/deta-swin-large": {
-                "batch_size": 1,
-                "image_size": [960, 960],
-            },
-            "jozhang97/deta-swin-large-o365": {
-                "batch_size": 1,
-                "image_size": [960, 960],
-            },
-            "jozhang97/deta-resnet-50": {"batch_size": 1, "image_size": [960, 960]},
-            "jozhang97/deta-resnet-50-24-epochs": {
-                "batch_size": 1,
-                "image_size": [960, 960],
-            },
-            "hustvl/yolos-base": {"batch_size": 1},
+            # "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
+            # "facebook/detr-resnet-50": {"batch_size": 1},
+            # "facebook/detr-resnet-50-dc5": {"batch_size": 1, "image_size": [960, 960]},
+            # "facebook/detr-resnet-101": {"batch_size": 1, "image_size": [960, 960]},
+            # "facebook/detr-resnet-101-dc5": {"batch_size": 1, "image_size": [960, 960]},
+            # "facebook/deformable-detr-detic": {
+            #    "batch_size": 1,
+            #    "image_size": [960, 960],
+            # },
+            # "facebook/deformable-detr-box-supervised": {
+            #    "batch_size": 1,
+            #    "image_size": [960, 960],
+            # },
+            # "SenseTime/deformable-detr": {"batch_size": 1, "image_size": [960, 960]},
+            # "SenseTime/deformable-detr-with-box-refine": {
+            #    "batch_size": 1,
+            #    "image_size": [960, 960],
+            # },
+            # "jozhang97/deta-swin-large": {
+            #    "batch_size": 1,
+            #    "image_size": [960, 960],
+            # },
+            # "jozhang97/deta-swin-large-o365": {
+            #    "batch_size": 1,
+            #    "image_size": [960, 960],
+            # },
+            # "hustvl/yolos-base": {"batch_size": 1},
         },
         "custom_codetr": {
-            "export_dataset_root": "/media/dbogdoll/Datasets/codetr_data/",
+            "export_dataset_root": "/output/datasets/codetr_data/",
             "configs": [
                 "projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py",
-                "projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
+                # "projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
             ],
             "n_gpus": "1",
             "container_tool": "docker",
         },
         "ultralytics": {
-            "export_dataset_root": "/media/dbogdoll/Datasets/ultralytics_data/",
+            "export_dataset_root": "/output/datasets/ultralytics_data/",
             "models": {  # Pick from https://docs.ultralytics.com/models/
-                # "yolo11n": {"batch_size": 32, "img_size": 640},
-                "yolo11x": {"batch_size": 1, "img_size": 640},
-                # "yolo12n": {"batch_size": 32, "img_size": 640},
+                # "yolo11n": {"batch_size": 16, "img_size": 960},
+                # "yolo11x": {"batch_size": 1, "img_size": 960},
+                "yolo12n": {"batch_size": 16, "img_size": 960},
                 # "yolo12x": {"batch_size": 1, "img_size": 640},
             },
         },
@@ -275,14 +266,16 @@ WORKFLOWS = {
 }
 
 # Global settings
+PERSISTENT = True  # If V51 database is stored
 ACCEPTED_SPLITS = ["train", "val", "test"]
-cpu_count = os.cpu_count()
-NUM_WORKERS = 32 if cpu_count > 32 else cpu_count
+cpu_count = psutil.Process().cpu_affinity()
+NUM_WORKERS_MAX = 32
+NUM_WORKERS = NUM_WORKERS_MAX if cpu_count > NUM_WORKERS_MAX else cpu_count
 GLOBAL_SEED = 0
 
 # Hugging Face Config
 HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
-HF_DO_UPLOAD = True
+HF_DO_UPLOAD = False
 
 # Weights and Biases Config
 WANDB_ACTIVE = True
