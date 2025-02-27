@@ -452,9 +452,9 @@ def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activat
     return True
 
 
-def cleanup_memory():
+def cleanup_memory(do_extensive_cleanup=False):
     logging.info("Starting memory cleanup")
-    """Clean up memory after workflow execution"""
+    """Clean up memory after workflow execution. 'do_extensive_cleanup' recommended for multiple training sessions in a row."""
     # Clear CUDA cache
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -462,22 +462,24 @@ def cleanup_memory():
     # Force garbage collection
     gc.collect()
 
-    # Clear any leftover tensors
-    n_deleted_torch_objects = 0
-    for obj in tqdm(
-        gc.get_objects(), desc="Deleting objects from Python Garbage Collector"
-    ):
-        try:
-            if torch.is_tensor(obj):
-                del obj
-                n_deleted_torch_objects += 1
-        except:
-            pass
+    if do_extensive_cleanup:
 
-    logging.info(f"Deleted {n_deleted_torch_objects} torch objects")
+        # Clear any leftover tensors
+        n_deleted_torch_objects = 0
+        for obj in tqdm(
+            gc.get_objects(), desc="Deleting objects from Python Garbage Collector"
+        ):
+            try:
+                if torch.is_tensor(obj):
+                    del obj
+                    n_deleted_torch_objects += 1
+            except:
+                pass
 
-    # Final garbage collection
-    gc.collect()
+        logging.info(f"Deleted {n_deleted_torch_objects} torch objects")
+
+        # Final garbage collection
+        gc.collect()
 
 
 class WorkflowExecutor:
@@ -714,7 +716,7 @@ class WorkflowExecutor:
                             pbar := tqdm(codetr_models, desc="CoDETR training")
                         ):
                             # Status Update
-                            pbar.set_description(f"CoDETR model {MODEL_NAME}")
+                            pbar.set_description(f"Co-DETR model {MODEL_NAME}")
 
                             # Update config
                             run_config["codetr_config"] = MODEL_NAME
