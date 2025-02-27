@@ -1,6 +1,5 @@
 import logging
 import subprocess
-import time
 
 import psutil
 import torch
