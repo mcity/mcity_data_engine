@@ -76,6 +76,7 @@ class ZeroShotInferenceCollateFn:
         object_classes,
         batch_classes,
     ):
+        """Initialize the auto labeling model with the Hugging Face model config, processor, batch size, object classes, and batch classes."""
         try:
             self.hf_model_config_name = hf_model_config_name
             self.processor = hf_processor
@@ -86,6 +87,7 @@ class ZeroShotInferenceCollateFn:
             logging.error(f"Error in collate init of DataLoader: {e}")
 
     def __call__(self, batch):
+        """Processes a batch of data by preparing images and labels for model input."""
         try:
             images, labels = zip(*batch)
             target_sizes = [tuple(img.shape[1:]) for img in images]
@@ -122,6 +124,7 @@ class ZeroShotObjectDetection:
         detections_path="./output/detections/",
         log_root="./logs/",
     ):
+        """Initialize the zero-shot object detection labeler with dataset, configuration, and path settings."""
         self.dataset_torch = dataset_torch
         self.dataset_info = dataset_info
         self.dataset_name = dataset_info["name"]
@@ -191,8 +194,6 @@ class ZeroShotObjectDetection:
         self, queues, queue_sizes, largest_queue_index, max_queue_size
     ):
         """Monitor and manage multiple result queues for balanced processing."""
-        # Measure the sizes of multiple result queues (one per worker process)
-        # Logging
         experiment_name = f"queue_size_monitor_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         log_directory = os.path.join(
             self.tensorboard_root, self.dataset_name, experiment_name
@@ -441,6 +442,7 @@ class ZeroShotObjectDetection:
         root_log_dir: str,
         persistent_workers: bool = False,
     ):
+        """Model inference method running zero-shot object detection on provided dataset and device, returning success status."""
         writer = None
         run_successful = True
         processor, model, inputs, outputs, result, dataloader = (
@@ -616,6 +618,7 @@ class ZeroShotObjectDetection:
             return run_successful
 
     def process_outputs(self, dataset_v51, result, object_classes, detection_threshold):
+        """Process outputs from object detection models, extracting bounding boxes and labels to save to the dataset."""
         try:
             inputs = result["inputs"]
             outputs = result["outputs"]
@@ -745,7 +748,7 @@ class ZeroShotObjectDetection:
             return processing_successful
 
     def eval_and_export(self, dataset_v51, model_name, pred_key, eval_key):
-        # Populate dataset with evaluation results (if ground_truth available)
+        """Populate dataset with evaluation results (if ground_truth available)"""
         try:
             dataset_v51.evaluate_detections(
                 pred_key,
@@ -773,6 +776,7 @@ class UltralyticsObjectDetection:
     """Object detection using Ultralytics YOLO models with training and inference support."""
 
     def __init__(self, dataset, config):
+        """Initialize with dataset, config, and setup paths for model and data."""
         self.dataset = dataset
         self.config = config
         self.ultralytics_data_path = os.path.join(
@@ -827,7 +831,7 @@ class UltralyticsObjectDetection:
             )
 
     def train(self):
-        # Export dataset to YOLO format for Ultralytics
+        """Train the YOLO model for object detection using Ultralytics and optionally upload to Hugging Face."""
         model = YOLO(self.config["model_name"], task="detect")
         # https://docs.ultralytics.com/modes/train/#train-settings
         results = model.train(
@@ -860,6 +864,7 @@ class UltralyticsObjectDetection:
             )
 
     def inference(self, gt_field="ground_truth"):
+        """Performs inference using YOLO model on a dataset, with options to evaluate results."""
         logging.info(f"Running inference on dataset {self.config['v51_dataset_name']}")
         inference_settings = self.config["inference_settings"]
 
@@ -1019,6 +1024,7 @@ class HuggingFaceObjectDetection:
         output_model_path="./output/models/object_detection_hf",
         output_detections_path="./output/detections/",
     ):
+        """Initialize with dataset, config, and optional output paths."""
         self.dataset = dataset
         self.config = config
         self.model_name = config["model_name"]
@@ -1052,6 +1058,7 @@ class HuggingFaceObjectDetection:
         return data
 
     def train(self, hf_dataset, overwrite_output=True):
+        """Train models for object detection tasks with support for custom image sizes and transformations."""
         torch.cuda.empty_cache()
         img_size_target = self.config.get("image_size", None)
         if img_size_target is None:
@@ -1177,6 +1184,7 @@ class HuggingFaceObjectDetection:
         logging.info(f"Model training completed. Evaluation results: {metrics}")
 
     def inference(self, inference_settings, load_from_hf=True, gt_field="ground_truth"):
+        """Performs model inference on a dataset, loading from Hugging Face or disk, and optionally evaluates detection results."""
 
         torch.cuda.empty_cache()
         # Load trained model from Hugging Face
@@ -1489,7 +1497,7 @@ class CustomCoDETRObjectDetection:
 
     @staticmethod
     def _find_file_iteratively(start_path, filename):
-        """Recursively search for a file in a directory structure."""
+        """Direct access or recursively search for a file in a directory structure."""
         # Convert start_path to a Path object
         start_path = Path(start_path)
 

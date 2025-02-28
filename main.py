@@ -183,6 +183,7 @@ def workflow_anomaly_detection(
 def workflow_embedding_selection(
     dataset, dataset_info, MODEL_NAME, config, wandb_activate=True
 ):
+    """Compute embeddings and find representative and rare images for dataset selection."""
     try:
         wandb_exit_code = 0
         wandb_run, log_dir = wandb_init(
@@ -232,6 +233,7 @@ def workflow_embedding_selection(
 
 
 def workflow_auto_labeling_ultralytics(dataset, run_config, wandb_activate=True):
+    """Auto-labeling workflow using Ultralytics models with optional training and inference."""
     try:
         wandb_exit_code = 0
         wandb_run = wandb_init(
@@ -268,6 +270,7 @@ def workflow_auto_labeling_ultralytics(dataset, run_config, wandb_activate=True)
 
 
 def workflow_auto_labeling_hf(dataset, hf_dataset, run_config, wandb_activate=True):
+    """Auto-labeling using Hugging Face models on a dataset, including training and/or inference based on the provided configuration."""
     try:
         wandb_exit_code = 0
         wandb_run = wandb_init(
@@ -308,6 +311,7 @@ def workflow_auto_labeling_hf(dataset, hf_dataset, run_config, wandb_activate=Tr
 def workflow_auto_labeling_custom_codetr(
     dataset, dataset_info, run_config, wandb_activate=True
 ):
+    """Auto labeling workflow using Co-DETR model supporting training and inference modes."""
 
     try:
         wandb_exit_code = 0
@@ -350,6 +354,7 @@ def workflow_auto_labeling_custom_codetr(
 
 
 def workflow_zero_shot_object_detection(dataset, dataset_info, config):
+    """Run zero-shot object detection on a dataset using models from Huggingface, supporting both single and multi-GPU inference."""
     # Set multiprocessing mode for CUDA multiprocessing
     try:
         mp.set_start_method("spawn", force=True)
@@ -394,6 +399,7 @@ def workflow_zero_shot_object_detection(dataset, dataset_info, config):
 
 
 def workflow_mask_teacher(dataset, dataset_info):
+    """Runs semantic segmentation and depth estimation inference on a dataset using various models."""
     try:
         DEPTH_ESTIMATION_MODELS = WORKFLOWS["mask_teacher"]["depth_estimation"]
         SEMANTIC_SEGMENTATION_MODELS = WORKFLOWS["mask_teacher"][
@@ -430,6 +436,7 @@ def workflow_mask_teacher(dataset, dataset_info):
 
 
 def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activate=True):
+    """Runs ensemble selection workflow on given dataset using provided configuration."""
     try:
         wandb_exit_code = 0
 
@@ -492,6 +499,7 @@ class WorkflowExecutor:
         dataset: fo.Dataset,
         dataset_info: Dict,
     ):
+        """Initializes with specified workflows, dataset selection, and dataset metadata."""
         self.workflows = workflows
         self.selected_dataset = selected_dataset
         self.dataset = dataset
@@ -588,7 +596,7 @@ class WorkflowExecutor:
                         pbar := tqdm(anomalib_image_models, desc="Anomalib")
                     ):
                         # Status
-                        pbar.set_description(f"Anomalib model {MODEL_NAME}.")
+                        pbar.set_description(f"Anomalib model {MODEL_NAME}")
 
                         # Config
                         run_config = {
@@ -798,6 +806,7 @@ class WorkflowExecutor:
 
 
 def main():
+    """Executes the data processing workflow, loads dataset, and launches Voxel51 visualization interface."""
     time_start = time.time()
     configure_logging()
 
@@ -831,5 +840,5 @@ def main():
 
 
 if __name__ == "__main__":
-    cleanup_memory()  # Clean before run
+    cleanup_memory()
     main()
