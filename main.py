@@ -719,10 +719,12 @@ class WorkflowExecutor:
                         }
                         codetr_configs = config_codetr["configs"]
 
-                        for config in tqdm(
-                            codetr_configs, desc="Processing Co-DETR configurations"
+                        for config in (
+                            pbar := tqdm(
+                                codetr_configs, desc="Processing Co-DETR configurations"
+                            )
                         ):
-                            pbar.set_description(f"Co-DETR model {MODEL_NAME}")
+                            pbar.set_description(f"Co-DETR model {config}")
                             run_config["config"] = config
                             workflow_auto_labeling_custom_codetr(
                                 self.dataset, self.dataset_info, run_config
