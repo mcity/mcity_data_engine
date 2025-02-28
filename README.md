@@ -57,7 +57,7 @@ The Mcity Data Engine is an essential tool in the Mcity makerspace for transport
       <picture>
   <source srcset="https://github.com/user-attachments/assets/f775ee92-9f59-43be-a9ac-1d313d2862e1" width="60%">
   <img alt="Mcity Data Engine Overview" src="">
-</picture>
+</picture></div>
 
 On February 24, 2025, Daniel Bogdoll, a research scholar at Mcity, gave a presentation on the first release of the Mcity Data Engine in Ann Arbor, Michigan. The recording provides insight into the general architecture, its features and ecosystem integrations, and demonstrates successful data curation and model training for improved Vulnerable Road User (VRU) detection:
 <div align="center">
