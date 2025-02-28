@@ -44,10 +44,7 @@ def test_class_mapping(dataset_v51):
     dataset_info["name"] = "fisheye8k_v51_cm_test"  # Update with test name for local tests where both exist
 
     # Define a simplified local version of WORKFLOWS
-
     config = {
-        "dataset_source": "fisheye8k",
-        "dataset_target": "mcity_fisheye_2000",
         "hf_models_zeroshot_classification": [
             "Salesforce/blip2-itm-vit-g",
             "openai/clip-vit-large-patch14",
