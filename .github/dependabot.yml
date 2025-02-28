@@ -16,3 +16,8 @@ updates:
       - dependency-name: "accelerate"
       - dependency-name: "openai"
       - dependency-name: "anomalib"
+      - dependency-name: "pdoc"
+      - dependency-name: "umap-learn"
+      - dependency-name: "scikit-learn"
+      - dependency-name: "numpy"
+      - dependency-name: "psutil"
