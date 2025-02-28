@@ -55,8 +55,8 @@ class AnomalyDetectionDataPreparation:
         dataset_name_ano_dec = f"{self.dataset_name}_anomaly_detection"
 
         if dataset_name_ano_dec in fo.list_datasets():
-            logging.info(
-                f"Dataset {self.dataset_name} was already prepared for anomaly detection."
+            logging.warning(
+                f"Dataset {self.dataset_name} was already prepared for anomaly detection. Skipping data export."
             )
             self.dataset_ano_dec = fo.load_dataset(dataset_name_ano_dec)
         else:

@@ -16,14 +16,16 @@ from torchvision.transforms.v2 import Compose, Resize
 
 from config.config import GLOBAL_SEED, HF_DO_UPLOAD, HF_ROOT, NUM_WORKERS
 
-# https://docs.voxel51.com/tutorials/anomaly_detection.html
-# https://medium.com/@enrico.randellini/anomalib-a-library-for-image-anomaly-detection-and-localization-fb363639104f
-# https://github.com/openvinotoolkit/anomalib
-# https://anomalib.readthedocs.io/en/v1.1.1/
-
 
 class Anodec:
-    """Anomaly detection model class for managing training, inference, and evaluation of anomaly detection models using Anomalib."""
+    """Anomaly detection model class for managing training, inference, and evaluation of anomaly detection models using Anomalib.
+
+    Relevant links:
+    - https://docs.voxel51.com/tutorials/anomaly_detection.html
+    - https://medium.com/@enrico.randellini/anomalib-a-library-for-image-anomaly-detection-and-localization-fb363639104f
+    - https://github.com/openvinotoolkit/anomalib
+    - https://anomalib.readthedocs.io/en/stable/
+    """
 
     def __init__(
         self,
