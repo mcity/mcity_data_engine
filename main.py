@@ -49,6 +49,7 @@ wandb_run = None  # Init globally to make sure it is available
 
 
 def signal_handler(sig, frame):
+    """Handle Ctrl+C signal by cleaning up resources and exiting."""
     logging.error("You pressed Ctrl+C!")
     try:
         wandb_close(exit_code=1)
@@ -59,6 +60,7 @@ def signal_handler(sig, frame):
 
 
 def workflow_aws_download(parameters, wandb_activate=True):
+    """Download and process data from AWS S3 bucket."""
     dataset = None
     dataset_name = None
     wandb_exit_code = 0
@@ -127,6 +129,7 @@ def workflow_anomaly_detection(
     run_config,
     wandb_activate=True,
 ):
+    """Run anomaly detection workflow using specified models and configurations."""
     try:
         # Weights and Biases
         wandb_exit_code = 0
@@ -450,8 +453,8 @@ def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activat
 
 
 def cleanup_memory(do_extensive_cleanup=False):
-    logging.info("Starting memory cleanup")
     """Clean up memory after workflow execution. 'do_extensive_cleanup' recommended for multiple training sessions in a row."""
+    logging.info("Starting memory cleanup")
     # Clear CUDA cache
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -480,6 +483,8 @@ def cleanup_memory(do_extensive_cleanup=False):
 
 
 class WorkflowExecutor:
+    """Orchestrates the execution of multiple data processing workflows in sequence."""
+
     def __init__(
         self,
         workflows: List[str],
@@ -493,7 +498,7 @@ class WorkflowExecutor:
         self.dataset_info = dataset_info
 
     def execute(self) -> bool:
-        """Execute workflows in sequential order"""
+        """Execute all configured workflows in sequence and handle errors."""
         if len(self.workflows) == 0:
             logging.error("No workflows selected.")
             return False
@@ -709,7 +714,7 @@ class WorkflowExecutor:
                         for config in tqdm(
                             codetr_configs, desc="Processing Co-DETR configurations"
                         ):
-                            pbar.set_description(f"Co-DETR model {MODEL_NAME}")                          
+                            pbar.set_description(f"Co-DETR model {MODEL_NAME}")
                             run_config["config"] = config
                             workflow_auto_labeling_custom_codetr(
                                 self.dataset, self.dataset_info, run_config

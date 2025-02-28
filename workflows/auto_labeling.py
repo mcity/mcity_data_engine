@@ -5,7 +5,6 @@ import os
 import queue
 import random
 import re
-import shutil
 import signal
 import subprocess
 import sys
@@ -57,6 +56,8 @@ from utils.sample_field_operations import add_sample_field
 
 # Handling timeouts
 class TimeoutException(Exception):
+    """Custom exception for handling dataloader timeouts."""
+
     pass
 
 
@@ -65,6 +66,8 @@ def timeout_handler(signum, frame):
 
 
 class ZeroShotInferenceCollateFn:
+    """Collate function for zero-shot inference that prepares batches for model input."""
+
     def __init__(
         self,
         hf_model_config_name,
@@ -109,6 +112,8 @@ class ZeroShotInferenceCollateFn:
 
 
 class ZeroShotObjectDetection:
+    """Zero-shot object detection using various HuggingFace models with multi-GPU support."""
+
     def __init__(
         self,
         dataset_torch: torch.utils.data.Dataset,
@@ -132,6 +137,7 @@ class ZeroShotObjectDetection:
     def exclude_stored_predictions(
         self, dataset_v51: fo.Dataset, config, do_exclude=False
     ):
+        """Checks for existing predictions and loads them from disk if available."""
         dataset_schema = dataset_v51.get_field_schema()
         models_splits_dict = {}
         for model_name, value in config["hf_models_zeroshot_objectdetection"].items():
@@ -184,6 +190,7 @@ class ZeroShotObjectDetection:
     def update_queue_sizes_worker(
         self, queues, queue_sizes, largest_queue_index, max_queue_size
     ):
+        """Monitor and manage multiple result queues for balanced processing."""
         # Measure the sizes of multiple result queues (one per worker process)
         # Logging
         experiment_name = f"queue_size_monitor_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
@@ -244,6 +251,7 @@ class ZeroShotObjectDetection:
         max_queue_size,
         wandb_activate=False,
     ):
+        """Process model outputs from result queues and save to dataset."""
         configure_logging()
         logging.info(f"Process ID: {os.getpid()}. Results processing process started")
         dataset_v51 = fo.load_dataset(self.dataset_name)
@@ -336,6 +344,7 @@ class ZeroShotObjectDetection:
         post_processing_finished,
         set_cpu_affinity=False,
     ):
+        """Run model inference on specified GPU with dedicated CPU cores."""
         dataset_v51 = fo.load_dataset(
             self.dataset_name
         )  # NOTE Only for the case of sequential processing
@@ -386,6 +395,7 @@ class ZeroShotObjectDetection:
         return run_successful  # Return last processing status
 
     def eval_and_export_worker(self, models_ready_queue, n_models):
+        """Evaluate model performance and export results for completed models."""
         configure_logging()
         logging.info(f"Process ID: {os.getpid()}. Eval-and-export process started")
 
@@ -760,6 +770,7 @@ class ZeroShotObjectDetection:
 
 
 class UltralyticsObjectDetection:
+    """Object detection using Ultralytics YOLO models with training and inference support."""
 
     def __init__(self, dataset, config):
         self.dataset = dataset
@@ -786,6 +797,7 @@ class UltralyticsObjectDetection:
     def export_data(
         dataset, dataset_info, export_dataset_root, label_field="ground_truth"
     ):
+        """Export dataset to YOLO format for Ultralytics training."""
         ultralytics_data_path = os.path.join(export_dataset_root, dataset_info["name"])
         # Check if export directory already exists
         if os.path.exists(ultralytics_data_path):
@@ -998,6 +1010,8 @@ def transform_batch_standalone(
 
 
 class HuggingFaceObjectDetection:
+    """Object detection using HuggingFace models with support for training and inference."""
+
     def __init__(
         self,
         dataset,
@@ -1029,20 +1043,7 @@ class HuggingFaceObjectDetection:
         self.label2id = {v: k for k, v in self.id2label.items()}
 
     def collate_fn(self, batch):
-        """
-        Collates a batch of data into a single dictionary suitable for model input.
-
-        Args:
-            batch (list of dict): A list of dictionaries where each dictionary contains
-                                  the keys "pixel_values", "labels", and optionally "pixel_mask".
-
-        Returns:
-            dict: A dictionary with the following keys:
-                - "pixel_values" (torch.Tensor): A tensor containing stacked pixel values from the batch.
-                - "labels" (list): A list of labels from the batch.
-                - "pixel_mask" (torch.Tensor, optional): A tensor containing stacked pixel masks from the batch,
-                                                         if "pixel_mask" is present in the input batch.
-        """
+        """Collate function for batching data during training and inference."""
         data = {}
         data["pixel_values"] = torch.stack([x["pixel_values"] for x in batch])
         data["labels"] = [x["labels"] for x in batch]
@@ -1113,9 +1114,13 @@ class HuggingFaceObjectDetection:
                 "Hugging Face AutoModel does not support " + str(type(hf_model_config))
             )
 
-        if overwrite_output == True:
+        if (
+            overwrite_output == True
+            and os.path.exists(self.model_root)
+            and os.listdir(self.model_root)
+        ):
             logging.warning(
-                f"Training will potentially overwrite existing results in {self.model_root}"
+                f"Training will overwrite existing results in {self.model_root}"
             )
 
         training_args = TrainingArguments(
@@ -1484,7 +1489,7 @@ class CustomCoDETRObjectDetection:
 
     @staticmethod
     def _find_file_iteratively(start_path, filename):
-        """Given a filename, look for the full filepath in a dataset folder structure"""
+        """Recursively search for a file in a directory structure."""
         # Convert start_path to a Path object
         start_path = Path(start_path)
 
