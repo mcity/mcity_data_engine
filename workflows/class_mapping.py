@@ -166,7 +166,7 @@ class ClassMapper:
 
         return predicted_label, confidence_score
 
-    def run_mapping(self, label_field = "ground_truth"):
+    def run_mapping(self, test_dataset_source, test_dataset_target, label_field = "ground_truth",):
         """
         Run the class mapping process on the dataset.
         """
@@ -182,22 +182,28 @@ class ClassMapper:
 
         # Load the datasets from FiftyOne.
         try:
-            SELECTED_DATASET = {
-                "name": dataset_source_name,
-                "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
-            }
-            source_dataset, source_dataset_info = load_dataset(SELECTED_DATASET)
+            if test_dataset_source is None:
+                SELECTED_DATASET = {
+                    "name": dataset_source_name,
+                    "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
+                }
+                source_dataset, source_dataset_info = load_dataset(SELECTED_DATASET)
+            else:
+                source_dataset = test_dataset_source
 
         except Exception as e:
             logging.error(f"Failed to load dataset_source '{dataset_source_name}': {e}")
             raise ValueError(f"Failed to load dataset_source '{dataset_source_name}': {e}")
 
         try:
-            SELECTED_DATASET = {
-                "name": dataset_target_name,
-                "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
-            }
-            target_dataset, target_dataset_info = load_dataset(SELECTED_DATASET)
+            if test_dataset_target is None:
+                SELECTED_DATASET = {
+                    "name": dataset_target_name,
+                    "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
+                }
+                target_dataset, target_dataset_info = load_dataset(SELECTED_DATASET)
+            else:
+                target_dataset = test_dataset_target
 
         except Exception as e:
             logging.error(f"Failed to load dataset_target '{dataset_target_name}': {e}")

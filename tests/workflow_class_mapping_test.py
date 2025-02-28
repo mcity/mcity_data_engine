@@ -26,7 +26,27 @@ def dataset_v51():
 
     return dataset
 
-def test_class_mapping(dataset_v51):
+@pytest.fixture
+def dataset_v51_2():
+    """Fixture to load a FiftyOne dataset from the hub with one target for test."""
+    dataset_name_hub2 = "Abeyankar/class_mapping_target_test_dataset3"
+
+    dataset2 = load_from_hub(dataset_name_hub2, overwrite=True)
+    dataset2 = _post_process_dataset(dataset2)
+
+    return dataset2
+
+@pytest.fixture
+def dataset_v51_3():
+    """Fixture to load a FiftyOne dataset from the hub with one target for test."""
+    dataset_name_hub3 = "Abeyankar/class_mapping_source_test_dataset"
+
+    dataset3 = load_from_hub(dataset_name_hub3, overwrite=True)
+    dataset3 = _post_process_dataset(dataset3)
+
+    return dataset3
+
+def test_class_mapping(dataset_v51,dataset_v51_2, dataset_v51_3):
     """
     Test workflow on the sample with the specified filepath,
     verifying that each model has added its specific tag.
@@ -45,6 +65,9 @@ def test_class_mapping(dataset_v51):
 
     # Define a simplified local version of WORKFLOWS
     config = {
+        # get the source and target dataset names from datasets.yaml
+        "dataset_source": "cm_test_source",
+        "dataset_target": "cm_test_target",
         "hf_models_zeroshot_classification": [
             "Salesforce/blip2-itm-vit-g",
             "openai/clip-vit-large-patch14",
@@ -52,12 +75,23 @@ def test_class_mapping(dataset_v51):
             "kakaobrain/align-base",
             "BAAI/AltCLIP",
             "CIDAS/clipseg-rd64-refined"
-        ]
+        ],
+        "thresholds": {
+            "confidence": 0.2
+        },
+        "candidate_labels": {
+            #Target class(Generalized class) : Source classes(specific categories)
+            "Car": ["car", "van", "pickup"],
+            "Truck": ["truck", "pickup"],
+            #One_to_one_mapping
+            "Bike" : ["motorbike/cycler"]
+            #Can add other class mappings in here
+        }
     }
 
     models = config["hf_models_zeroshot_classification"]
 
-    workflow_class_mapping(dataset_v51, dataset_info, config, wandb_activate=False)
+    workflow_class_mapping(dataset_v51, dataset_info, config, wandb_activate=False, test_dataset_source=dataset_v51_3, test_dataset_target=dataset_v51_2)
 
     logging.info("\nAfter workflow:")
     if hasattr(sample, "ground_truth") and sample["ground_truth"].detections:

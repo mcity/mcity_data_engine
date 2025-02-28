@@ -459,7 +459,7 @@ def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activat
 
     return True
 
-def workflow_class_mapping(dataset, dataset_info, run_config, wandb_activate=True):
+def workflow_class_mapping(dataset, dataset_info, run_config, wandb_activate=True, test_dataset_source=None, test_dataset_target=None):
 
     try:
         wandb_exit_code = 0
@@ -477,7 +477,7 @@ def workflow_class_mapping(dataset, dataset_info, run_config, wandb_activate=Tru
             pbar.set_description(f"Zero Shot Classification model {model_name}")
             mapper = ClassMapper(dataset, model_name, run_config)
             try:
-                stats = mapper.run_mapping()
+                stats = mapper.run_mapping(test_dataset_source,test_dataset_target)
                 # Display statistics only if mapping was successful
                 source_class_counts = stats["total_processed"]
                 logging.info("\nClassification Results for Source Dataset:")
@@ -841,7 +841,7 @@ class WorkflowExecutor:
 
                     # Workflow
                     workflow_class_mapping(
-                        self.dataset, self.dataset_info, run_config
+                        self.dataset, self.dataset_info, run_config,test_dataset_source=None, test_dataset_target=None
                     )
 
                 else:
