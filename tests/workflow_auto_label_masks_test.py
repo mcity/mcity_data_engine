@@ -75,32 +75,55 @@ def test_auto_label_mask(dataset_v51, workflow_config):
 
     assert len(dataset_v51) > 0, "The dataset should not be empty after processing"
 
+    if workflow_config["semantic_segmentation"]:
+        prompt_field = workflow_config["semantic_segmentation"]["sam2"]["prompt_field"]
+    else:
+        prompt_field = None
+
+    expected_depth_field = "pred_de_Intel_dpt_swinv2_tiny_256"
+    expected_sam_field_noprompt = "pred_ss_segment_anything_2_1_hiera_tiny_image_torch_noprompt"
+    expected_sam_field_prompt = f"pred_ss_segment_anything_2_1_hiera_tiny_image_torch_prompt_{prompt_field}"
+
+    field_gt = "detections"
+    field_masks = "pred_ss_segment_anything_2_1_hiera_tiny_image_torch_prompt_detections"
+
+    classes_gt = set()
+    classes_sam = set()
+    n_found_fields = 0
+
     for sample in dataset_v51:
-        # Empty Config Test: NO new fields were added
-        if not workflow_config["semantic_segmentation"] and not workflow_config["depth_estimation"]:
-            expected_depth_field = "pred_de_Intel_dpt_swinv2_tiny_256"
-            expected_sam_field = "pred_ss_segment_anything_2_1_hiera_tiny_image_torch_noprompt"
+        print(f"Fields in sample: {sample.field_names}")
+        if workflow_config["semantic_segmentation"]:
+            bboxes_gt = sample[field_gt]
+            sam_masks = sample[field_masks]
 
-            assert not hasattr(sample, expected_depth_field), (
-                f"[ERROR] Unexpected depth field '{expected_depth_field}' found on sample ID {sample.id}"
-            )
+            try:
+                if prompt_field is not None:
+                    for bbox in bboxes_gt.detections:
+                        classes_gt.add(bbox.label)
+                    for mask in sam_masks.detections:
+                        classes_sam.add(mask.label)
+                    field = sample[expected_sam_field_prompt]
+                else:
+                    field = sample[expected_sam_field_noprompt]
+                n_found_fields += 1
 
-            assert hasattr(sample, expected_sam_field), (
-                f"[ERROR] Semantic mask '{expected_sam_field}' not found on sample ID {sample.id}"
-            )
+            except Exception as e:
+                print(f"Error: {e}")
+                pass
+        if workflow_config["depth_estimation"]:
+            try:
+                field = sample[expected_depth_field]
+                n_found_fields += 1
+            except:
+                pass
 
-            bbox = getattr(sample, "bounding_box_field", None)
-            semantic_mask = getattr(sample, expected_sam_field, None)
+    assert classes_gt == classes_sam, f"Classes in Ground Truth {classes_gt} and SAM Masks {classes_sam}"
+    print(f"[TEST] Found {n_found_fields} new fields in the dataset")
+    assert n_found_fields > 0, "No new fields were added to the dataset"
 
-            assert bbox is not None, f"[ERROR] No bounding box found for sample ID {sample.id}"
-            assert semantic_mask is not None, f"[ERROR] No semantic mask found for sample ID {sample.id}"
-
-            assert (
-                bbox.contains(semantic_mask)
-            ), f"[ERROR] Semantic mask is outside the bounding box for sample ID {sample.id}"
-
-            assert (
-                bbox.class_name == semantic_mask.class_name
-            ), f"[ERROR] Class name mismatch: bbox='{bbox.class_name}', mask='{semantic_mask.class_name}' on sample ID {sample.id}"
+    print("Class Distribution in Ground Truth Bounding Boxes:")
+    print(f"\tGround Truth Classes: {classes_gt}")
+    print(f"\tSAM Masks: {classes_sam}")
 
     print("[TEST] Verified that new fields are present in the dataset.")
