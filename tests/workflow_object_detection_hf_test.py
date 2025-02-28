@@ -55,6 +55,7 @@ def dataset_v51():
 
 @pytest.fixture
 def dataset_hf(dataset_v51):
+    """Converts a FiftyOne dataset to a HuggingFace compatible dataset format."""
 
     pytorch_dataset = FiftyOneTorchDatasetCOCO(dataset_v51)
     pt_to_hf_converter = TorchToHFDatasetCOCO(pytorch_dataset)
@@ -65,6 +66,7 @@ def dataset_hf(dataset_v51):
 
 @pytest.mark.parametrize("mode", ["train", "inference", "inference_hf"])
 def test_hf_object_detection(dataset_v51, dataset_hf, mode):
+    """Test object detection by running workflow_auto_labeling_hf with a HuggingFace model across different modes (train/eval/inference)."""
     try:
         MODEL_NAME = "microsoft/conditional-detr-resnet-50"
 
