@@ -1,5 +1,6 @@
 import fiftyone as fo
 import pytest
+import config.config
 from fiftyone import ViewField as F
 from fiftyone.utils.huggingface import load_from_hub
 from main import workflow_class_mapping
@@ -10,6 +11,10 @@ from utils.logging import configure_logging
 @pytest.fixture(autouse=True)
 def setup_logging():
     configure_logging()
+
+@pytest.fixture(autouse=True)
+def deactivate_wandb_sync():
+    config.config.WANDB_ACTIVE = False
 
 @pytest.fixture
 def dataset_v51():
