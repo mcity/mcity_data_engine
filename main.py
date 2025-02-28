@@ -629,8 +629,8 @@ class WorkflowExecutor:
                     # Config
                     SUPPORTED_MODEL_SOURCES = [
                         "hf_models_objectdetection",
-                        "custom_codetr",
                         "ultralytics",
+                        "custom_codetr",
                     ]
 
                     # Common parameters between models
@@ -704,32 +704,6 @@ class WorkflowExecutor:
                             )
 
                     if SUPPORTED_MODEL_SOURCES[1] in selected_model_source:
-                        # Custom Co-DETR
-                        config_codetr = config_autolabel["custom_codetr"]
-                        run_config = {
-                            "export_dataset_root": config_codetr["export_dataset_root"],
-                            "container_tool": config_codetr["container_tool"],
-                            "n_gpus": config_codetr["n_gpus"],
-                            "mode": config_autolabel["mode"],
-                            "epochs": config_autolabel["epochs"],
-                            "inference_settings": config_autolabel[
-                                "inference_settings"
-                            ],
-                            "config": None,
-                        }
-                        codetr_configs = config_codetr["configs"]
-
-                        for config in (
-                            pbar := tqdm(
-                                codetr_configs, desc="Processing Co-DETR configurations"
-                            )
-                        ):
-                            pbar.set_description(f"Co-DETR model {config}")
-                            run_config["config"] = config
-                            workflow_auto_labeling_custom_codetr(
-                                self.dataset, self.dataset_info, run_config
-                            )
-                    if SUPPORTED_MODEL_SOURCES[2] in selected_model_source:
                         # Ultralytics Models
                         config_ultralytics = config_autolabel["ultralytics"]
                         models_ultralytics = config_ultralytics["models"]
@@ -771,6 +745,33 @@ class WorkflowExecutor:
                             }
 
                             workflow_auto_labeling_ultralytics(self.dataset, run_config)
+
+                    if SUPPORTED_MODEL_SOURCES[2] in selected_model_source:
+                        # Custom Co-DETR
+                        config_codetr = config_autolabel["custom_codetr"]
+                        run_config = {
+                            "export_dataset_root": config_codetr["export_dataset_root"],
+                            "container_tool": config_codetr["container_tool"],
+                            "n_gpus": config_codetr["n_gpus"],
+                            "mode": config_autolabel["mode"],
+                            "epochs": config_autolabel["epochs"],
+                            "inference_settings": config_autolabel[
+                                "inference_settings"
+                            ],
+                            "config": None,
+                        }
+                        codetr_configs = config_codetr["configs"]
+
+                        for config in (
+                            pbar := tqdm(
+                                codetr_configs, desc="Processing Co-DETR configurations"
+                            )
+                        ):
+                            pbar.set_description(f"Co-DETR model {config}")
+                            run_config["config"] = config
+                            workflow_auto_labeling_custom_codetr(
+                                self.dataset, self.dataset_info, run_config
+                            )
 
                 elif workflow == "auto_labeling_zero_shot":
                     config = WORKFLOWS["auto_labeling_zero_shot"]
