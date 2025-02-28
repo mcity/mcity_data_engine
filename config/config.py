@@ -1,15 +1,15 @@
 import psutil
 
-# Selection from WORKFLOWS
+#: Selection from WORKFLOWS
 SELECTED_WORKFLOW = ["embedding_selection", "auto_labeling"]
 
-# Choose from config/datasets.yaml
+#: Choose from config/datasets.yaml
 SELECTED_DATASET = {
     "name": "fisheye8k",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
-# Workflows and associated parameters
+#: Workflows and associated parameters
 WORKFLOWS = {
     "aws_download": {
         "mcity": {
@@ -111,7 +111,7 @@ WORKFLOWS = {
             # "hustvl/yolos-base": {"batch_size": 1},
         },
         "custom_codetr": {
-            "export_dataset_root": "./output/datasets/codetr_data/",
+            "export_dataset_root": "output/datasets/codetr_data/",
             "configs": [
                 "projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py",
                 # "projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
@@ -120,7 +120,7 @@ WORKFLOWS = {
             "container_tool": "docker",
         },
         "ultralytics": {
-            "export_dataset_root": "./output/datasets/ultralytics_data/",
+            "export_dataset_root": "output/datasets/ultralytics_data/",
             "models": {  # Pick from https://docs.ultralytics.com/models/
                 # "yolo11n": {"batch_size": 16, "img_size": 960},
                 # "yolo11x": {"batch_size": 1, "img_size": 960},
