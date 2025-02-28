@@ -88,7 +88,7 @@ class AutoLabelMask:
             depth_model_clear = self._sanitize_model_name(depth_model)
             logging.info(f"Running depth estimation for model: {depth_model}")
 
-            # `pred_de_` for depth estimatoin
+            # `pred_de_` for depth estimation
             label_field = f"pred_de_{depth_model_clear}"
 
             self._inference_depth_estimation(self.dataset, depth_model, label_field)
