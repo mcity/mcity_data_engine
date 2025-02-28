@@ -7,7 +7,10 @@ import torch.multiprocessing as mp
 
 
 class Distributer:
+    """A utility class for managing CPU and GPU resource distribution across multiple processes."""
+
     def __init__(self):
+        """Initialize the multiprocessing distribution manager with CPU and GPU information."""
         self.cpu_cores = psutil.Process().cpu_affinity()
         self.n_cpu_cores = len(self.cpu_cores)
         self.n_gpus = torch.cuda.device_count()
@@ -21,16 +24,7 @@ class Distributer:
                 logging.error(f"GPU {i} is in {mode}. Needs to be 'Default'.")
 
     def get_gpu_compute_modes(self):
-        """
-        Retrieves the compute modes of all available GPUs using the `nvidia-smi` command.
-
-        Returns:
-            list: A list of strings where each string represents the compute mode of a GPU.
-                  If an error occurs while running the `nvidia-smi` command, an empty list is returned.
-
-        Raises:
-            subprocess.CalledProcessError: If the `nvidia-smi` command fails to execute.
-        """
+        """Retrieves the compute modes of all available GPUs using the `nvidia-smi` command."""
         try:
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=compute_mode", "--format=csv,noheader"],
@@ -45,15 +39,7 @@ class Distributer:
             return []
 
     def distribute_cpu_cores(self, cpu_cores, n_processes):
-        """
-        Distributes a list of CPU cores among a specified number of processes.
-
-        Args:
-            n_processes (int): The number of processes to distribute the CPU cores among.
-
-        Returns:
-            list: A list of lists, where each sublist contains the CPU cores assigned to a process.
-        """
+        """Distributes a list of CPU cores among a specified number of processes."""
         n_cores = len(cpu_cores)
 
         chunk_size = n_cores // n_processes
@@ -71,7 +57,10 @@ class Distributer:
 
 
 class ZeroShotDistributer(Distributer):
+    """A distributer class that handles zero-shot object detection tasks across multiple GPUs using multiprocessing."""
+
     def __init__(self, config, n_samples, dataset_info, detector):
+        """Initializes detector runner with configuration, samples count, dataset information and detector."""
         super().__init__()  # Call the parent class's __init__ method
         self.config = config
         self.n_samples = n_samples
@@ -79,6 +68,7 @@ class ZeroShotDistributer(Distributer):
         self.detector = detector
 
     def distribute_and_run(self):
+        """Distributes inference tasks across multiple GPUs and manages post-processing workers with queues for efficient parallel processing."""
         dataset_name = self.dataset_info["name"]
         models_dict = self.config["hf_models_zeroshot_objectdetection"]
         n_post_worker = self.config["n_post_processing_worker_per_inference_worker"]

@@ -1,10 +1,11 @@
-import ast
 import _ast
+import ast
 
+config_file_path = "./config/config.py"
 
-config_file_path = './config/config.py'
-
-UPDATED_WORKFLOWS =    { "embedding_selection": {
+#: Workflow selection for demo notebook
+UPDATED_WORKFLOWS = {
+    "embedding_selection": {
         "mode": "compute",
         "parameters": {
             "compute_representativeness": 0.99,
@@ -18,38 +19,42 @@ UPDATED_WORKFLOWS =    { "embedding_selection": {
             "zero-shot-detection-transformer-torch",
             "clip-vit-base32-torch",
         ],
-    },}
+    },
+}
+
 
 class ConfigVisitor(ast.NodeTransformer):
-        def visit_Assign(self, node):
-            # Look for the assignment of the variables we want to modify
-            if isinstance(node.targets[0], _ast.Name):
-                if node.targets[0].id == "SELECTED_WORKFLOW":
-                    node.value = ast.Constant(value=["embedding_selection"] )
-                elif node.targets[0].id == "WORKFLOWS":
-                    node.value = ast.Constant(value=UPDATED_WORKFLOWS)
-                elif node.targets[0].id == "WANDB_ACTIVE":
-                    node.value = ast.Constant(value=False)
-                elif node.targets[0].id == "V51_REMOTE":
-                    node.value = ast.Constant(value=False)
-            return node
+    """AST visitor that transforms specific configuration variable assignments in the source code."""
+
+    def visit_Assign(self, node):
+        """Processes AST nodes related to variable assignments, modifying specific configuration variables."""
+        if isinstance(node.targets[0], _ast.Name):
+            if node.targets[0].id == "SELECTED_WORKFLOW":
+                node.value = ast.Constant(value=["embedding_selection"])
+            elif node.targets[0].id == "WORKFLOWS":
+                node.value = ast.Constant(value=UPDATED_WORKFLOWS)
+            elif node.targets[0].id == "WANDB_ACTIVE":
+                node.value = ast.Constant(value=False)
+            elif node.targets[0].id == "V51_REMOTE":
+                node.value = ast.Constant(value=False)
+        return node
 
 
 if __name__ == "__main__":
     # Transform the AST
-  transformer = ConfigVisitor()
+    transformer = ConfigVisitor()
 
-  with open(config_file_path, "r") as file:
-    content = file.read()
+    with open(config_file_path, "r") as file:
+        content = file.read()
 
-  parsed_ast = ast.parse(content)
-  updated_ast = transformer.visit(parsed_ast)
+    parsed_ast = ast.parse(content)
+    updated_ast = transformer.visit(parsed_ast)
 
     # Convert AST back to source code
 
-  updated_content = ast.unparse(updated_ast)
+    updated_content = ast.unparse(updated_ast)
 
-  with open(config_file_path, "w") as file:
-    file.write(updated_content)
+    with open(config_file_path, "w") as file:
+        file.write(updated_content)
 
-  print("Config file updated successfully.")
+    print("Config file updated successfully.")

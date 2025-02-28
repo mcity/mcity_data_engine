@@ -17,29 +17,6 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
     A PyTorch Dataset class for loading and processing a FiftyOne dataset in COCO format.
     This class handles multiprocessing to allow loading data with num_workers > 0 and
     converts the dataset into a format compatible with PyTorch's DataLoader.
-    Attributes:
-        transforms (callable, optional): A function/transform to apply to the images.
-        classes (list): List of class names in the dataset.
-        labels_map_rev (dict): A dictionary mapping class names to their corresponding indices.
-        dataset_length (int): The length of the dataset.
-        img_paths (multiprocessing.Manager().list): A list of image file paths.
-        ids (multiprocessing.Manager().list): A list of sample IDs.
-        metadata (multiprocessing.Manager().list): A list of metadata for each sample.
-        labels (multiprocessing.Manager().dict): A dictionary mapping sample IDs to their ground truth detections.
-        splits (multiprocessing.Manager().dict): A dictionary mapping sample IDs to their split tags.
-    Methods:
-        __init__(self, fiftyone_dataset, transforms=None, gt_field="ground_truth"):
-            Initializes the dataset with the given FiftyOne dataset and optional transforms.
-        __getitem__(self, idx):
-            Retrieves the image and target at the specified index.
-        __getitems__(self, indices):
-            Retrieves a list of (image, target) pairs for the specified indices.
-        __len__(self):
-            Returns the length of the dataset.
-        get_classes(self):
-            Returns the list of class names in the dataset.
-        get_splits(self):
-            Returns a set of unique split tags in the dataset.
 
     References:
         - https://github.com/voxel51/fiftyone-examples/blob/master/examples/pytorch_detection_training.ipynb
@@ -50,6 +27,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
     """
 
     def __init__(self, fiftyone_dataset, transforms=None, gt_field="ground_truth"):
+        """Initialize dataset from Voxel51 (fiftyone) dataset with optional transforms and ground truth field name."""
         logging.info(f"Collecting data for torch dataset conversion.")
         self.transforms = transforms
         self.classes = fiftyone_dataset.default_classes
@@ -99,6 +77,7 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
                 self.splits[sample_id] = get_split(tags[i])
 
     def __getitem__(self, idx):
+        """Returns transformed image and its target dictionary containing bounding boxes, category IDs, image ID, areas and crowd flags."""
         img_path = self.img_paths[idx]
         img_id = self.ids[idx]
         metadata = self.metadata[idx]
@@ -135,34 +114,27 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         return img, target
 
     def __getitems__(self, indices):
+        """Returns a list of items at the specified indices using __getitem__ for each index."""
         return [self.__getitem__(idx) for idx in indices]
 
     def __len__(self):
+        """Returns the total number of samples in the dataset."""
         return self.dataset_length
 
     def get_classes(self):
+        """Return the list of classes available in the dataset."""
         return self.classes
 
     def get_splits(self):
+        """Returns a set of all unique split labels in the dataset."""
         return set(self.splits.values())
 
 
 class TorchToHFDatasetCOCO:
-    """
-    A class to convert a PyTorch dataset to a Hugging Face dataset in COCO format.
+    """Convert PyTorch COCO-style dataset to Hugging Face dataset format.
 
-    Attributes:
-    -----------
-    torch_dataset : object
-        The PyTorch dataset to be converted.
-
-    Methods:
-    --------
-    __init__(torch_dataset):
-        Initializes the TorchToHFDatasetCOCO with a PyTorch dataset.
-
-    convert():
-        Converts the PyTorch dataset to a Hugging Face dataset.
+    This class facilitates the conversion of PyTorch COCO-style datasets to the Hugging Face
+    dataset format, handling split management and data generation.
     """
 
     split_mapping = {
@@ -173,9 +145,11 @@ class TorchToHFDatasetCOCO:
     }
 
     def __init__(self, torch_dataset):
+        """Initialize a data loader wrapper around a PyTorch dataset."""
         self.torch_dataset = torch_dataset
 
     def convert(self):
+        """Converts a PyTorch dataset to a Hugging Face dataset dictionary with mapped splits."""
         try:
             default_split_hf = "test"
             splits = self.torch_dataset.get_splits()
@@ -202,20 +176,6 @@ def gen_factory(torch_dataset, split_name, default_split_hf):
     """
     Factory function to create a generator function for the Hugging Face dataset.
 
-    Args:
-    -----
-    torch_dataset : FiftyOneTorchDatasetCOCO
-        The PyTorch dataset to be converted.
-    split_name : str
-        The name of the split to filter the data.
-
-    Returns:
-    --------
-    function
-        A generator function that yields data samples for the specified split.
-
-    Note:
-    -----
     This function ensures that all objects used within the generator function are picklable.
     The FiftyOne dataset is iterated to collect sample data, which is then used within the generator function.
     """
@@ -227,6 +187,7 @@ def gen_factory(torch_dataset, split_name, default_split_hf):
     labels_map_rev = torch_dataset.labels_map_rev
 
     def _gen():
+        """Yields dictionaries containing image paths, object targets, and dataset splits for each image in the dataset."""
         for idx, (img_path, img_id) in enumerate(zip(img_paths, img_ids)):
             split = splits.get(img_id, None)
 
@@ -253,23 +214,8 @@ def gen_factory(torch_dataset, split_name, default_split_hf):
 
 
 def create_target(sample_data, labels_map_rev, idx, convert_to_coco=True):
-    """
-    Creates a target dictionary for a given sample.
+    """Convert detection data to COCO format, transforming relative coordinates to absolute if specified."""
 
-    Args:
-    -----
-    sample_data : dict
-        The data of the sample, including detections and metadata.
-    labels_map_rev : dict
-        A dictionary mapping class names to indices.
-    idx : int
-        The index of the sample.
-
-    Returns:
-    --------
-    dict
-        A dictionary containing bounding boxes, category IDs, image ID, area, and iscrowd flags.
-    """
     detections = sample_data.get("detections", [])
     img_width = sample_data["metadata"]["width"]
     img_height = sample_data["metadata"]["height"]
