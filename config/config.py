@@ -2,7 +2,7 @@ import psutil
 
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["embedding_selection", "auto_labeling"]
+SELECTED_WORKFLOW = ["class_mapping"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
