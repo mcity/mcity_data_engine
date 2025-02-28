@@ -1577,6 +1577,7 @@ class CustomCoDETRObjectDetection:
             download_folder = os.path.join(
                 self.root_codetr_models, dataset_name, config_key
             )
+            os.makedirs(download_folder, exist_ok=True)
 
             file_path = hf_hub_download(
                 repo_id=hf_path,
@@ -1648,7 +1649,7 @@ class CustomCoDETRObjectDetection:
         root_dir_samples = sample.filepath
 
         # Convert results into V51 file format
-        detection_threshold = inference_settings["inference_settings"]
+        detection_threshold = inference_settings["detection_threshold"]
         pred_key = f"pred_od_{self.config_key}_{self.dataset_name}"
         for key, value in tqdm(data.items(), desc="Processing Co-DETR detection"):
             try:
