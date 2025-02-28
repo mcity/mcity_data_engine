@@ -7,28 +7,7 @@ from colorlog import ColoredFormatter
 
 
 def configure_logging():
-    """
-    Configures the logging for the application.
-
-    This function sets up logging to both the console and a file. Console logs
-    are color-coded based on the log level, while file logs are plain text.
-    Log files are stored in a "logs" directory, and each log file is named
-    with a timestamp to ensure uniqueness.
-
-    The log format includes the timestamp, log level, and the log message.
-
-    Log levels and their corresponding colors:
-    - DEBUG: cyan
-    - INFO: default
-    - WARNING: yellow
-    - ERROR: red
-    - CRITICAL: red with white background
-
-    If the "logs" directory does not exist, it will be created.
-
-    Raises:
-        OSError: If the directory creation fails.
-    """
+    """Configures the logging for the application."""
     os.makedirs("logs/dataengine", exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -62,7 +41,9 @@ def configure_logging():
     file_handler.setLevel(logging.DEBUG)
 
     # Create formatter and add it to the handlers
-    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(funcName)s - %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(name)s - %(funcName)s - %(message)s"
+    )
     file_handler.setFormatter(formatter)
 
     logging.basicConfig(
@@ -70,7 +51,7 @@ def configure_logging():
         format="%(asctime)s - %(levelname)s - %(name)s - %(funcName)s - %(message)s",
         handlers=[
             console_handler,  # Log INFO and above to console with colors
-            file_handler,    # Log DEBUG and above to file
+            file_handler,  # Log DEBUG and above to file
         ],
-        force=True
+        force=True,
     )

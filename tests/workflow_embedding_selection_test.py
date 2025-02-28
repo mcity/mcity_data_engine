@@ -42,6 +42,7 @@ def dataset_v51():
 
 @pytest.mark.parametrize("mode", ["compute", "load", "load_hf"])
 def test_embedding_selection(dataset_v51, mode):
+    """Tests the embedding selection workflow on a given dataset with specified model and configuration parameters."""
 
     MODEL_NAME = "mobilenet-v2-imagenet-torch"
     selected_mode = mode

@@ -4,14 +4,12 @@ import json
 import logging
 import os
 import re
-import shutil
 import time
 from importlib.metadata import version as get_version
 from queue import Empty
 
 import boto3
 import fiftyone as fo
-import pkg_resources
 import pytz
 import torch.multiprocessing as mp
 from torch.utils.tensorboard import SummaryWriter
@@ -21,30 +19,34 @@ from config.config import NUM_WORKERS
 
 
 class AwsDownloader:
+    """Downloads and decodes data from AWS S3 bucket, with support for multiprocessing and Voxel51 dataset creation."""
 
     def __init__(self, bucket, prefix, download_path, test_run):
-        with open(".secret", "r") as file:
-            for line in file:
-                key, value = line.strip().split("=")
-                os.environ[key] = value
+        """Initialize S3 downloader with bucket, prefix, download path and test flag, setting up AWS credentials from .secret file."""
+        try:
+            with open(".secret", "r") as file:
+                for line in file:
+                    key, value = line.strip().split("=")
+                    os.environ[key] = value
 
-        # S3 Client
-        self.s3 = boto3.client(
-            "s3",
-            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID", None),
-            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", None),
-        )
+            # S3 Client
+            self.s3 = boto3.client(
+                "s3",
+                aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID", None),
+                aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", None),
+            )
 
-        self.bucket = bucket
-        self.prefix = prefix
-        self.test_run = test_run
+            self.bucket = bucket
+            self.prefix = prefix
+            self.test_run = test_run
 
-        self.download_path = download_path
-        os.makedirs(download_path, exist_ok=True)
-
-    # Internal functions
+            self.download_path = download_path
+            os.makedirs(download_path, exist_ok=True)
+        except Exception as e:
+            logging.error(f"Connection to S3 client failed: {e}")
 
     def _list_files(self, bucket, prefix):
+        """Return list of files and total size in TB from S3 bucket with given prefix."""
         files = []
         download_size_bytes = 0
         paginator = self.s3.get_paginator("list_objects_v2")
@@ -59,7 +61,7 @@ class AwsDownloader:
         return files, total_size_tb
 
     def _set_v51_metadata(self, output_folder_root):
-        # Prepare and save metadata.json to import V51 dataset of type fo.types.FiftyoneDataset
+        """Sets and saves FiftyOne metadata for dataset import by creating a metadata.json file with sample fields configuration."""
         sample_fields = [
             {
                 "name": "filepath",
@@ -116,6 +118,7 @@ class AwsDownloader:
             json.dump(v51_metadata, json_file)
 
     def _process_file(self, file_path, output_folder_data):
+        """Process a JSON file containing image data and timestamps, converting them to a format compatible with V51 and saving images to disk."""
         v51_samples = []
 
         # Prepare ISO check for time format
@@ -220,9 +223,8 @@ class AwsDownloader:
 
         return v51_samples
 
-    # External functions
-
     def download_files(self, log_dir, MAX_SIZE_TB=1.5):
+        """Downloads files from AWS S3 bucket and verifies the download success, returning download details and status."""
         files_to_be_downloaded, total_size_tb = self._list_files(
             self.bucket, self.prefix
         )
@@ -349,7 +351,7 @@ class AwsDownloader:
         output_folder="decoded",
         dataset_persistance=True,
     ):
-
+        """Decodes downloaded data files into a Voxel51 dataset using multiprocessing workers for parallel processing."""
         output_folder_root = os.path.join(self.download_path, sub_folder, output_folder)
         output_folder_data = os.path.join(output_folder_root, "data")
         os.makedirs(output_folder_data, exist_ok=True)
@@ -438,7 +440,7 @@ class AwsDownloader:
         output_folder_data,
         n_files_per_worker,
     ):
-
+        """Worker process that extracts data from files in the task queue and puts results in the result queue, processing until queue is empty."""
         logging.info(f"Process ID: {os.getpid()}. Data extraction process started.")
 
         n_files_processed = 0
@@ -475,6 +477,7 @@ class AwsDownloader:
     def result_json_worker(
         self, result_queue, json_file_path, worker_done_events, log_dir
     ):
+        """Process results from worker queue, aggregate them into a JSON file and log metrics."""
         # Check if the samples.json file exists and load existing data if it does
         logging.info(f"Process ID: {os.getpid()}. Results processing process started.")
 

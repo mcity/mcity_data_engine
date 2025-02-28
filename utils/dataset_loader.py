@@ -14,6 +14,7 @@ from utils.sample_field_operations import rename_sample_field
 
 
 def load_dataset(selected_dataset: str) -> fo.Dataset:
+    """Loads a dataset by name, optionally reducing it to a requested number of samples while maintaining original split distributions."""
     dataset_info = load_dataset_info(selected_dataset["name"])
 
     if dataset_info:
@@ -69,6 +70,7 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
 
 
 def get_split(v51_sample: Union[fo.core.sample.Sample, List[str]]) -> str:
+    """Gets dataset split (train, val, test) from a sample's tags or list of tags."""
     if isinstance(v51_sample, fo.core.sample.Sample):
         sample_tags = v51_sample.tags
     elif isinstance(v51_sample, list):
@@ -92,18 +94,7 @@ def get_split(v51_sample: Union[fo.core.sample.Sample, List[str]]) -> str:
 
 
 def _separate_split(dataset, current_split, new_split, split_ratio=2):
-    """
-    Separates a portion of samples from the current split in the dataset and assigns them to a new split.
-
-    Args:
-        dataset: The dataset object containing the samples.
-        current_split (str): The tag representing the current split from which samples will be separated.
-        new_split (str): The tag representing the new split to which samples will be assigned.
-        split_ratio (int, optional): The ratio by which the current split will be divided. Default is 2.
-
-    Returns:
-        tuple: A tuple containing the number of samples remaining in the current split and the number of samples in the new split.
-    """
+    """Separates a portion of samples from the current split in the dataset and assigns them to a new split."""
     # Select samples for split change
     view_current_split = dataset.match_tags(current_split)
     n_samples_current_split = len(view_current_split)
@@ -123,7 +114,7 @@ def _separate_split(dataset, current_split, new_split, split_ratio=2):
 
 
 def _align_splits(dataset):
-    # Get dataset tags related to splits
+    """Standardize dataset splits by renaming and creating missing splits (train/val/test) as needed."""
     SUPPORTED_SPLITS = ["train", "training", "val", "validation", "test", "testing"]
     tags = dataset.distinct("tags")
     splits = [tag for tag in tags if tag in SUPPORTED_SPLITS]
@@ -170,6 +161,7 @@ def _align_splits(dataset):
 
 
 def _align_ground_truth(dataset, gt_field="ground_truth"):
+    """Ensures dataset has ground truth field named correctly, renaming single label field if found."""
 
     dataset_fields = dataset.get_field_schema()
     if gt_field not in dataset_fields:
@@ -203,6 +195,7 @@ def _align_ground_truth(dataset, gt_field="ground_truth"):
 
 
 def _post_process_dataset(dataset):
+    """Post-processes the dataset by setting persistence, computing metadata, aligning splits, and aligning ground truth."""
     logging.info(f"Running dataset post-processing.")
     # Set persistance
     # https://docs.voxel51.com/user_guide/using_datasets.html#dataset-persistence
@@ -221,16 +214,7 @@ def _post_process_dataset(dataset):
 
 
 def load_dataset_info(dataset_name, config_path="./config/datasets.yaml"):
-    """
-    Load dataset information from a YAML configuration file.
-
-    Args:
-        dataset_name (str): The name of the dataset to retrieve information for.
-        config_path (str, optional): The path to the YAML configuration file. Defaults to "datasets/datasets.yaml".
-
-    Returns:
-        dict or None: A dictionary containing the dataset information if found, otherwise None.
-    """
+    """Load dataset information from a YAML configuration file."""
     logging.info(f"Currently active V51 datasets: {fo.list_datasets()}")
     with open(config_path) as f:
         datasets_config = yaml.safe_load(f)
@@ -245,6 +229,7 @@ def load_dataset_info(dataset_name, config_path="./config/datasets.yaml"):
 
 
 def load_annarbor_rolling(dataset_info):
+    """Loads the Ann Arbor rolling dataset from local storage into FiftyOne, creating a new dataset if it doesn't exist."""
     dataset_name = dataset_info["name"]
     dataset_dir = dataset_info["local_path"]
     dataset_type = getattr(fo.types, dataset_info["v51_type"])
@@ -264,22 +249,7 @@ def load_annarbor_rolling(dataset_info):
 
 
 def load_mcity_fisheye_2000(dataset_info):
-    """
-    Loads the Mcity Fisheye 2000 dataset based on the provided dataset information.
-
-    Args:
-        dataset_info (dict): A dictionary containing the following keys:
-            - "name" (str): The name of the dataset.
-            - "local_path" (str): The local path to the dataset directory.
-            - "v51_type" (str): The type of the dataset, corresponding to a type in `fo.types`.
-
-    Returns:
-        fo.Dataset: The loaded dataset object.
-
-    Raises:
-        KeyError: If any of the required keys are missing in `dataset_info`.
-        AttributeError: If `v51_type` does not correspond to a valid type in `fo.types`.
-    """
+    """Loads the MCityFisheye2000 dataset from local path or Hugging Face, creating or loading a FiftyOne dataset."""
     dataset_name = dataset_info["name"]
     dataset_dir = dataset_info["local_path"]
     hf_dataset_name = dataset_info.get("hf_dataset_name", None)
@@ -332,7 +302,7 @@ def load_mcity_fisheye_2000(dataset_info):
 
 
 def load_mcity_fisheye_2100_vru(dataset_info):
-
+    """Loads the Mcity Fisheye 2100 VRU dataset from HuggingFace Hub or locally if it exists."""
     dataset_name = dataset_info["name"]
     hf_dataset_name = dataset_info["hf_dataset_name"]
 
@@ -364,26 +334,7 @@ def load_mcity_fisheye_2100_vru(dataset_info):
 
 
 def _process_mcity_fisheye_filename(filename):
-    """
-    Processes a given filename to extract metadata including location, name, and timestamp.
-
-    Args:
-        filename (str): The full path or name of the file to be processed.
-
-    Returns:
-        dict: A dictionary containing the following keys:
-            - 'filename' (str): The base name of the file.
-            - 'location' (str or None): The location extracted from the filename, if available.
-            - 'name' (str or None): The cleaned name extracted from the filename.
-            - 'timestamp' (datetime or None): The timestamp extracted from the filename, if available.
-
-    The function performs the following steps:
-        1. Extracts the base name of the file.
-        2. Searches for a known location within the filename.
-        3. Splits the filename into two parts based on the first occurrence of a 4-digit year.
-        4. Cleans up the first part to derive the name.
-        5. Extracts and parses the timestamp from the second part of the filename.
-    """
+    """Processes a Mcity fisheye camera filename to extract location, name, and timestamp information."""
 
     filename = os.path.basename(filename)
     results = {"filename": filename, "location": None, "name": None, "timestamp": None}
@@ -451,23 +402,8 @@ def _process_mcity_fisheye_filename(filename):
 
 
 def load_mcity_fisheye_3_months(dataset_info):
-    """
-    Loads the Mcity Fisheye 3 months dataset based on the provided dataset information.
+    """Loads or creates a FiftyOne dataset for the Mcity fisheye 3-month dataset using the provided dataset info."""
 
-    Args:
-        dataset_info (dict): A dictionary containing the following keys:
-            - "name" (str): The name of the dataset.
-            - "local_path" (str): The local path to the dataset directory.
-            - "v51_type" (str): The type of the dataset, corresponding to a type in `fo.types`.
-            - "v51_splits" (list): A list of dataset splits to be loaded.
-
-    Returns:
-        fo.Dataset: The loaded dataset object.
-
-    Raises:
-        KeyError: If any of the required keys are missing in `dataset_info`.
-        AttributeError: If `v51_type` does not correspond to a valid type in `fo.types`.
-    """
     dataset_name = dataset_info["name"]
     dataset_dir = dataset_info["local_path"]
     dataset_type = getattr(fo.types, dataset_info["v51_type"])
@@ -499,24 +435,8 @@ def load_mcity_fisheye_3_months(dataset_info):
 
 
 def load_fisheye_8k(dataset_info):
-    """
-    Loads a fisheye 8k dataset based on the provided dataset information.
+    """Loads a fisheye 8k dataset from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
 
-    Args:
-        dataset_info (dict): A dictionary containing the following keys:
-            - "name" (str): The name of the dataset.
-            - "local_path" (str): The local directory path where the dataset is stored.
-            - "v51_type" (str): The type of the dataset as defined in `fo.types`.
-            - "v51_splits" (list): A list of dataset splits to be used.
-
-    Returns:
-        fo.Dataset: The loaded FiftyOne dataset.
-
-    Notes:
-        - If the dataset is not persistent and already exists, it will be deleted.
-        - If the dataset already exists, it will be loaded; otherwise, it will be created and metadata will be computed.
-        - The dataset will be tagged with the split names and additional metadata will be added to each sample.
-    """
     dataset_name = dataset_info["name"]
     hf_dataset_name = dataset_info["hf_dataset_name"]
 
@@ -531,6 +451,7 @@ def load_fisheye_8k(dataset_info):
 
 
 def load_mars_multiagent(dataset_info):
+    """Load the MARS multi-agent dataset from Hugging Face."""
     hugging_face_id = "ai4ce/MARS/Multiagent_53scene"
 
     dataset = None  # TODO Implement loading
@@ -540,6 +461,7 @@ def load_mars_multiagent(dataset_info):
 
 
 def load_mars_multitraversal(dataset_info):
+    """Loads and post-processes multi-traversal MARS dataset from specified location."""
     location = 10
     data_root = "./datasets/MARS/Multitraversal_2023_10_04-2024_03_08"
     nusc = NuScenes(version="v1.0", dataroot=f"data_root/{location}", verbose=True)

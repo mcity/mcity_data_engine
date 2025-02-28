@@ -6,34 +6,14 @@ from config.config import GLOBAL_SEED
 
 
 def select_random(dataset, n_samples):
-    """
-    Select a random subset of samples from the dataset.
-
-    Parameters:
-    dataset (Dataset): The dataset from which to select samples.
-    n_samples (int): The number of samples to select.
-    seed (int, optional): The seed for the random number generator. Default is 0.
-
-    Returns:
-    Dataset: A dataset containing the randomly selected samples.
-    """
+    """Select a random subset of samples from the dataset."""
 
     random_view = dataset.take(n_samples, seed=GLOBAL_SEED)
     return random_view
 
 
 def select_by_class(dataset, classes_in=[], classes_out=[]):
-    """
-    Filters a dataset based on inclusion and exclusion of specified classes.
-
-    Args:
-        dataset: The dataset to be filtered.
-        classes_in (str or list of str): Classes to include in the filtered dataset.
-        classes_out (str or list of str): Classes to exclude from the filtered dataset.
-
-    Returns:
-        A filtered view of the dataset based on the specified inclusion and exclusion conditions.
-    """
+    """Filters a dataset based on inclusion and exclusion of specified classes."""
     incl_conditions = None
     excl_conditions = None
 
@@ -74,6 +54,7 @@ def generate_view_embedding_selection(
     embedding_selection_field="embedding_selection",
     embedding_count_field="embedding_selection_count",
 ):
+    """Returns filtered subset of dataset where embedding_count_field is greater than or equal to min_selection_count threshold."""
     n_samples_in = len(dataset)
     min_selection_count = configuration["min_selection_count"]
     view_selection_count = dataset.match(
@@ -90,6 +71,7 @@ def generate_view_embedding_selection(
 def generate_view_anomaly_detection_selection(
     dataset, configuration, field_anomaly_score_root="pred_anomaly_score_"
 ):
+    """Filters dataset based on anomaly scores using a configured threshold."""
     n_samples_in = len(dataset)
     model_name = configuration["model"]
     min_anomaly_score = configuration["min_anomaly_score"]
@@ -109,6 +91,8 @@ def generate_view_ensemble_selection(
     ensemble_selection_field="n_unique_ensemble_selection",
     ensemble_selection_tag="detections_overlap",
 ):
+    """Filters dataset to samples with minimum unique selections and specified tag."""
+
     n_samples_in = len(dataset)
     min_n_unique_selection = configuration["min_n_unique_selection"]
     view_n_unique_exploration = dataset.match(
