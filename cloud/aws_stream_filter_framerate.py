@@ -1,12 +1,10 @@
 import datetime
 import json
 import os
-import shutil
 
 import boto3
 import numpy as np
 from dotenv import load_dotenv
-from tqdm import tqdm
 
 load_dotenv()
 
@@ -24,10 +22,12 @@ s3 = session.client("s3")
 
 
 class SampleTimestamps:
+    """Class to handle timestamp sampling from data files, supporting local and AWS execution modes with adjustable target framerates."""
 
     def __init__(
         self, file_path: str, target_framerate_hz=1, aws_bucket=None, aws_prefix=None
     ):
+        """Initialize StreamFilter with either local file path or AWS S3 parameters to process video at target framerate."""
         self.file_path = file_path
         self.aws_bucket = aws_bucket
         self.aws_prefix = aws_prefix
@@ -46,6 +46,7 @@ class SampleTimestamps:
             )
 
     def get_timestamps(self):
+        """Extract timestamps from JSON data lines, returning list of (line_index, timestamp) tuples."""
         timestamps = []
 
         with open(self.file_path, "r") as file:
@@ -85,6 +86,7 @@ class SampleTimestamps:
         return timestamps
 
     def get_framerate(self, timestamps, log):
+        """Calculate framerate and timing statistics from timestamps, updating the log dictionary and returning current framerate, sorted timestamps and outlier threshold."""
 
         # Calculate time differences (s) and current framerate (Hz)
         time_differences = []
@@ -129,6 +131,7 @@ class SampleTimestamps:
         return current_framerate_hz, timestamps, upper_bound_threshold
 
     def check_target_framerate(self, current_framerate_hz, log):
+        """Checks if target framerate is less than or equal to current framerate, returns bool and updates log dict."""
         # Check if target framerate is valid
         if self.target_framerate_hz > current_framerate_hz:
             print(
@@ -141,6 +144,7 @@ class SampleTimestamps:
             return True
 
     def sample_timestamps(self, timestamps, threshold_to_target, log):
+        """Samples timestamps to match target framerate, returning indices and timestamps of selected frames that best match desired timing."""
         # Generate target timestamps
         start_time = timestamps[0][1]
         end_time = timestamps[-1][1]
@@ -177,7 +181,7 @@ class SampleTimestamps:
         log["n_target_timestamps"] = len(target_timestamps)
         log["n_selected_timestamps"] = len(selected_timestamps)
 
-        if len(selected_timestamps) >=2:
+        if len(selected_timestamps) >= 2:
             # Compute new framerate
             time_differences_new = []
             timestamps_new = sorted(selected_timestamps, key=lambda x: x[1])
@@ -193,7 +197,9 @@ class SampleTimestamps:
             log["framerate_hz_sampled"] = new_framerate_hz
 
         else:
-            print(f"Not enough selected timestamps ({len(selected_timestamps)}) to compute new framerate. Original number of timestamps: {len(timestamps)}")
+            print(
+                f"Not enough selected timestamps ({len(selected_timestamps)}) to compute new framerate. Original number of timestamps: {len(timestamps)}"
+            )
 
         return (
             selected_indices,
@@ -203,6 +209,7 @@ class SampleTimestamps:
         )
 
     def update_upload_file(self, file_name, selected_indices):
+        """Create filtered file at target framerate from selected indices and upload to S3, returns file size in MB or None if upload fails."""
         output_file_path = file_name + f"_sampled_{self.target_framerate_hz}Hz"
         lines = []
         with open(file_name, "r") as file:

@@ -51,7 +51,7 @@ jobs:
       run: pytest -s --ignore custom_models/ --ignore tests/workflow_aws_download_test.py --ignore tests/workflow_zero_shot_od_test.py
 
     - name: Documentation with pdoc
-      run: pdoc ./*.py ./utils/*.py -o docs
+      run: pdoc ./*.py ./workflows/*.py ./cloud/*.py ./config/*.py ./tests/*.py ./utils/*.py -o docs
     - uses: actions/upload-pages-artifact@v3
       with:
         path: docs/
@@ -71,7 +71,7 @@ jobs:
   # https://github.com/mitmproxy/pdoc/blob/main/.github/workflows/docs.yml
   deploy:
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'  
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       pages: write

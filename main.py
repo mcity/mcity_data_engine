@@ -48,6 +48,7 @@ from workflows.auto_label_mask import AutoLabelMask
 wandb_run = None  # Init globally to make sure it is available
 
 def signal_handler(sig, frame):
+    """Handle Ctrl+C signal by cleaning up resources and exiting."""
     logging.error("You pressed Ctrl+C!")
     try:
         wandb_close(exit_code=1)
@@ -58,6 +59,7 @@ def signal_handler(sig, frame):
 
 
 def workflow_aws_download(parameters, wandb_activate=True):
+    """Download and process data from AWS S3 bucket."""
     dataset = None
     dataset_name = None
     wandb_exit_code = 0
@@ -126,6 +128,7 @@ def workflow_anomaly_detection(
     run_config,
     wandb_activate=True,
 ):
+    """Run anomaly detection workflow using specified models and configurations."""
     try:
         # Weights and Biases
         wandb_exit_code = 0
@@ -179,6 +182,7 @@ def workflow_anomaly_detection(
 def workflow_embedding_selection(
     dataset, dataset_info, MODEL_NAME, config, wandb_activate=True
 ):
+    """Compute embeddings and find representative and rare images for dataset selection."""
     try:
         wandb_exit_code = 0
         wandb_run, log_dir = wandb_init(
@@ -228,6 +232,7 @@ def workflow_embedding_selection(
 
 
 def workflow_auto_labeling_ultralytics(dataset, run_config, wandb_activate=True):
+    """Auto-labeling workflow using Ultralytics models with optional training and inference."""
     try:
         wandb_exit_code = 0
         wandb_run = wandb_init(
@@ -264,6 +269,7 @@ def workflow_auto_labeling_ultralytics(dataset, run_config, wandb_activate=True)
 
 
 def workflow_auto_labeling_hf(dataset, hf_dataset, run_config, wandb_activate=True):
+    """Auto-labeling using Hugging Face models on a dataset, including training and/or inference based on the provided configuration."""
     try:
         wandb_exit_code = 0
         wandb_run = wandb_init(
@@ -304,6 +310,7 @@ def workflow_auto_labeling_hf(dataset, hf_dataset, run_config, wandb_activate=Tr
 def workflow_auto_labeling_custom_codetr(
     dataset, dataset_info, run_config, wandb_activate=True
 ):
+    """Auto labeling workflow using Co-DETR model supporting training and inference modes."""
 
     try:
         wandb_exit_code = 0
@@ -346,6 +353,7 @@ def workflow_auto_labeling_custom_codetr(
 
 
 def workflow_zero_shot_object_detection(dataset, dataset_info, config):
+    """Run zero-shot object detection on a dataset using models from Huggingface, supporting both single and multi-GPU inference."""
     # Set multiprocessing mode for CUDA multiprocessing
     try:
         mp.set_start_method("spawn", force=True)
@@ -420,6 +428,7 @@ def workflow_auto_label_mask(dataset, dataset_info, config):
 
 
 def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activate=True):
+    """Runs ensemble selection workflow on given dataset using provided configuration."""
     try:
         wandb_exit_code = 0
 
@@ -443,8 +452,8 @@ def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activat
 
 
 def cleanup_memory(do_extensive_cleanup=False):
-    logging.info("Starting memory cleanup")
     """Clean up memory after workflow execution. 'do_extensive_cleanup' recommended for multiple training sessions in a row."""
+    logging.info("Starting memory cleanup")
     # Clear CUDA cache
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -473,6 +482,8 @@ def cleanup_memory(do_extensive_cleanup=False):
 
 
 class WorkflowExecutor:
+    """Orchestrates the execution of multiple data processing workflows in sequence."""
+
     def __init__(
         self,
         workflows: List[str],
@@ -480,13 +491,14 @@ class WorkflowExecutor:
         dataset: fo.Dataset,
         dataset_info: Dict,
     ):
+        """Initializes with specified workflows, dataset selection, and dataset metadata."""
         self.workflows = workflows
         self.selected_dataset = selected_dataset
         self.dataset = dataset
         self.dataset_info = dataset_info
 
     def execute(self) -> bool:
-        """Execute workflows in sequential order"""
+        """Execute all configured workflows in sequence and handle errors."""
         if len(self.workflows) == 0:
             logging.error("No workflows selected.")
             return False
@@ -576,7 +588,7 @@ class WorkflowExecutor:
                         pbar := tqdm(anomalib_image_models, desc="Anomalib")
                     ):
                         # Status
-                        pbar.set_description(f"Anomalib model {MODEL_NAME}.")
+                        pbar.set_description(f"Anomalib model {MODEL_NAME}")
 
                         # Config
                         run_config = {
@@ -609,8 +621,8 @@ class WorkflowExecutor:
                     # Config
                     SUPPORTED_MODEL_SOURCES = [
                         "hf_models_objectdetection",
-                        "custom_codetr",
                         "ultralytics",
+                        "custom_codetr",
                     ]
 
                     # Common parameters between models
@@ -684,30 +696,6 @@ class WorkflowExecutor:
                             )
 
                     if SUPPORTED_MODEL_SOURCES[1] in selected_model_source:
-                        # Custom Co-DETR
-                        config_codetr = config_autolabel["custom_codetr"]
-                        run_config = {
-                            "export_dataset_root": config_codetr["export_dataset_root"],
-                            "container_tool": config_codetr["container_tool"],
-                            "n_gpus": config_codetr["n_gpus"],
-                            "mode": config_autolabel["mode"],
-                            "epochs": config_autolabel["epochs"],
-                            "inference_settings": config_autolabel[
-                                "inference_settings"
-                            ],
-                            "config": None,
-                        }
-                        codetr_configs = config_codetr["configs"]
-
-                        for config in tqdm(
-                            codetr_configs, desc="Processing Co-DETR configurations"
-                        ):
-                            pbar.set_description(f"Co-DETR model {MODEL_NAME}")                          
-                            run_config["config"] = config
-                            workflow_auto_labeling_custom_codetr(
-                                self.dataset, self.dataset_info, run_config
-                            )
-                    if SUPPORTED_MODEL_SOURCES[2] in selected_model_source:
                         # Ultralytics Models
                         config_ultralytics = config_autolabel["ultralytics"]
                         models_ultralytics = config_ultralytics["models"]
@@ -750,6 +738,33 @@ class WorkflowExecutor:
 
                             workflow_auto_labeling_ultralytics(self.dataset, run_config)
 
+                    if SUPPORTED_MODEL_SOURCES[2] in selected_model_source:
+                        # Custom Co-DETR
+                        config_codetr = config_autolabel["custom_codetr"]
+                        run_config = {
+                            "export_dataset_root": config_codetr["export_dataset_root"],
+                            "container_tool": config_codetr["container_tool"],
+                            "n_gpus": config_codetr["n_gpus"],
+                            "mode": config_autolabel["mode"],
+                            "epochs": config_autolabel["epochs"],
+                            "inference_settings": config_autolabel[
+                                "inference_settings"
+                            ],
+                            "config": None,
+                        }
+                        codetr_configs = config_codetr["configs"]
+
+                        for config in (
+                            pbar := tqdm(
+                                codetr_configs, desc="Processing Co-DETR configurations"
+                            )
+                        ):
+                            pbar.set_description(f"Co-DETR model {config}")
+                            run_config["config"] = config
+                            workflow_auto_labeling_custom_codetr(
+                                self.dataset, self.dataset_info, run_config
+                            )
+
                 elif workflow == "auto_labeling_zero_shot":
                     config = WORKFLOWS["auto_labeling_zero_shot"]
                     workflow_zero_shot_object_detection(
@@ -786,6 +801,7 @@ class WorkflowExecutor:
 
 
 def main():
+    """Executes the data processing workflow, loads dataset, and launches Voxel51 visualization interface."""
     time_start = time.time()
     configure_logging()
 
@@ -820,5 +836,5 @@ def main():
 
 
 if __name__ == "__main__":
-    cleanup_memory()  # Clean before run
+    cleanup_memory()
     main()
