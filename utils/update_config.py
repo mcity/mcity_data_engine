@@ -26,20 +26,20 @@ UPDATED_WORKFLOWS = {
 class ConfigVisitor(ast.NodeTransformer):
     """AST visitor that transforms specific configuration variable assignments in the source code."""
 
-        def visit_Assign(self, node):
-            """Processes AST nodes related to variable assignments, modifying specific configuration variables."""
-            if isinstance(node.targets[0], _ast.Name):
-                if node.targets[0].id == "SELECTED_WORKFLOW":
-                    node.value = ast.Constant(value=["embedding_selection"] )
-                elif node.targets[0].id == "WORKFLOWS":
-                    node.value = ast.Constant(value=UPDATED_WORKFLOWS)
-                elif node.targets[0].id == "WANDB_ACTIVE":
-                    node.value = ast.Constant(value=False)
-                elif node.targets[0].id == "HF_DO_UPLOAD":
-                    node.value = ast.Constant(value=False)                        
-                elif node.targets[0].id == "V51_REMOTE":
-                    node.value = ast.Constant(value=False)
-            return node
+    def visit_Assign(self, node):
+        """Processes AST nodes related to variable assignments, modifying specific configuration variables."""
+        if isinstance(node.targets[0], _ast.Name):
+            if node.targets[0].id == "SELECTED_WORKFLOW":
+                node.value = ast.Constant(value=["embedding_selection"])
+            elif node.targets[0].id == "WORKFLOWS":
+                node.value = ast.Constant(value=UPDATED_WORKFLOWS)
+            elif node.targets[0].id == "WANDB_ACTIVE":
+                node.value = ast.Constant(value=False)
+            elif node.targets[0].id == "HF_DO_UPLOAD":
+                node.value = ast.Constant(value=False)
+            elif node.targets[0].id == "V51_REMOTE":
+                node.value = ast.Constant(value=False)
+        return node
 
 
 if __name__ == "__main__":
