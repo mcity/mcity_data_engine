@@ -50,8 +50,36 @@ from config.config import (
     WANDB_ACTIVE,
     WORKFLOWS,
 )
+from utils.dataset_loader import get_supported_datasets
 from utils.logging import configure_logging
 from utils.sample_field_operations import add_sample_field
+
+
+def get_dataset_and_model_from_hf_id(hf_id: str):
+    """Extract dataset and model name from HuggingFace ID by matching against supported datasets."""
+    # Find all dataset names that appear in hf_id
+    # HF ID follows structure organization/dataset_model
+    # Both dataset and model can contain "_" as well
+
+    # Remove organization (everything before the first "/")
+    hf_id = hf_id.split("/", 1)[-1]
+
+    supported_datasets = get_supported_datasets()
+    matches = [
+        dataset_name for dataset_name in supported_datasets if dataset_name in hf_id
+    ]
+
+    if not matches:
+        logging.error(f"Dataset name could not be extracted from HD IF {hf_id}")
+        dataset_name = "no_dataset_name"
+    else:
+        # Return the longest match (most specific)
+        dataset_name = max(matches, key=len)
+
+    # Get model name by removing dataset name from hf_id
+    model_name = hf_id.replace(dataset_name, "").strip("_")
+
+    return dataset_name, model_name
 
 
 # Handling timeouts
