@@ -1,4 +1,3 @@
-import base64
 import datetime
 import json
 import os
@@ -18,6 +17,7 @@ load_dotenv()
 
 
 class AwsDownloader:
+    """AWS data downloader for handling, downloading, and processing camera data from AWS S3 buckets."""
 
     def __init__(
         self,
@@ -32,6 +32,7 @@ class AwsDownloader:
         test_run: bool = False,
         delete_old_data: bool = False,
     ):
+        """Initialize the class with parameters for date range, logging configurations, and storage settings."""
         self.start_date = start_date
         self.end_date = end_date
         self.sample_rate_hz = sample_rate_hz
@@ -79,6 +80,7 @@ class AwsDownloader:
         )
 
     def process_data(self):
+        """Downloads files from AWS S3, samples them at 1Hz, and generates download and sampling logs."""
         cameras_dict = self._mcity_init_cameras()
         self._mcity_process_aws_buckets(cameras_dict)
         self.file_names, n_files_to_download = self._mcity_select_data(cameras_dict)
@@ -257,7 +259,7 @@ class AwsDownloader:
             "Maple_Miller_2",
         },
     ):
-
+        """Initialize a dictionary of Mcity traffic cameras with IDs and empty AWS source mappings."""
         cameras_dict = {camera.lower(): {} for camera in cameras}
         for id, camera in enumerate(cameras_dict):
             cameras_dict[camera]["id"] = id
@@ -274,6 +276,7 @@ class AwsDownloader:
             "sip-sensor-data2": ["wheeler1/", "wheeler2/"],
         },
     ):
+        """Processes AWS buckets to map camera names to their corresponding AWS sources."""
         for bucket in tqdm(aws_sources, desc="Processing AWS sources"):
             for folder in aws_sources[bucket]:
                 # Get and pre-process AWS data
@@ -317,6 +320,7 @@ class AwsDownloader:
                     print(f"AWS did not return a list of folders for {bucket}/{folder}")
 
     def _mcity_select_data(self, cameras_dict):
+        """Processes S3 camera data within specified date range, organizing files by camera, source, and date while tracking metrics."""
         n_cameras = 0
         n_aws_sources = 0
         n_files_to_download = 0
@@ -391,6 +395,7 @@ class AwsDownloader:
         return self.file_names, n_files_to_download
 
     def _mcity_download_data(self, cameras_dict, n_files_to_download, passed_checks):
+        """Downloads data from AWS S3 buckets based on camera dictionary, returns bool indicating success."""
         mb_per_s_list = []
 
         if passed_checks:
@@ -434,6 +439,7 @@ class AwsDownloader:
         return download_successful
 
     def _process_aws_result(self, result):
+        """Extracts folder prefixes from AWS S3 list operation result; returns folder list or None if no prefixes found."""
         # Get list of folders from AWS response
         if "CommonPrefixes" in result:
             folders = [prefix["Prefix"] for prefix in result["CommonPrefixes"]]
