@@ -2,11 +2,11 @@ import fiftyone as fo
 import pytest
 from fiftyone import ViewField as F
 from fiftyone.utils.huggingface import load_from_hub
-from main import workflow_class_mapping, WORKFLOWS
-from workflows.class_mapping import ClassMapper
+from main import workflow_class_mapping
+#from workflows.class_mapping import ClassMapper
 from utils.dataset_loader import load_dataset_info, _post_process_dataset
 import logging
-from main import configure_logging
+from utils.logging import configure_logging
 
 @pytest.fixture(autouse=True)
 def setup_logging():
@@ -14,25 +14,25 @@ def setup_logging():
 
 @pytest.fixture
 def dataset_v51():
-    """Fixture to load a FiftyOne dataset from the hub and filter to one target sample with detections."""
-    dataset_name_hub = "Voxel51/fisheye8k"
-    dataset_name = "fisheye8k_v51_cm_test"
+    """Fixture to load a FiftyOne dataset from the hub with one target for test."""
+    dataset_name_hub = "Abeyankar/class_mapping_test_dataset"
 
     # Updated target filepath to a sample known to have detections
-    target_filepath_ending = "camera17_A_32.png"
+    #target_filepath_ending = "camera17_A_32.png"
     dataset = load_from_hub(dataset_name_hub, overwrite=True)
+    #dataset = load_from_hub("Abeyankar/class_mapping_test_dataset")
     dataset = _post_process_dataset(dataset)
 
     # Find the sample in the existing dataset
-    sample = dataset.match(F("filepath").ends_with(target_filepath_ending)).first()
+    #sample = dataset.match(F("filepath").ends_with(target_filepath_ending)).first()
 
-    temp_name = "new_test_dataset5"
-    if fo.dataset_exists(temp_name):
-        fo.delete_dataset(temp_name)
-    new_test_dataset5 = fo.Dataset(temp_name)
-    new_test_dataset5.add_sample(sample)
+    #temp_name = "new_test_dataset5"
+    #if fo.dataset_exists(temp_name):
+    #    fo.delete_dataset(temp_name)
+    #new_test_dataset5 = fo.Dataset(temp_name)
+    #new_test_dataset5.add_sample(sample)
 
-    return new_test_dataset5
+    return dataset
 
 def test_class_mapping(dataset_v51):
     """
@@ -51,12 +51,35 @@ def test_class_mapping(dataset_v51):
     dataset_info = load_dataset_info("fisheye8k")  # Use loader for actual dataset
     dataset_info["name"] = "fisheye8k_v51_cm_test"  # Update with test name for local tests where both exist
 
+    # Define a simplified local version of WORKFLOWS
+
+    config = {
+        "dataset_source": "fisheye8k",
+        "dataset_target": "mcity_fisheye_2000",
+        "hf_models_zeroshot_classification": [
+            "Salesforce/blip2-itm-vit-g",
+            "openai/clip-vit-large-patch14",
+            "google/siglip-so400m-patch14-384",
+            "kakaobrain/align-base",
+            "BAAI/AltCLIP",
+            "CIDAS/clipseg-rd64-refined"
+        ],
+        "thresholds": {
+            "confidence": 0.2
+        },
+        "candidate_labels": {
+            "Car": ["car", "van", "pickup"],
+            "Truck": ["truck", "pickup"],
+            "Bike": ["motorbike/cycler"]
+        }
+    }
     # Extract configuration and iterate over models.
-    config = WORKFLOWS["class_mapping"]
+    #config = WORKFLOWS["class_mapping"]
     models = config["hf_models_zeroshot_classification"]
 
-    for model_name in models:
-        workflow_class_mapping(dataset_v51, dataset_info, model_name, config)
+    #for model_name in models:
+    #    workflow_class_mapping(dataset_v51, dataset_info, model_name, config)
+    workflow_class_mapping(dataset_v51, dataset_info, config)
 
     logging.info("\nAfter workflow:")
     if hasattr(sample, "ground_truth") and sample["ground_truth"].detections:

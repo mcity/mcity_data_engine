@@ -417,33 +417,49 @@ def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activat
 
     return True
 
-def workflow_class_mapping(dataset, dataset_info, model_name, config):
-    """
-    Execute class mapping workflow for a single model by delegating all processing to ClassMapper.
-    """
-    logging.info("\nClass Mapping Workflow")
-    logging.info(f"\nRunning model: {model_name}")
-    mapper = ClassMapper(dataset, model_name, config)
-    any_success = False
+def workflow_class_mapping(dataset, dataset_info, run_config, wandb_activate=True):
+
     try:
-        stats = mapper.run_mapping()
+        wandb_exit_code = 0
+        # Initialize a wandb run for class mapping
+        wandb_run = wandb_init(
+            run_name="class_mapping",
+            project_name="Class Mapping",
+            dataset_name=dataset_info["name"],
+            config=run_config,
+            wandb_activate=wandb_activate
+        )
+        class_mapping_models = WORKFLOWS["class_mapping"]["hf_models_zeroshot_classification"]
 
-        # Display statistics only if mapping was successful
-        parent_class_counts = stats["total_processed"]
-        logging.info("\nParent Class Classification Results :")
-        for parent, count in stats["parent_class_counts"].items():
-            percentage = (count / parent_class_counts) * 100 if parent_class_counts > 0 else 0
-            logging.info(f"{parent}: {count} samples processed ({percentage:.1f}%)")
+        for model_name in (pbar := tqdm(class_mapping_models, desc="Processing Class Mapping")):
+            pbar.set_description(f"Zero Shot Classification model {model_name}")
+            mapper = ClassMapper(dataset, model_name, run_config)
+            any_success = False
+            try:
+                stats = mapper.run_mapping()
 
-        # Display statistics for Child tags
-        logging.info("\nTag Addition Results (Child Tags):")
-        logging.info(f"Total new tags added: {stats['changes_made']}")
-        for child, tag_count in stats["tags_added_per_category"].items():
-            logging.info(f"{child} tags added: {tag_count}")
-        any_success = True
+                # Display statistics only if mapping was successful
+                source_class_counts = stats["total_processed"]
+                logging.info("\nClassification Results for Source Dataset:")
+                for source_class, count in stats["source_class_counts"].items():
+                    percentage = (count / source_class_counts) * 100 if source_class_counts > 0 else 0
+                    logging.info(f"{source_class}: {count} samples processed ({percentage:.1f}%)")
+
+                # Display statistics for tags added to Target Dataset
+                logging.info("\nTag Addition Results (Target Dataset Tags):")
+                logging.info(f"Total new tags added: {stats['changes_made']}")
+                for target_class, tag_count in stats["tags_added_per_category"].items():
+                    logging.info(f"{target_class} tags added: {tag_count}")
+                any_success = True
+
+            except Exception as e:
+                logging.error(f"Error during mapping with model {model_name}: {e}")
 
     except Exception as e:
-        logging.error(f"Error during mapping with model {model_name}: {e}")
+        logging.error(f"Error in class_mapping workflow: {e}")
+        wandb_exit_code = 1
+    finally:
+        wandb_close(wandb_exit_code)
 
     return any_success
 
@@ -738,30 +754,13 @@ class WorkflowExecutor:
 
 
                 elif workflow == "class_mapping":
-                    wandb_exit_code = 0
-                    try:
-                        # Initialize a wandb run for class mapping
-                        wandb_run, log_dir = wandb_init(
-                            run_name="class_mapping",
-                            project_name="Class Mapping",
-                            dataset_name=self.selected_dataset,
-                            config=WORKFLOWS["class_mapping"]
-                        )
-                        config = WORKFLOWS["class_mapping"]
-                        models = config["hf_models_zeroshot_classification"]
+                    # Config
+                    run_config = WORKFLOWS["class_mapping"]
 
-
-                        # Iterate over models and run the workflow for each one
-                        for model_name in (pbar := tqdm(models, desc="Processing Class Mapping")):
-                            # Status Update
-                            pbar.set_description(f"Zero Shot Classification model {model_name}")
-                            workflow_class_mapping(self.dataset, self.dataset_info, model_name, config)
-
-                    except Exception as e:
-                        logging.error(f"Error in class_mapping workflow: {e}")
-                        wandb_exit_code = 1
-                    finally:
-                        wandb_close(wandb_run, wandb_exit_code)
+                    # Workflow
+                    workflow_class_mapping(
+                        self.dataset, self.dataset_info, config
+                    )
 
                 else:
                     logging.error(

@@ -279,7 +279,7 @@ WORKFLOWS = {
             "confidence": 0.2
         },
         "candidate_labels": {
-            #Parent class(Generalized class) : Children classes(specific categories)
+            #Target class(Generalized class) : Source classes(specific categories)
             "Car": ["car", "van", "pickup"],
             "Truck": ["truck", "pickup"],
             #One_to_one_mapping

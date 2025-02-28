@@ -36,8 +36,8 @@ class ClassMapper:
         self.stats = {
             "total_processed": 0,
             "changes_made": 0,
-            "parent_class_counts": {},  # Count of processed detections per parent class (e.g., Car, Truck)
-            "tags_added_per_category": {}  # Detailed counts for child tags added (e.g., Van, Pickup)
+            "source_class_counts": {},  # Count of processed detections per source class (e.g., Car, Truck)
+            "tags_added_per_category": {}  # Detailed counts for tags added per target class(e.g., Van, Pickup)
         }
 
     def load_model(self):
@@ -210,52 +210,44 @@ class ClassMapper:
         # Access candidate labels from config
         candidate_labels = self.config["candidate_labels"]
 
-        # Check that all parent labels from the candidate_labels exist in dataset_source.
-        parent_labels = list(candidate_labels.keys())
-        missing_parents = [p for p in parent_labels if p not in source_labels]
-        if missing_parents:
-            error_msg = (f"Missing parent labels in dataset_source '{dataset_source_name}': {missing_parents}\n"
-                        f"Expected parents: {parent_labels}\n"
+        # Check that all labels from the candidate_labels exist in dataset_source.
+        input_source_labels = list(candidate_labels.keys())
+        missing_source_labels = [p for p in input_source_labels if p not in source_labels]
+        if missing_source_labels:
+            error_msg = (f"Missing labels in dataset_source '{dataset_source_name}': {missing_source_labels}\n"
+                        f"Expected source labels: {input_source_labels}\n"
                         f"Found in dataset_source: {source_labels}")
             logging.error(error_msg)
             raise ValueError(error_msg)
 
-        # Check that all child labels from candidate_labels exist in dataset_target.
-        all_child_labels = []
-        for children in candidate_labels.values():
-            all_child_labels.extend(children)
-        missing_children = [child for child in all_child_labels if child not in target_labels]
-        if missing_children:
-            error_msg = (f"Missing child labels in dataset_target '{dataset_target_name}': {missing_children}\n"
-                        f"Expected children: {all_child_labels}\n"
+        # Check that all labels from candidate_labels exist in dataset_target.
+        all_target_labels = []
+        for input_target_labels in candidate_labels.values():
+            all_target_labels.extend(input_target_labels)
+        missing_target = [target_temp for target_temp in all_target_labels if target_temp not in target_labels]
+        if missing_target:
+            error_msg = (f"Missing labels in dataset_target '{dataset_target_name}': {missing_target}\n"
+                        f"Expected target classes: {all_target_labels}\n"
                         f"Found in dataset_target: {target_labels}")
             logging.error(error_msg)
             raise ValueError(error_msg)
 
         one_to_one_mapping = {
-            parent: children[0]  # Only pick mappings with exactly 1 child
-            for parent, children in candidate_labels.items()
-            if len(children) == 1
+            source: target[0]  # Only pick mappings with exactly 1 target class
+            for source, target in candidate_labels.items()
+            if len(target) == 1
         }
 
+        log_root="./logs/"
         experiment_name = f"class_mapping_{os.getpid()}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-        tensorboard_root = self.config.get("tensorboard_root", "./tensorboard_logs")
-        dataset_name = getattr(self.dataset, "name", "default_dataset")
-        log_directory = os.path.join(tensorboard_root, dataset_name, experiment_name)
-
-        # Unpatch any previous TensorBoard patching before applying a new one
-        try:
-            wandb.tensorboard.unpatch()
-        except Exception as e:
-            logging.warning(f"Error unpatching TensorBoard: {e}")
-
-        wandb.tensorboard.patch(root_logdir=log_directory)
-        wandb.init(
-            name=f"class_mapping_{os.getpid()}",
-            project="Class_mapping",
-            config=self.config,
-            sync_tensorboard=False  # Disable automatic syncing to avoid conflicts
+        tensorboard_root = os.path.join(
+            log_root, "tensorboard/class_mapping"
         )
+        dataset_name = getattr(self.dataset, "name", "default_dataset")
+        log_directory = os.path.join(
+            tensorboard_root, dataset_name, experiment_name
+        )
+
         tb_writer = SummaryWriter(log_dir=log_directory)
 
         threshold = self.config["thresholds"]["confidence"]
@@ -276,7 +268,7 @@ class ClassMapper:
                 # Check if it is a one-to-one mapping
                 if current_label in one_to_one_mapping:
                     new_label = one_to_one_mapping[current_label]
-                    tag = f"new_class_{new_label}"
+                    tag = f"new_class_{new_label}_changed_from_{current_label}"
 
                     # Apply new label and add tag
                     if tag not in det.tags:
@@ -295,10 +287,10 @@ class ClassMapper:
                 if current_label not in candidate_labels:
                     continue
 
-                label_candidates = candidate_labels[current_label]
-                predicted_label, confidence = self.process_detection(image, det, label_candidates)
+                current_candidate_labels = candidate_labels[current_label]
+                predicted_label, confidence = self.process_detection(image, det, current_candidate_labels)
 
-                self.stats["parent_class_counts"][current_label] = self.stats["parent_class_counts"].get(current_label, 0) + 1
+                self.stats["source_class_counts"][current_label] = self.stats["source_class_counts"].get(current_label, 0) + 1
                 self.stats["total_processed"] += 1
 
                 # If prediction meets threshold and differs from the original label, add a tag.
@@ -312,33 +304,30 @@ class ClassMapper:
                                 self.stats["tags_added_per_category"].get(predicted_label, 0) + 1
                             )
 
-                        if tb_writer is not None:
-                            tb_writer.add_scalar(f"{self.model_name}/Tags_Added/{predicted_label}",
-                                                self.stats["tags_added_per_category"].get(predicted_label, 0),
-                                                sample_count)
-                            tb_writer.add_scalar(f"{self.model_name}/Total_Tags_Added",
-                                                self.stats["changes_made"],
-                                                sample_count)
-
-            if tb_writer is not None:
-                tb_writer.add_scalar(f"{self.model_name}/Total_Processed_Samples",
-                                    self.stats["total_processed"],
-                                    sample_count)
-                tb_writer.add_scalar(f"{self.model_name}/Total_Tag_Changes",
-                                    self.stats["changes_made"],
-                                    sample_count)
-
-                # Log parent class counts and child tag counts based on candidate_labels.
-                for parent_label, child_labels in self.config["candidate_labels"].items():
-                    tb_writer.add_scalar(f"{self.model_name}/Parent_Class_Count/{parent_label}",
-                                        self.stats["parent_class_counts"].get(parent_label, 0),
-                                        sample_count)
-                    for child_label in child_labels:
-                        tb_writer.add_scalar(f"{self.model_name}/Tags_Added/{child_label}",
-                                            self.stats["tags_added_per_category"].get(child_label, 0),
+                        tb_writer.add_scalar(f"{self.model_name}/Tags_Added/{predicted_label}",
+                                            self.stats["tags_added_per_category"].get(predicted_label, 0),
+                                            sample_count)
+                        tb_writer.add_scalar(f"{self.model_name}/Total_Tags_Added",
+                                            self.stats["changes_made"],
                                             sample_count)
 
+            tb_writer.add_scalar(f"{self.model_name}/Total_Processed_Samples",
+                                self.stats["total_processed"],
+                                sample_count)
+            tb_writer.add_scalar(f"{self.model_name}/Total_Tag_Changes",
+                                self.stats["changes_made"],
+                                sample_count)
 
-        if tb_writer is not None:
-            tb_writer.close()
+            # Log class counts from source and target tag counts based on candidate_labels.
+            for input_source_label, target_temp_labels in self.config["candidate_labels"].items():
+                tb_writer.add_scalar(f"{self.model_name}/Source_Class_Count/{input_source_label}",
+                                    self.stats["source_class_counts"].get(input_source_label, 0),
+                                    sample_count)
+                for target_temp_label in target_temp_labels:
+                    tb_writer.add_scalar(f"{self.model_name}/Tags_Added/{target_temp_label}",
+                                        self.stats["tags_added_per_category"].get(target_temp_label, 0),
+                                        sample_count)
+
+        tb_writer.close()
+
         return self.stats
