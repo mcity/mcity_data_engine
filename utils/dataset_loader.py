@@ -13,6 +13,17 @@ from config.config import ACCEPTED_SPLITS, GLOBAL_SEED, NUM_WORKERS, PERSISTENT
 from utils.sample_field_operations import rename_sample_field
 
 
+def get_supported_datasets(config_path="config/datasets.yaml"):
+    """Returns a list of supported dataset names from the config file."""
+    try:
+        with open(config_path, "r") as file:
+            config = yaml.safe_load(file)
+
+        return [dataset["name"] for dataset in config["datasets"]]
+    except Exception as e:
+        logging.error(f"Available datasets could not be retrieved: {e}")
+
+
 def load_dataset(selected_dataset: str) -> fo.Dataset:
     """Loads a dataset by name, optionally reducing it to a requested number of samples while maintaining original split distributions."""
     dataset_info = load_dataset_info(selected_dataset["name"])
