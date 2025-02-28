@@ -12,8 +12,6 @@
   <img alt="Visitors" src="https://visitor-badge.laobi.icu/badge?page_id=mcity.mcity_data_engine"/>
 </p>
 
-The Mcity Data Engine is an essential tool in the Mcity makerspace for transportation innovators making AI algorithms and seeking actionable data insights through machine learning. Details on the Data Engine can be found in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki).
-
 <p align='center'>
 
 <a target="_blank" rel="noopener noreferrer" href="https://colab.research.google.com/github/mcity/mcity_data_engine/blob/main/fish_eye_8k_colab.ipynb">
@@ -52,6 +50,14 @@ width="15%">
 </picture>
 </a>
 </p>
+
+The Mcity Data Engine is an essential tool in the Mcity makerspace for transportation innovators making AI algorithms and seeking actionable data insights through machine learning. Details on the Data Engine can be found in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki). The data engine supports all stages to continuously improve AI models based on raw visual data:
+
+<div align="center">
+      <picture>
+  <source srcset="https://github.com/user-attachments/assets/f775ee92-9f59-43be-a9ac-1d313d2862e1" width="60%">
+  <img alt="Mcity Data Engine Overview" src="">
+</picture>
 
 On February 24, 2025, Daniel Bogdoll, a research scholar at Mcity, gave a presentation on the first release of the Mcity Data Engine in Ann Arbor, Michigan. The recording provides insight into the general architecture, it's features and ecosystem integrations, and demonstrates successful data curation and model training for improved Vulnerable Road User (VRU) detection:
 
