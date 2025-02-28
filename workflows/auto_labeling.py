@@ -903,6 +903,7 @@ class UltralyticsObjectDetection:
                     )
                 else:
                     download_dir = self.model_path.replace("best.pt", "")
+                    os.makedirs(download_dir, exist_ok=True)
                     logging.info(
                         f"Downloading model {self.hf_hub_model_id} from Hugging Face to {download_dir}"
                     )
@@ -1327,7 +1328,7 @@ class CustomCoDETRObjectDetection:
     def __init__(self, dataset, dataset_info, run_config):
         """Initialize Co-DETR interface with dataset and configuration"""
         self.root_codetr = "./custom_models/CoDETR/Co-DETR"
-        self.root_codetr_models = "./output/models/codetr"
+        self.root_codetr_models = "output/models/codetr"
         self.dataset = dataset
         self.dataset_name = dataset_info["name"]
         self.export_dir_root = run_config["export_dataset_root"]
@@ -1571,11 +1572,12 @@ class CustomCoDETRObjectDetection:
             ]  # Remove the trailing "_"
             config_key = dataset_config_str[config_index:]
 
-            logging.info(
-                f"Downloading model {hf_path} from Hugging Face: Co-DETR config {config_key} trained on {dataset_name}."
-            )
             download_folder = os.path.join(
                 self.root_codetr_models, dataset_name, config_key
+            )
+
+            logging.info(
+                f"Downloading model {hf_path} from Hugging Face into {download_folder}"
             )
             os.makedirs(download_folder, exist_ok=True)
 
