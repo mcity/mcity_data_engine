@@ -60,7 +60,7 @@ def test_class_mapping(dataset_v51):
 
     models = config["hf_models_zeroshot_classification"]
 
-    workflow_class_mapping(dataset_v51, dataset_info, config)
+    workflow_class_mapping(dataset_v51, dataset_info, config, wandb_activate=False)
 
     logging.info("\nAfter workflow:")
     if hasattr(sample, "ground_truth") and sample["ground_truth"].detections:
