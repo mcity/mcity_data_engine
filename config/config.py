@@ -77,7 +77,7 @@ WORKFLOWS = {
         "inference_settings": {
             "do_eval": True,
             "inference_on_evaluation": True,
-            "model_hf": None,  # None (automatic selection) or Hugging Face ID
+            "model_hf": None,  # None (automatic selection) or overwrite with Hugging Face ID. Assumes same model as selected below.
             "detection_threshold": 0.2,
         },
         "hf_models_objectdetection": {  # HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
