@@ -1,5 +1,6 @@
 import psutil
 
+
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
 SELECTED_WORKFLOW = ["embedding_selection", "auto_labeling"]
 
@@ -185,15 +186,14 @@ WORKFLOWS = {
             "delivery driver",
         ],
     },
-    "mask_teacher": {
+    "auto_label_mask": {
         "semantic_segmentation": {
             "sam2": {
-                "prompt_field": None,  # None or Voxel51 field with bbox detections
+                "prompt_field": None,
                 "models": [
                     "segment-anything-2-hiera-tiny-image-torch",
                     "segment-anything-2-hiera-small-image-torch",
                     "segment-anything-2-hiera-base-plus-image-torch",
-                    "segment-anything-2-hiera-large-image-torch",
                     "segment-anything-2.1-hiera-tiny-image-torch",
                     "segment-anything-2.1-hiera-small-image-torch",
                     "segment-anything-2.1-hiera-base-plus-image-torch",
@@ -203,7 +203,6 @@ WORKFLOWS = {
         },
         "depth_estimation": {
             "dpt": {
-                "prompt_field": None,
                 "models": {
                     "Intel/dpt-swinv2-tiny-256",
                     "Intel/dpt-swinv2-large-384",
@@ -217,19 +216,22 @@ WORKFLOWS = {
                 },
             },
             "depth_anything": {
-                "prompt_field": None,
                 "models": {
                     "LiheYoung/depth-anything-base-hf",
                     "LiheYoung/depth-anything-large-hf",
                     "LiheYoung/depth-anything-small-hf",
                 },
             },
+            "depth_pro": {
+                "models": {
+                    "apple/DepthPro-hf",
+                }
+            },
             "glpn": {
-                "prompt_field": None,
-                "models": {"vinvino02/glpn-nyu", "vinvino02/glpn-kitti"},
+                "models": {"vinvino02/glpn-nyu",
+                           "vinvino02/glpn-kitti"},
             },
             "zoe_depth": {
-                "prompt_field": None,
                 "models": {
                     "Intel/zoedepth-nyu-kitti",
                     "Intel/zoedepth-nyu",
