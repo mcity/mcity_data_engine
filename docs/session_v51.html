@@ -62,12 +62,13 @@ session_v51    </h1>
 </span><span id="L-4"><a href="#L-4"><span class="linenos"> 4</span></a>
 </span><span id="L-5"><a href="#L-5"><span class="linenos"> 5</span></a>
 </span><span id="L-6"><a href="#L-6"><span class="linenos"> 6</span></a><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
-</span><span id="L-7"><a href="#L-7"><span class="linenos"> 7</span></a>    <span class="n">session</span> <span class="o">=</span> <span class="n">fo</span><span class="o">.</span><span class="n">launch_app</span><span class="p">(</span><span class="n">address</span><span class="o">=</span><span class="n">V51_ADDRESS</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="n">V51_PORT</span><span class="p">)</span>
-</span><span id="L-8"><a href="#L-8"><span class="linenos"> 8</span></a>    <span class="n">session</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (-1) forever</span>
-</span><span id="L-9"><a href="#L-9"><span class="linenos"> 9</span></a>
+</span><span id="L-7"><a href="#L-7"><span class="linenos"> 7</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Launches FiftyOne app session and waits indefinitely for user interaction.&quot;&quot;&quot;</span>
+</span><span id="L-8"><a href="#L-8"><span class="linenos"> 8</span></a>    <span class="n">session</span> <span class="o">=</span> <span class="n">fo</span><span class="o">.</span><span class="n">launch_app</span><span class="p">(</span><span class="n">address</span><span class="o">=</span><span class="n">V51_ADDRESS</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="n">V51_PORT</span><span class="p">)</span>
+</span><span id="L-9"><a href="#L-9"><span class="linenos"> 9</span></a>    <span class="n">session</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (-1) forever</span>
 </span><span id="L-10"><a href="#L-10"><span class="linenos">10</span></a>
-</span><span id="L-11"><a href="#L-11"><span class="linenos">11</span></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
-</span><span id="L-12"><a href="#L-12"><span class="linenos">12</span></a>    <span class="n">main</span><span class="p">()</span>
+</span><span id="L-11"><a href="#L-11"><span class="linenos">11</span></a>
+</span><span id="L-12"><a href="#L-12"><span class="linenos">12</span></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+</span><span id="L-13"><a href="#L-13"><span class="linenos">13</span></a>    <span class="n">main</span><span class="p">()</span>
 </span></pre></div>
 
 
@@ -83,13 +84,16 @@ session_v51    </h1>
 
     </div>
     <a class="headerlink" href="#main"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="main-7"><a href="#main-7"><span class="linenos">7</span></a><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
-</span><span id="main-8"><a href="#main-8"><span class="linenos">8</span></a>    <span class="n">session</span> <span class="o">=</span> <span class="n">fo</span><span class="o">.</span><span class="n">launch_app</span><span class="p">(</span><span class="n">address</span><span class="o">=</span><span class="n">V51_ADDRESS</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="n">V51_PORT</span><span class="p">)</span>
-</span><span id="main-9"><a href="#main-9"><span class="linenos">9</span></a>    <span class="n">session</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (-1) forever</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="main-7"><a href="#main-7"><span class="linenos"> 7</span></a><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+</span><span id="main-8"><a href="#main-8"><span class="linenos"> 8</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Launches FiftyOne app session and waits indefinitely for user interaction.&quot;&quot;&quot;</span>
+</span><span id="main-9"><a href="#main-9"><span class="linenos"> 9</span></a>    <span class="n">session</span> <span class="o">=</span> <span class="n">fo</span><span class="o">.</span><span class="n">launch_app</span><span class="p">(</span><span class="n">address</span><span class="o">=</span><span class="n">V51_ADDRESS</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="n">V51_PORT</span><span class="p">)</span>
+</span><span id="main-10"><a href="#main-10"><span class="linenos">10</span></a>    <span class="n">session</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (-1) forever</span>
 </span></pre></div>
 
 
-    
+            <div class="docstring"><p>Launches FiftyOne app session and waits indefinitely for user interaction.</p>
+</div>
+
 
                 </section>
     </main>
