@@ -23,6 +23,8 @@ from config.config import GLOBAL_SEED, HF_DO_UPLOAD, HF_ROOT, NUM_WORKERS
 
 
 class Anodec:
+    """Anomaly detection model class for managing training, inference, and evaluation of anomaly detection models using Anomalib."""
+
     def __init__(
         self,
         dataset,
@@ -32,6 +34,7 @@ class Anodec:
         tensorboard_output,
         anomalib_output_root="./output/models/anomalib/",
     ):
+        """Initialize the anomaly detection module with dataset, evaluation metrics, config, and output paths."""
         torch.set_float32_matmul_precision(
             "medium"
         )  # Utilize Tensor core, came in warning
@@ -53,6 +56,7 @@ class Anodec:
             self.dataset_name,
             "weights/torch/model.pt",
         )
+        self.field_gt_anomaly_mask = "ground_truth_anomaly_mask"
 
         self.hf_repo_name = f"{HF_ROOT}/{self.dataset_name}_anomalib_{self.model_name}"
 
@@ -63,6 +67,7 @@ class Anodec:
         self.anomalib_logger = None
 
     def __del__(self):
+        """Destructor method that unlinks symlinks and finalizes the anomaly detection logger."""
         try:
             self.unlink_symlinks()
             self.anomalib_logger.finalize("success")
@@ -70,21 +75,7 @@ class Anodec:
             pass
 
     def create_datamodule(self, transform):
-        """
-        Create and setup a data module for anomaly detection.
-
-        This method performs the following steps:
-        1. Builds a transform if none is provided.
-        2. Creates subsets of data containing only the “good” training images and “anomalous” images for validation.
-        3. Symlinks the images and masks to the directory Anomalib expects.
-        4. Instantiates and sets up a datamodule from Anomalib’s Folder class, which is the general-purpose class for custom datasets.
-
-        Args:
-            transform (callable, optional): A transformation to apply to the images. Defaults to resizing to IMAGE_SIZE with antialiasing.
-
-        Returns:
-            None
-        """
+        """Create datamodule for anomaly detection by preparing and symlink images/masks for the Anomalib datamodule."""
 
         # Symlink the images and masks to the directory Anomalib expects.
         logging.info("Preparing images and masks for Anomalib")
@@ -99,7 +90,7 @@ class Anodec:
             if not os.path.exists(mask_path):
                 logging.error(f"Mask file not found: {mask_path}")
 
-            sample["anomaly_mask"] = fo.Segmentation(mask_path=mask_path)
+            sample[self.field_gt_anomaly_mask] = fo.Segmentation(mask_path=mask_path)
 
             dir_name = os.path.dirname(sample.filepath).split("/")[-1]
             new_filename = f"{dir_name}_{base_filename}"
@@ -110,7 +101,7 @@ class Anodec:
 
             if not os.path.exists(os.path.join(self.mask_dir, new_filename)):
                 os.symlink(
-                    sample.anomaly_mask.mask_path,
+                    sample[self.field_gt_anomaly_mask].mask_path,
                     os.path.join(self.mask_dir, new_filename),
                 )
 
@@ -131,6 +122,7 @@ class Anodec:
         self.datamodule.setup()
 
     def unlink_symlinks(self):
+        """Removes symbolic links for abnormal samples and masks."""
         for sample in self.abnormal_data.iter_samples(progress=True):
             base_filename = sample.filename
             dir_name = os.path.dirname(sample.filepath).split("/")[-1]
@@ -151,17 +143,7 @@ class Anodec:
                 )
 
     def train_and_export_model(self):
-        """
-        Trains an anomaly detection model using Anomalib’s Engine class, exports the model,
-        and returns the model “inferencer” object. The inferencer object is used to make predictions on new images.
-
-        Args:
-            transform (callable, optional): A function/transform that takes in an image and returns a transformed version.
-                                            E.g, ``transforms.RandomCrop`` for images.
-
-        Returns:
-            None
-        """
+        """Train an anomaly detection model if not already trained and export it, optionally uploading to HuggingFace."""
 
         MAX_EPOCHS = self.config["epochs"]
         PATIENCE = self.config["early_stop_patience"]
@@ -248,7 +230,7 @@ class Anodec:
             )
 
     def validate_model(self):
-        # Test model
+        """Test the anomaly detection model using the designated testing dataset and log the performance results."""
         if self.engine:
             test_results = self.engine.test(
                 model=self.model,
@@ -260,6 +242,7 @@ class Anodec:
             logging.error(f"Engine '{self.engine}' not available.")
 
     def run_inference(self, mode):
+        """Runs the anomaly detection inference on the dataset either for the train-val or generic data."""
         logging.info(f"Running inference")
         try:
             if os.path.exists(self.model_path):
@@ -306,25 +289,11 @@ class Anodec:
             sample[field_pred_anomaly_mask] = fo.Segmentation(mask=output.pred_mask)
 
     def eval_v51(self):
-        """
-        Evaluates the segmentations of abnormal data using the specified model.
+        """Evaluates segmentation performance of the anomaly detection model on the abnormal dataset."""
 
-        This method evaluates the segmentations of abnormal data by comparing the predicted anomaly mask
-        with the ground truth anomaly mask. The evaluation results are stored and a report is printed.
-
-        Parameters:
-        None
-
-        Returns:
-        None
-
-        Side Effects:
-        - Evaluates the segmentations and stores the results in the `eval_seg_{self.model_name}` key.
-        - Prints a report of the evaluation results for the specified classes [0, 255].
-        """
         eval_seg = self.abnormal_data.evaluate_segmentations(
             f"pred_anomaly_mask_{self.model_name}",
-            gt_field="anomaly_mask",
+            gt_field=self.field_gt_anomaly_mask,
             eval_key=f"eval_seg_{self.model_name}",
         )
         eval_seg.print_report(classes=[0, 255])
