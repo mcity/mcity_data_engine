@@ -430,14 +430,12 @@ def workflow_class_mapping(dataset, dataset_info, run_config, wandb_activate=Tru
             wandb_activate=wandb_activate
         )
         class_mapping_models = WORKFLOWS["class_mapping"]["hf_models_zeroshot_classification"]
-
+        any_success = False
         for model_name in (pbar := tqdm(class_mapping_models, desc="Processing Class Mapping")):
             pbar.set_description(f"Zero Shot Classification model {model_name}")
             mapper = ClassMapper(dataset, model_name, run_config)
-            any_success = False
             try:
                 stats = mapper.run_mapping()
-
                 # Display statistics only if mapping was successful
                 source_class_counts = stats["total_processed"]
                 logging.info("\nClassification Results for Source Dataset:")
@@ -759,7 +757,7 @@ class WorkflowExecutor:
 
                     # Workflow
                     workflow_class_mapping(
-                        self.dataset, self.dataset_info, config
+                        self.dataset, self.dataset_info, run_config
                     )
 
                 else:

@@ -3,7 +3,6 @@ import pytest
 from fiftyone import ViewField as F
 from fiftyone.utils.huggingface import load_from_hub
 from main import workflow_class_mapping
-#from workflows.class_mapping import ClassMapper
 from utils.dataset_loader import load_dataset_info, _post_process_dataset
 import logging
 from utils.logging import configure_logging
@@ -17,20 +16,8 @@ def dataset_v51():
     """Fixture to load a FiftyOne dataset from the hub with one target for test."""
     dataset_name_hub = "Abeyankar/class_mapping_test_dataset"
 
-    # Updated target filepath to a sample known to have detections
-    #target_filepath_ending = "camera17_A_32.png"
     dataset = load_from_hub(dataset_name_hub, overwrite=True)
-    #dataset = load_from_hub("Abeyankar/class_mapping_test_dataset")
     dataset = _post_process_dataset(dataset)
-
-    # Find the sample in the existing dataset
-    #sample = dataset.match(F("filepath").ends_with(target_filepath_ending)).first()
-
-    #temp_name = "new_test_dataset5"
-    #if fo.dataset_exists(temp_name):
-    #    fo.delete_dataset(temp_name)
-    #new_test_dataset5 = fo.Dataset(temp_name)
-    #new_test_dataset5.add_sample(sample)
 
     return dataset
 
@@ -63,22 +50,11 @@ def test_class_mapping(dataset_v51):
             "kakaobrain/align-base",
             "BAAI/AltCLIP",
             "CIDAS/clipseg-rd64-refined"
-        ],
-        "thresholds": {
-            "confidence": 0.2
-        },
-        "candidate_labels": {
-            "Car": ["car", "van", "pickup"],
-            "Truck": ["truck", "pickup"],
-            "Bike": ["motorbike/cycler"]
-        }
+        ]
     }
-    # Extract configuration and iterate over models.
-    #config = WORKFLOWS["class_mapping"]
+
     models = config["hf_models_zeroshot_classification"]
 
-    #for model_name in models:
-    #    workflow_class_mapping(dataset_v51, dataset_info, model_name, config)
     workflow_class_mapping(dataset_v51, dataset_info, config)
 
     logging.info("\nAfter workflow:")

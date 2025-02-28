@@ -239,7 +239,7 @@ class ClassMapper:
         }
 
         log_root="./logs/"
-        experiment_name = f"class_mapping_{os.getpid()}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        experiment_name = f"{self.model_name}_class_mapping_{os.getpid()}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         tensorboard_root = os.path.join(
             log_root, "tensorboard/class_mapping"
         )
@@ -304,27 +304,24 @@ class ClassMapper:
                                 self.stats["tags_added_per_category"].get(predicted_label, 0) + 1
                             )
 
-                        tb_writer.add_scalar(f"{self.model_name}/Tags_Added/{predicted_label}",
+                        tb_writer.add_scalar(f"Tags_Added/{predicted_label}",
                                             self.stats["tags_added_per_category"].get(predicted_label, 0),
                                             sample_count)
-                        tb_writer.add_scalar(f"{self.model_name}/Total_Tags_Added",
+                        tb_writer.add_scalar(f"Total_Tags_Added",
                                             self.stats["changes_made"],
                                             sample_count)
 
-            tb_writer.add_scalar(f"{self.model_name}/Total_Processed_Samples",
+            tb_writer.add_scalar(f"Total_Processed_Samples",
                                 self.stats["total_processed"],
-                                sample_count)
-            tb_writer.add_scalar(f"{self.model_name}/Total_Tag_Changes",
-                                self.stats["changes_made"],
                                 sample_count)
 
             # Log class counts from source and target tag counts based on candidate_labels.
             for input_source_label, target_temp_labels in self.config["candidate_labels"].items():
-                tb_writer.add_scalar(f"{self.model_name}/Source_Class_Count/{input_source_label}",
+                tb_writer.add_scalar(f"Source_Class_Count/{input_source_label}",
                                     self.stats["source_class_counts"].get(input_source_label, 0),
                                     sample_count)
                 for target_temp_label in target_temp_labels:
-                    tb_writer.add_scalar(f"{self.model_name}/Tags_Added/{target_temp_label}",
+                    tb_writer.add_scalar(f"Tags_Added/{target_temp_label}",
                                         self.stats["tags_added_per_category"].get(target_temp_label, 0),
                                         sample_count)
 
