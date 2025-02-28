@@ -1,9 +1,9 @@
 import psutil
 
-#: Selection from WORKFLOWS
+#: Select workflow list from 'WORKFLOWS = {...}' dictionary
 SELECTED_WORKFLOW = ["embedding_selection", "auto_labeling"]
 
-#: Choose from config/datasets.yaml
+#: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
     "name": "fisheye8k",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
@@ -265,22 +265,32 @@ WORKFLOWS = {
     },
 }
 
-# Global settings
-PERSISTENT = True  # If V51 database is stored
+"""Global settings"""
+#: Non-persistent datasets are deleted from the database each time the database is shut down
+PERSISTENT = True
+#: Accepted splits for data processing
 ACCEPTED_SPLITS = ["train", "val", "test"]
 cpu_count = len(psutil.Process().cpu_affinity())
+#: Max. number of CPU workers
 NUM_WORKERS_MAX = 32
 NUM_WORKERS = NUM_WORKERS_MAX if cpu_count > NUM_WORKERS_MAX else cpu_count
+#: SEED for reproducability
 GLOBAL_SEED = 0
 
-# Hugging Face Config
+"""Hugging Face Config"""
+#: Hugging Face name or Organization
 HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
+#: Determins if model weights should be uploaded to Hugging Face
 HF_DO_UPLOAD = False
 
-# Weights and Biases Config
+"""Weights and Biases Config"""
+#: Determines if tracking with Weights and Biases is activated
 WANDB_ACTIVE = True
 
-# Voxel51 Config
+"""Voxel51 Config"""
+#: Address for Voxel51 connection
 V51_ADDRESS = "localhost"
+#: Port for Voxel51 connection
 V51_PORT = 5151
+#: Remote app sessions will listen to any connection to their ports
 V51_REMOTE = True
