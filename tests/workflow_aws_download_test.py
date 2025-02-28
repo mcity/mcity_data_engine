@@ -17,6 +17,7 @@ def setup_logging():
 
 @pytest.mark.parametrize("selected_dataset_overwrite", [True, False])
 def test_aws_download(selected_dataset_overwrite):
+    """Tests AWS download functionality by verifying dataset and file count with given configuration."""
 
     config = {
         "bucket": "mcity-data-engine",

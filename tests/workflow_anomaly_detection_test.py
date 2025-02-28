@@ -44,6 +44,7 @@ def dataset_v51():
 
 
 def test_anomaly_detection_train(dataset_v51):
+    """Tests training pipeline of anomaly detection workflow with Padim model on dataset_v51."""
     prep_config = {
         "location": "cam3",
         "rare_classes": ["Bus"],
@@ -96,6 +97,7 @@ def test_anomaly_detection_train(dataset_v51):
 
 @pytest.mark.parametrize("load_local", [True, False])
 def test_anomaly_detection_inference(dataset_v51, load_local):
+    """Tests the anomaly detection inference workflow by running Padim model on fisheye8k dataset and verifying anomaly scores are generated."""
 
     if load_local == False:
         # Delete local weights if they exist so they get downloaded from Hugging Face
