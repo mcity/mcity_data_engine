@@ -30,6 +30,8 @@ class ConfigVisitor(ast.NodeTransformer):
                     node.value = ast.Constant(value=UPDATED_WORKFLOWS)
                 elif node.targets[0].id == "WANDB_ACTIVE":
                     node.value = ast.Constant(value=False)
+                elif node.targets[0].id == "HF_DO_UPLOAD":
+                    node.value = ast.Constant(value=False)                        
                 elif node.targets[0].id == "V51_REMOTE":
                     node.value = ast.Constant(value=False)
             return node
