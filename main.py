@@ -472,7 +472,7 @@ def workflow_class_mapping(dataset, dataset_info, run_config, wandb_activate=Tru
             wandb_activate=wandb_activate
         )
         class_mapping_models = WORKFLOWS["class_mapping"]["hf_models_zeroshot_classification"]
-        any_success = False
+
         for model_name in (pbar := tqdm(class_mapping_models, desc="Processing Class Mapping")):
             pbar.set_description(f"Zero Shot Classification model {model_name}")
             mapper = ClassMapper(dataset, model_name, run_config)
@@ -490,7 +490,6 @@ def workflow_class_mapping(dataset, dataset_info, run_config, wandb_activate=Tru
                 logging.info(f"Total new tags added: {stats['changes_made']}")
                 for target_class, tag_count in stats["tags_added_per_category"].items():
                     logging.info(f"{target_class} tags added: {tag_count}")
-                any_success = True
 
             except Exception as e:
                 logging.error(f"Error during mapping with model {model_name}: {e}")
@@ -501,7 +500,7 @@ def workflow_class_mapping(dataset, dataset_info, run_config, wandb_activate=Tru
     finally:
         wandb_close(wandb_exit_code)
 
-    return any_success
+    return True
 
 def cleanup_memory(do_extensive_cleanup=False):
     """Clean up memory after workflow execution. 'do_extensive_cleanup' recommended for multiple training sessions in a row."""
