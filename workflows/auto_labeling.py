@@ -50,8 +50,43 @@ from config.config import (
     WANDB_ACTIVE,
     WORKFLOWS,
 )
+from utils.dataset_loader import get_supported_datasets
 from utils.logging import configure_logging
 from utils.sample_field_operations import add_sample_field
+
+
+def get_dataset_and_model_from_hf_id(hf_id: str):
+    """Extract dataset and model name from HuggingFace ID by matching against supported datasets."""
+    # HF ID follows structure organization/dataset_model
+    # Both dataset and model can contain "_" as well
+
+    # Remove organization (everything before the first "/")
+    hf_id = hf_id.split("/", 1)[-1]
+
+    # Find all dataset names that appear in hf_id
+    supported_datasets = get_supported_datasets()
+    matches = [
+        dataset_name for dataset_name in supported_datasets if dataset_name in hf_id
+    ]
+
+    if not matches:
+        logging.warning(
+            f"Dataset name could not be extracted from Hugging Face ID {hf_id}"
+        )
+        dataset_name = "no_dataset_name"
+    else:
+        # Return the longest match (most specific)
+        dataset_name = max(matches, key=len)
+
+    # Get model name by removing dataset name from hf_id
+    model_name = hf_id.replace(dataset_name, "").strip("_")
+    if not model_name:
+        logging.warning(
+            f"Model name could not be extracted from Hugging Face ID {hf_id}"
+        )
+        model_name = "no_model_name"
+
+    return dataset_name, model_name
 
 
 # Handling timeouts
@@ -869,23 +904,23 @@ class UltralyticsObjectDetection:
         inference_settings = self.config["inference_settings"]
 
         dataset_name = None
+        model_name = self.config["model_name"]
 
         model_hf = inference_settings["model_hf"]
         if model_hf is not None:
             # Use model manually defined in config.
             # This way models can be used for inference which were trained on a different dataset
-            # Parse model path components
-            _, model_name = model_hf.split("/")  # e.g. 'mcity_fisheye_2100_yolo11x'
-            dataset_name, model_type = model_name.rsplit(
-                "_", 1
-            )  # e.g. 'mcity_fisheye_2100', 'yolo11x'
+            dataset_name, _ = get_dataset_and_model_from_hf_id(model_hf)
 
             # Set up directories
-            download_dir = os.path.join(self.export_root, dataset_name, model_type)
-            self.model_path = os.path.join(download_dir, "weights", "best.pt")
+            download_dir = os.path.join(
+                self.export_root, dataset_name, model_name, "weights"
+            )
+            os.makedirs(os.path.join(download_dir), exist_ok=True)
+
+            self.model_path = os.path.join(download_dir, "best.pt")
 
             # Create directories if they don't exist
-            os.makedirs(os.path.join(download_dir, "weights"), exist_ok=True)
 
             file_path = hf_hub_download(
                 repo_id=model_hf,
@@ -893,14 +928,13 @@ class UltralyticsObjectDetection:
                 local_dir=download_dir,
             )
         else:
-            # Automatically dertermine model based on dataset
+            # Automatically determine model based on dataset
             dataset_name = self.config["v51_dataset_name"]
+
             try:
                 if os.path.exists(self.model_path):
                     file_path = self.model_path
-                    logging.info(
-                        f"Loading model {self.config['model_name']} from disk: {file_path}"
-                    )
+                    logging.info(f"Loading model {model_name} from disk: {file_path}")
                 else:
                     download_dir = self.model_path.replace("best.pt", "")
                     os.makedirs(download_dir, exist_ok=True)
@@ -916,7 +950,7 @@ class UltralyticsObjectDetection:
                 logging.error(f"Failed to load or download model: {str(e)}.")
                 return False
 
-        pred_key = f"pred_od_{self.config['model_name']}_{dataset_name}"
+        pred_key = f"pred_od_{model_name}-{dataset_name}"
         logging.info(f"Using model {self.model_path} for inference.")
         model = YOLO(self.model_path)
 
@@ -1187,6 +1221,13 @@ class HuggingFaceObjectDetection:
     def inference(self, inference_settings, load_from_hf=True, gt_field="ground_truth"):
         """Performs model inference on a dataset, loading from Hugging Face or disk, and optionally evaluates detection results."""
 
+        model_hf = inference_settings["model_hf"]
+        dataset_name = None
+        if model_hf is not None:
+            self.hf_hub_model_id = model_hf
+            dataset_name, model_name = get_dataset_and_model_from_hf_id(model_hf)
+        else:
+            dataset_name = self.dataset_name
         torch.cuda.empty_cache()
         # Load trained model from Hugging Face
         load_from_hf_successful = None
@@ -1250,9 +1291,7 @@ class HuggingFaceObjectDetection:
         model = model.to(device)
         model.eval()
 
-        pred_key = re.sub(
-            r"[\W-]+", "_", "pred_od_" + self.model_name + "_" + self.dataset_name
-        )
+        pred_key = f"pred_od_{self.model_name_key}-{dataset_name}"
 
         if inference_settings["inference_on_evaluation"] is True:
             INFERENCE_SPLITS = ["val", "test"]
@@ -1557,20 +1596,15 @@ class CustomCoDETRObjectDetection:
             folder_inference = os.path.join("coco")
 
         # Get model from Hugging Face
+        dataset_name = None
+        config_key = None
         try:
             if inference_settings["model_hf"] is None:
                 hf_path = self.hf_repo_name
             else:
                 hf_path = inference_settings["model_hf"]
 
-            # Extract dataset and config from hf_path
-            dataset_config_str = hf_path.split("/")[-1]
-            # All Co-DETR configs start with "co_"
-            config_index = dataset_config_str.find("co_")
-            dataset_name = dataset_config_str[:config_index][
-                :-1
-            ]  # Remove the trailing "_"
-            config_key = dataset_config_str[config_index:]
+            dataset_name, config_key = get_dataset_and_model_from_hf_id(hf_path)
 
             download_folder = os.path.join(
                 self.root_codetr_models, dataset_name, config_key
@@ -1652,7 +1686,7 @@ class CustomCoDETRObjectDetection:
 
         # Convert results into V51 file format
         detection_threshold = inference_settings["detection_threshold"]
-        pred_key = f"pred_od_{self.config_key}_{self.dataset_name}"
+        pred_key = f"pred_od_{config_key}-{dataset_name}"
         for key, value in tqdm(data.items(), desc="Processing Co-DETR detection"):
             try:
                 # Get filename
