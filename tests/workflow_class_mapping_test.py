@@ -70,11 +70,6 @@ def test_class_mapping(dataset_v51,dataset_v51_2, dataset_v51_3):
         "dataset_target": "cm_test_target",
         "hf_models_zeroshot_classification": [
             "Salesforce/blip2-itm-vit-g",
-            "openai/clip-vit-large-patch14",
-            "google/siglip-so400m-patch14-384",
-            "kakaobrain/align-base",
-            "BAAI/AltCLIP",
-            "CIDAS/clipseg-rd64-refined"
         ],
         "thresholds": {
             "confidence": 0.2

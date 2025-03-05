@@ -471,7 +471,7 @@ def workflow_class_mapping(dataset, dataset_info, run_config, wandb_activate=Tru
             config=run_config,
             wandb_activate=wandb_activate
         )
-        class_mapping_models = WORKFLOWS["class_mapping"]["hf_models_zeroshot_classification"]
+        class_mapping_models = run_config["hf_models_zeroshot_classification"]
 
         for model_name in (pbar := tqdm(class_mapping_models, desc="Processing Class Mapping")):
             pbar.set_description(f"Zero Shot Classification model {model_name}")
