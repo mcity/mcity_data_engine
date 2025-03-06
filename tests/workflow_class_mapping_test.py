@@ -47,7 +47,7 @@ def dataset_v51_3():
     return dataset3
 
 def test_class_mapping(dataset_v51,dataset_v51_2, dataset_v51_3):
-    """Test Class mapping workflow on the selected sample from source dataset, verifying that each model has added its specific tag."""
+    """Test Class mapping workflow on the selected sample from source dataset, verifying that each model has added its specific tag"""
     # Get the first sample from the dataset.
     sample = dataset_v51.first()
     assert sample is not None, "Target sample not found in dataset"
