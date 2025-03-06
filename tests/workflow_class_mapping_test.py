@@ -18,7 +18,7 @@ def deactivate_wandb_sync():
 
 @pytest.fixture
 def dataset_v51():
-    """Fixture to load a FiftyOne dataset from the hub with one target for test."""
+    """Fixture to load a FiftyOne dataset from the hub with one image to test the Class Mapping workflow."""
     dataset_name_hub = "Abeyankar/class_mapping_test_dataset"
 
     dataset = load_from_hub(dataset_name_hub, overwrite=True)
@@ -28,7 +28,7 @@ def dataset_v51():
 
 @pytest.fixture
 def dataset_v51_2():
-    """Fixture to load a FiftyOne dataset from the hub with one target for test."""
+    """Fixture to load a FiftyOne dataset from the hub with one image from the target dataset."""
     dataset_name_hub2 = "Abeyankar/class_mapping_target_test_dataset3"
 
     dataset2 = load_from_hub(dataset_name_hub2, overwrite=True)
@@ -38,7 +38,7 @@ def dataset_v51_2():
 
 @pytest.fixture
 def dataset_v51_3():
-    """Fixture to load a FiftyOne dataset from the hub with one target for test."""
+    """Fixture to load a FiftyOne dataset from the hub with one image from the source dataset."""
     dataset_name_hub3 = "Abeyankar/class_mapping_source_test_dataset"
 
     dataset3 = load_from_hub(dataset_name_hub3, overwrite=True)
@@ -47,11 +47,7 @@ def dataset_v51_3():
     return dataset3
 
 def test_class_mapping(dataset_v51,dataset_v51_2, dataset_v51_3):
-    """
-    Test workflow on the sample with the specified filepath,
-    verifying that each model has added its specific tag.
-    """
-
+    """Test Class mapping workflow on the selected sample from source dataset, verifying that each model has added its specific tag."""
     # Get the first sample from the dataset.
     sample = dataset_v51.first()
     assert sample is not None, "Target sample not found in dataset"
@@ -75,7 +71,7 @@ def test_class_mapping(dataset_v51,dataset_v51_2, dataset_v51_3):
             "confidence": 0.2
         },
         "candidate_labels": {
-            #Target class(Generalized class) : Source classes(specific categories)
+            #Target class(Generalized class) : Source classes(granular categories)
             "Car": ["car", "van", "pickup"],
             "Truck": ["truck", "pickup"],
             #One_to_one_mapping

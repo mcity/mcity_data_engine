@@ -460,7 +460,7 @@ def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activat
     return True
 
 def workflow_class_mapping(dataset, dataset_info, run_config, wandb_activate=True, test_dataset_source=None, test_dataset_target=None):
-
+    """Runs class mapping workflow to align labels between the source dataset and target dataset."""
     try:
         wandb_exit_code = 0
         # Initialize a wandb run for class mapping

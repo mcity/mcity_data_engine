@@ -14,15 +14,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 class ClassMapper:
+    """Class mapper that uses various HuggingFace models to align class labels between the source and target datasets."""
     def __init__(self, dataset, model_name, config=None):
-        """
-        Initialize the ClassMapper with dataset and model configuration.
-
-        Args:
-            dataset: FiftyOne dataset containing images and detections.
-            model_name: Name of the HuggingFace model to use.
-            config: Optional override configuration dictionary.
-        """
+        """Initialize the ClassMapper with dataset and model configuration."""
         self.dataset = dataset
         self.model_name = model_name
         # Get default config from WORKFLOWS and update with any provided config.
@@ -79,8 +73,6 @@ class ClassMapper:
     def process_detection(self, image, detection, candidate_labels):
         """Process a single detection with the model."""
         # Convert bounding box to pixel coordinates.
-        prob_threshold = self.config["thresholds"]["confidence"]
-
         img_width, img_height = image.size
         bbox = detection.bounding_box
         min_x, min_y, width, height = bbox
@@ -167,9 +159,7 @@ class ClassMapper:
         return predicted_label, confidence_score
 
     def run_mapping(self, test_dataset_source, test_dataset_target, label_field = "ground_truth",):
-        """
-        Run the class mapping process on the dataset.
-        """
+        """Run the class mapping process between the source dataset and the target dataset."""
         if not self.model:
             self.load_model()
 
