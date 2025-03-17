@@ -30,4 +30,4 @@ kornia
 open-clip-torch
 openvino
 umap-learn
-ultralytics==8.3.78
+ultralytics==8.3.91
