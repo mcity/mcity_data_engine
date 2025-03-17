@@ -397,7 +397,7 @@ tzlocal==5.2
 ua-parser==1.0.0
 ua-parser-builtins==0.18.0.post1
 ujson==5.10.0
-ultralytics==8.3.80
+ultralytics==8.3.91
 ultralytics-thop==2.0.12
 umap-learn==0.5.7
 universal-analytics-python3==1.1.1
