@@ -2,7 +2,7 @@ import psutil
 
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["embedding_selection", "auto_labeling"]
+SELECTED_WORKFLOW = ["class_mapping"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
@@ -265,6 +265,34 @@ WORKFLOWS = {
             "delivery driver",
         ],
     },
+
+    "class_mapping": {
+        # get the source and target dataset names from datasets.yaml
+        "dataset_source": "fisheye8k",
+        "dataset_target": "mcity_fisheye_2000",
+         # Choose any number of models from the options below hf_models_zeroshot_classification, to not include a model for class mapping, just comment it out
+         #https://huggingface.co/docs/transformers/model_doc/auto#transformers.AutoModelForZeroShotImageClassification
+        "hf_models_zeroshot_classification": [
+            "Salesforce/blip2-itm-vit-g",
+            "openai/clip-vit-large-patch14",
+            "google/siglip-so400m-patch14-384",
+            #"google/siglip2-base-patch16-224",
+            "kakaobrain/align-base",
+            "BAAI/AltCLIP",
+            "CIDAS/clipseg-rd64-refined"
+        ],
+        "thresholds": {
+            "confidence": 0.2
+        },
+        "candidate_labels": {
+            #Target class(Generalized class) : Source classes(specific categories)
+            "Car": ["car", "van", "pickup"],
+            "Truck": ["truck", "pickup"],
+            #One_to_one_mapping
+            "Bike" : ["motorbike/cycler"]
+            #Can add other class mappings in here
+        }
+    }
 }
 
 """Global settings"""
