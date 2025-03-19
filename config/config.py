@@ -1,12 +1,14 @@
 import os
 
 # Selection from WORKFLOWS
-SELECTED_WORKFLOW = ["embedding_selection"]
+
+
+SELECTED_WORKFLOW = ["auto_label_mask"]  # Choose from WORKFLOWS keys
 
 
 # Choose from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "fisheye8k",
+    "name": "fisheye8k_mask_test",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 

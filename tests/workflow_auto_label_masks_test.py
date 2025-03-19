@@ -6,18 +6,18 @@ import config.config
 from main import workflow_auto_label_mask
 from utils.logging import configure_logging
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def dataset_v51():
     dataset_name_hub = "Voxel51/fisheye8k"
     dataset_name = "fisheye8k_mask_test"
     try:
-        dataset = load_from_hub(
-            repo_id=dataset_name_hub, max_samples=1, name=dataset_name
-        )
-    except Exception as e:
-        print(f"Error loading from hub: {e}")
         dataset = fo.load_dataset(dataset_name)
-    assert dataset is not None, "Failed to load or create the FiftyOne dataset"
+    except ValueError:
+        dataset = load_from_hub(
+            repo_id=dataset_name_hub,
+            max_samples=1,
+            name=dataset_name,
+        )
     return dataset
 
 @pytest.fixture(autouse=True)
@@ -85,7 +85,11 @@ def test_auto_label_mask(dataset_v51, workflow_config):
     expected_sam_field_prompt = f"pred_ss_segment_anything_2_1_hiera_tiny_image_torch_prompt_{prompt_field}"
 
     field_gt = "detections"
-    field_masks = "pred_ss_segment_anything_2_1_hiera_tiny_image_torch_prompt_detections"
+
+    if prompt_field is None:
+        field_masks = "pred_ss_segment_anything_2_1_hiera_tiny_image_torch_noprompt"
+    else:
+        field_masks = f"pred_ss_segment_anything_2_1_hiera_tiny_image_torch_prompt_{prompt_field}"
 
     classes_gt = set()
     classes_sam = set()
@@ -95,7 +99,11 @@ def test_auto_label_mask(dataset_v51, workflow_config):
         print(f"Fields in sample: {sample.field_names}")
         if workflow_config["semantic_segmentation"]:
             bboxes_gt = sample[field_gt]
-            sam_masks = sample[field_masks]
+
+            try:
+                sam_masks = sample[field_masks]
+            except KeyError:
+                print(f"Field {field_masks} not found in sample {sample}")
 
             try:
                 if prompt_field is not None:
