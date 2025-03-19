@@ -8,18 +8,7 @@ from tqdm import tqdm
 
 
 def calculate_iou(box1, box2):
-    """
-    Calculate the Intersection over Union (IoU) of two bounding boxes.
-
-    Parameters:
-    box1 (list or tuple): The first bounding box in the format [minx, miny, width, height],
-                          where the coordinates are normalized between [0, 1].
-    box2 (list or tuple): The second bounding box in the same format as box1.
-
-    Returns:
-    float: The IoU of the two bounding boxes, a value between 0 and 1.
-           Returns 0 if there is no intersection.
-    """
+    """Calculate the Intersection over Union (IoU) of two bounding boxes."""
     # box format: [minx, miny, width, height] normalized between [0,1]
     x1_min, y1_min, w1, h1 = box1
     x2_min, y2_min, w2, h2 = box2
@@ -45,23 +34,15 @@ def calculate_iou(box1, box2):
 
 
 def calculcate_bbox_size(box):
-    """
-    Calculate the size of a bounding box.
-
-    Args:
-        box (list or tuple): A list or tuple containing four elements
-                             representing the bounding box in the format
-                             [x, y, width, height].
-
-    Returns:
-        float: The size of the bounding box, calculated as width * height.
-    """
+    """Calculate the size of a bounding box."""
     return box[2] * box[3]
 
 
 class EnsembleSelection:
+    """Performs ensemble selection to identify overlapping detections from multiple models based on IoU and agreement thresholds."""
 
     def __init__(self, dataset, config):
+        """Initializes ensemble selection with dataset and configuration for detection agreement analysis."""
         self.dataset = dataset
         self.config = config
         self.positive_classes = config["positive_classes"]
@@ -129,33 +110,7 @@ class EnsembleSelection:
         self.n_samples = len(self.view)
 
     def ensemble_selection(self):
-        """
-        Perform ensemble selection to identify and tag overlapping detections across multiple models.
-        This method processes detections from multiple models, identifies overlapping bounding boxes,
-        and tags them based on an agreement threshold. It also logs the number of unique detections
-        and samples with agreed detections.
-        Steps:
-        1. Collect detections from multiple models.
-        2. Clean up tags from previous runs.
-        3. Iterate over all samples and check for overlapping detections.
-        4. Compute Intersection over Union (IoU) between bounding boxes.
-        5. Identify involved models and bounding boxes.
-        6. Check for agreements based on the agreement threshold.
-        7. Tag detections with the agreement tag and assign unique IDs.
-        Attributes:
-            samples_detections (list): List of lists of detections per model and sample.
-            n_bboxes_agreed (int): Number of bounding boxes with agreed detections.
-            n_samples_agreed (int): Number of samples with agreed detections.
-            n_unique_vru (int): Number of unique detections.
-        Logs:
-            Warnings for samples with no detections.
-            Errors for mismatched array lengths.
-            Info on the number of unique detections and samples with agreed detections.
-        Raises:
-            None
-        Returns:
-            None
-        """
+        """Selects and tags overlapping detections from multiple models using IoU-based ensemble method, tracking unique VRU detections."""
 
         writer = SummaryWriter(log_dir="logs/tensorboard/ensemble_selection")
 

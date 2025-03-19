@@ -2,6 +2,7 @@ from utils.dataset_loader import load_dataset_info
 
 
 def test_load_dataset_info():
+    """Test the functionality of loading dataset information from configuration file."""
     dataset_name = "mcity_fisheye_2000"
     dataset_info = load_dataset_info(dataset_name)
 

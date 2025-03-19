@@ -5,7 +5,6 @@ import os
 import queue
 import random
 import re
-import shutil
 import signal
 import subprocess
 import sys
@@ -51,12 +50,49 @@ from config.config import (
     WANDB_ACTIVE,
     WORKFLOWS,
 )
+from utils.dataset_loader import get_supported_datasets
 from utils.logging import configure_logging
 from utils.sample_field_operations import add_sample_field
 
 
+def get_dataset_and_model_from_hf_id(hf_id: str):
+    """Extract dataset and model name from HuggingFace ID by matching against supported datasets."""
+    # HF ID follows structure organization/dataset_model
+    # Both dataset and model can contain "_" as well
+
+    # Remove organization (everything before the first "/")
+    hf_id = hf_id.split("/", 1)[-1]
+
+    # Find all dataset names that appear in hf_id
+    supported_datasets = get_supported_datasets()
+    matches = [
+        dataset_name for dataset_name in supported_datasets if dataset_name in hf_id
+    ]
+
+    if not matches:
+        logging.warning(
+            f"Dataset name could not be extracted from Hugging Face ID {hf_id}"
+        )
+        dataset_name = "no_dataset_name"
+    else:
+        # Return the longest match (most specific)
+        dataset_name = max(matches, key=len)
+
+    # Get model name by removing dataset name from hf_id
+    model_name = hf_id.replace(dataset_name, "").strip("_")
+    if not model_name:
+        logging.warning(
+            f"Model name could not be extracted from Hugging Face ID {hf_id}"
+        )
+        model_name = "no_model_name"
+
+    return dataset_name, model_name
+
+
 # Handling timeouts
 class TimeoutException(Exception):
+    """Custom exception for handling dataloader timeouts."""
+
     pass
 
 
@@ -65,6 +101,8 @@ def timeout_handler(signum, frame):
 
 
 class ZeroShotInferenceCollateFn:
+    """Collate function for zero-shot inference that prepares batches for model input."""
+
     def __init__(
         self,
         hf_model_config_name,
@@ -73,6 +111,7 @@ class ZeroShotInferenceCollateFn:
         object_classes,
         batch_classes,
     ):
+        """Initialize the auto labeling model with the Hugging Face model config, processor, batch size, object classes, and batch classes."""
         try:
             self.hf_model_config_name = hf_model_config_name
             self.processor = hf_processor
@@ -83,6 +122,7 @@ class ZeroShotInferenceCollateFn:
             logging.error(f"Error in collate init of DataLoader: {e}")
 
     def __call__(self, batch):
+        """Processes a batch of data by preparing images and labels for model input."""
         try:
             images, labels = zip(*batch)
             target_sizes = [tuple(img.shape[1:]) for img in images]
@@ -109,6 +149,8 @@ class ZeroShotInferenceCollateFn:
 
 
 class ZeroShotObjectDetection:
+    """Zero-shot object detection using various HuggingFace models with multi-GPU support."""
+
     def __init__(
         self,
         dataset_torch: torch.utils.data.Dataset,
@@ -117,6 +159,7 @@ class ZeroShotObjectDetection:
         detections_path="./output/detections/",
         log_root="./logs/",
     ):
+        """Initialize the zero-shot object detection labeler with dataset, configuration, and path settings."""
         self.dataset_torch = dataset_torch
         self.dataset_info = dataset_info
         self.dataset_name = dataset_info["name"]
@@ -132,6 +175,7 @@ class ZeroShotObjectDetection:
     def exclude_stored_predictions(
         self, dataset_v51: fo.Dataset, config, do_exclude=False
     ):
+        """Checks for existing predictions and loads them from disk if available."""
         dataset_schema = dataset_v51.get_field_schema()
         models_splits_dict = {}
         for model_name, value in config["hf_models_zeroshot_objectdetection"].items():
@@ -184,8 +228,7 @@ class ZeroShotObjectDetection:
     def update_queue_sizes_worker(
         self, queues, queue_sizes, largest_queue_index, max_queue_size
     ):
-        # Measure the sizes of multiple result queues (one per worker process)
-        # Logging
+        """Monitor and manage multiple result queues for balanced processing."""
         experiment_name = f"queue_size_monitor_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         log_directory = os.path.join(
             self.tensorboard_root, self.dataset_name, experiment_name
@@ -244,6 +287,7 @@ class ZeroShotObjectDetection:
         max_queue_size,
         wandb_activate=False,
     ):
+        """Process model outputs from result queues and save to dataset."""
         configure_logging()
         logging.info(f"Process ID: {os.getpid()}. Results processing process started")
         dataset_v51 = fo.load_dataset(self.dataset_name)
@@ -336,6 +380,7 @@ class ZeroShotObjectDetection:
         post_processing_finished,
         set_cpu_affinity=False,
     ):
+        """Run model inference on specified GPU with dedicated CPU cores."""
         dataset_v51 = fo.load_dataset(
             self.dataset_name
         )  # NOTE Only for the case of sequential processing
@@ -386,6 +431,7 @@ class ZeroShotObjectDetection:
         return run_successful  # Return last processing status
 
     def eval_and_export_worker(self, models_ready_queue, n_models):
+        """Evaluate model performance and export results for completed models."""
         configure_logging()
         logging.info(f"Process ID: {os.getpid()}. Eval-and-export process started")
 
@@ -431,6 +477,7 @@ class ZeroShotObjectDetection:
         root_log_dir: str,
         persistent_workers: bool = False,
     ):
+        """Model inference method running zero-shot object detection on provided dataset and device, returning success status."""
         writer = None
         run_successful = True
         processor, model, inputs, outputs, result, dataloader = (
@@ -606,6 +653,7 @@ class ZeroShotObjectDetection:
             return run_successful
 
     def process_outputs(self, dataset_v51, result, object_classes, detection_threshold):
+        """Process outputs from object detection models, extracting bounding boxes and labels to save to the dataset."""
         try:
             inputs = result["inputs"]
             outputs = result["outputs"]
@@ -735,7 +783,7 @@ class ZeroShotObjectDetection:
             return processing_successful
 
     def eval_and_export(self, dataset_v51, model_name, pred_key, eval_key):
-        # Populate dataset with evaluation results (if ground_truth available)
+        """Populate dataset with evaluation results (if ground_truth available)"""
         try:
             dataset_v51.evaluate_detections(
                 pred_key,
@@ -760,8 +808,10 @@ class ZeroShotObjectDetection:
 
 
 class UltralyticsObjectDetection:
+    """Object detection using Ultralytics YOLO models with training and inference support."""
 
     def __init__(self, dataset, config):
+        """Initialize with dataset, config, and setup paths for model and data."""
         self.dataset = dataset
         self.config = config
         self.ultralytics_data_path = os.path.join(
@@ -786,6 +836,7 @@ class UltralyticsObjectDetection:
     def export_data(
         dataset, dataset_info, export_dataset_root, label_field="ground_truth"
     ):
+        """Export dataset to YOLO format for Ultralytics training."""
         ultralytics_data_path = os.path.join(export_dataset_root, dataset_info["name"])
         # Check if export directory already exists
         if os.path.exists(ultralytics_data_path):
@@ -796,6 +847,10 @@ class UltralyticsObjectDetection:
 
         logging.info("Exporting data for training with Ultralytics")
         classes = dataset.distinct(f"{label_field}.detections.label")
+
+        # Make directory
+        os.makedirs(ultralytics_data_path, exist_ok=True)
+
         for split in ACCEPTED_SPLITS:
             split_view = dataset.match_tags(split)
 
@@ -811,7 +866,7 @@ class UltralyticsObjectDetection:
             )
 
     def train(self):
-        # Export dataset to YOLO format for Ultralytics
+        """Train the YOLO model for object detection using Ultralytics and optionally upload to Hugging Face."""
         model = YOLO(self.config["model_name"], task="detect")
         # https://docs.ultralytics.com/modes/train/#train-settings
         results = model.train(
@@ -844,27 +899,28 @@ class UltralyticsObjectDetection:
             )
 
     def inference(self, gt_field="ground_truth"):
+        """Performs inference using YOLO model on a dataset, with options to evaluate results."""
         logging.info(f"Running inference on dataset {self.config['v51_dataset_name']}")
         inference_settings = self.config["inference_settings"]
 
         dataset_name = None
+        model_name = self.config["model_name"]
 
         model_hf = inference_settings["model_hf"]
         if model_hf is not None:
             # Use model manually defined in config.
             # This way models can be used for inference which were trained on a different dataset
-            # Parse model path components
-            _, model_name = model_hf.split("/")  # e.g. 'mcity_fisheye_2100_yolo11x'
-            dataset_name, model_type = model_name.rsplit(
-                "_", 1
-            )  # e.g. 'mcity_fisheye_2100', 'yolo11x'
+            dataset_name, _ = get_dataset_and_model_from_hf_id(model_hf)
 
             # Set up directories
-            download_dir = os.path.join(self.export_root, dataset_name, model_type)
-            self.model_path = os.path.join(download_dir, "weights", "best.pt")
+            download_dir = os.path.join(
+                self.export_root, dataset_name, model_name, "weights"
+            )
+            os.makedirs(os.path.join(download_dir), exist_ok=True)
+
+            self.model_path = os.path.join(download_dir, "best.pt")
 
             # Create directories if they don't exist
-            os.makedirs(os.path.join(download_dir, "weights"), exist_ok=True)
 
             file_path = hf_hub_download(
                 repo_id=model_hf,
@@ -872,16 +928,16 @@ class UltralyticsObjectDetection:
                 local_dir=download_dir,
             )
         else:
-            # Automatically dertermine model based on dataset
+            # Automatically determine model based on dataset
             dataset_name = self.config["v51_dataset_name"]
+
             try:
                 if os.path.exists(self.model_path):
                     file_path = self.model_path
-                    logging.info(
-                        f"Loading model {self.config['model_name']} from disk: {file_path}"
-                    )
+                    logging.info(f"Loading model {model_name} from disk: {file_path}")
                 else:
                     download_dir = self.model_path.replace("best.pt", "")
+                    os.makedirs(download_dir, exist_ok=True)
                     logging.info(
                         f"Downloading model {self.hf_hub_model_id} from Hugging Face to {download_dir}"
                     )
@@ -894,7 +950,7 @@ class UltralyticsObjectDetection:
                 logging.error(f"Failed to load or download model: {str(e)}.")
                 return False
 
-        pred_key = f"pred_od_{self.config['model_name']}_{dataset_name}"
+        pred_key = f"pred_od_{model_name}-{dataset_name}"
         logging.info(f"Using model {self.model_path} for inference.")
         model = YOLO(self.model_path)
 
@@ -928,7 +984,74 @@ class UltralyticsObjectDetection:
             )
 
 
+def transform_batch_standalone(
+    batch,
+    image_processor,
+    do_convert_annotations=True,
+    return_pixel_mask=False,
+):
+    """Apply format annotations in COCO format for object detection task. Outside of class so it can be pickled."""
+    images = []
+    annotations = []
+
+    for image_path, annotation in zip(batch["image_path"], batch["objects"]):
+        image = Image.open(image_path).convert("RGB")
+        image_np = np.array(image)
+        images.append(image_np)
+
+        coco_annotations = []
+        for i, bbox in enumerate(annotation["bbox"]):
+
+            # Conversion from HF dataset bounding boxes to DETR:
+            # Input: HF dataset bbox is COCO (top_left_x, top_left_y, width, height) in absolute coordinates
+            # Output:
+            # DETR expects COCO (top_left_x, top_left_y, width, height) in absolute coordinates if 'do_convert_annotations == True'
+            # DETR expects YOLO (center_x, center_y, width, height) in relative coordinates between [0,1] if 'do_convert_annotations == False'
+
+            if do_convert_annotations == False:
+                x, y, w, h = bbox
+                img_height, img_width = image_np.shape[:2]
+                center_x = (x + w / 2) / img_width
+                center_y = (y + h / 2) / img_height
+                width = w / img_width
+                height = h / img_height
+                bbox = [center_x, center_y, width, height]
+
+                # Ensure bbox values are within the expected range
+                assert all(0 <= coord <= 1 for coord in bbox), f"Invalid bbox: {bbox}"
+
+                logging.debug(
+                    f"Converted {[x, y, w, h]} to {[center_x, center_y, width, height]} with 'do_convert_annotations' = {do_convert_annotations}"
+                )
+
+            coco_annotation = {
+                "image_id": annotation["image_id"],
+                "bbox": bbox,
+                "category_id": annotation["category_id"][i],
+                "area": annotation["area"][i],
+                "iscrowd": 0,
+            }
+            coco_annotations.append(coco_annotation)
+        detr_annotation = {
+            "image_id": annotation["image_id"],
+            "annotations": coco_annotations,
+        }
+        annotations.append(detr_annotation)
+
+        # Apply the image processor transformations: resizing, rescaling, normalization
+        result = image_processor(
+            images=images, annotations=annotations, return_tensors="pt"
+        )
+
+    if not return_pixel_mask:
+        result.pop("pixel_mask", None)
+
+    return result
+
+
 class HuggingFaceObjectDetection:
+    """Object detection using HuggingFace models with support for training and inference."""
+
     def __init__(
         self,
         dataset,
@@ -936,6 +1059,7 @@ class HuggingFaceObjectDetection:
         output_model_path="./output/models/object_detection_hf",
         output_detections_path="./output/detections/",
     ):
+        """Initialize with dataset, config, and optional output paths."""
         self.dataset = dataset
         self.config = config
         self.model_name = config["model_name"]
@@ -959,87 +1083,8 @@ class HuggingFaceObjectDetection:
         self.id2label = {index: x for index, x in enumerate(self.categories, start=0)}
         self.label2id = {v: k for k, v in self.id2label.items()}
 
-    def transform_batch(
-        self,
-        batch,
-        image_processor,
-        return_pixel_mask=False,
-    ):
-        """Apply format annotations in COCO format for object detection task"""
-        images = []
-        annotations = []
-
-        for image_path, annotation in zip(batch["image_path"], batch["objects"]):
-            image = Image.open(image_path).convert("RGB")
-            image_np = np.array(image)
-            images.append(image_np)
-
-            coco_annotations = []
-            for i, bbox in enumerate(annotation["bbox"]):
-
-                # Conversion from HF dataset bounding boxes to DETR:
-                # Input: HF dataset bbox is COCO (top_left_x, top_left_y, width, height) in absolute coordinates
-                # Output:
-                # DETR expects COCO (top_left_x, top_left_y, width, height) in absolute coordinates if 'do_convert_annotations == True'
-                # DETR expects YOLO (center_x, center_y, width, height) in relative coordinates between [0,1] if 'do_convert_annotations == False'
-
-                if self.do_convert_annotations == False:
-                    x, y, w, h = bbox
-                    img_height, img_width = image_np.shape[:2]
-                    center_x = (x + w / 2) / img_width
-                    center_y = (y + h / 2) / img_height
-                    width = w / img_width
-                    height = h / img_height
-                    bbox = [center_x, center_y, width, height]
-
-                    # Ensure bbox values are within the expected range
-                    assert all(
-                        0 <= coord <= 1 for coord in bbox
-                    ), f"Invalid bbox: {bbox}"
-
-                    logging.debug(
-                        f"Converted {[x, y, w, h]} to {[center_x, center_y, width, height]} with 'do_convert_annotations' = {self.do_convert_annotations}"
-                    )
-
-                coco_annotation = {
-                    "image_id": annotation["image_id"],
-                    "bbox": bbox,
-                    "category_id": annotation["category_id"][i],
-                    "area": annotation["area"][i],
-                    "iscrowd": 0,
-                }
-                coco_annotations.append(coco_annotation)
-            detr_annotation = {
-                "image_id": annotation["image_id"],
-                "annotations": coco_annotations,
-            }
-            annotations.append(detr_annotation)
-
-            # Apply the image processor transformations: resizing, rescaling, normalization
-            result = image_processor(
-                images=images, annotations=annotations, return_tensors="pt"
-            )
-
-        if not return_pixel_mask:
-            result.pop("pixel_mask", None)
-
-        return result
-
     def collate_fn(self, batch):
-        """
-        Collates a batch of data into a single dictionary suitable for model input.
-
-        Args:
-            batch (list of dict): A list of dictionaries where each dictionary contains
-                                  the keys "pixel_values", "labels", and optionally "pixel_mask".
-
-        Returns:
-            dict: A dictionary with the following keys:
-                - "pixel_values" (torch.Tensor): A tensor containing stacked pixel values from the batch.
-                - "labels" (list): A list of labels from the batch.
-                - "pixel_mask" (torch.Tensor, optional): A tensor containing stacked pixel masks from the batch,
-                                                         if "pixel_mask" is present in the input batch.
-        """
+        """Collate function for batching data during training and inference."""
         data = {}
         data["pixel_values"] = torch.stack([x["pixel_values"] for x in batch])
         data["labels"] = [x["labels"] for x in batch]
@@ -1048,6 +1093,7 @@ class HuggingFaceObjectDetection:
         return data
 
     def train(self, hf_dataset, overwrite_output=True):
+        """Train models for object detection tasks with support for custom image sizes and transformations."""
         torch.cuda.empty_cache()
         img_size_target = self.config.get("image_size", None)
         if img_size_target is None:
@@ -1074,14 +1120,14 @@ class HuggingFaceObjectDetection:
             )
 
         train_transform_batch = partial(
-            self.transform_batch,
-            # transform=None,  # TODO train_augmentation_and_transform,
+            transform_batch_standalone,
             image_processor=image_processor,
+            do_convert_annotations=self.do_convert_annotations,
         )
         val_test_transform_batch = partial(
-            self.transform_batch,
-            # transform=None,  # TODO validation_transform,
+            transform_batch_standalone,
             image_processor=image_processor,
+            do_convert_annotations=self.do_convert_annotations,
         )
 
         hf_dataset[Split.TRAIN] = hf_dataset[Split.TRAIN].with_transform(
@@ -1110,7 +1156,11 @@ class HuggingFaceObjectDetection:
                 "Hugging Face AutoModel does not support " + str(type(hf_model_config))
             )
 
-        if overwrite_output == True:
+        if (
+            overwrite_output == True
+            and os.path.exists(self.model_root)
+            and os.listdir(self.model_root)
+        ):
             logging.warning(
                 f"Training will overwrite existing results in {self.model_root}"
             )
@@ -1169,7 +1219,15 @@ class HuggingFaceObjectDetection:
         logging.info(f"Model training completed. Evaluation results: {metrics}")
 
     def inference(self, inference_settings, load_from_hf=True, gt_field="ground_truth"):
+        """Performs model inference on a dataset, loading from Hugging Face or disk, and optionally evaluates detection results."""
 
+        model_hf = inference_settings["model_hf"]
+        dataset_name = None
+        if model_hf is not None:
+            self.hf_hub_model_id = model_hf
+            dataset_name, model_name = get_dataset_and_model_from_hf_id(model_hf)
+        else:
+            dataset_name = self.dataset_name
         torch.cuda.empty_cache()
         # Load trained model from Hugging Face
         load_from_hf_successful = None
@@ -1233,9 +1291,7 @@ class HuggingFaceObjectDetection:
         model = model.to(device)
         model.eval()
 
-        pred_key = re.sub(
-            r"[\W-]+", "_", "pred_od_" + self.model_name + "_" + self.dataset_name
-        )
+        pred_key = f"pred_od_{self.model_name_key}-{dataset_name}"
 
         if inference_settings["inference_on_evaluation"] is True:
             INFERENCE_SPLITS = ["val", "test"]
@@ -1311,7 +1367,7 @@ class CustomCoDETRObjectDetection:
     def __init__(self, dataset, dataset_info, run_config):
         """Initialize Co-DETR interface with dataset and configuration"""
         self.root_codetr = "./custom_models/CoDETR/Co-DETR"
-        self.root_codetr_models = "./output/models/codetr"
+        self.root_codetr_models = "output/models/codetr"
         self.dataset = dataset
         self.dataset_name = dataset_info["name"]
         self.export_dir_root = run_config["export_dataset_root"]
@@ -1325,6 +1381,8 @@ class CustomCoDETRObjectDetection:
 
         # Check if folder already exists
         if not os.path.exists(export_dir):
+            # Make directory
+            os.makedirs(export_dir, exist_ok=True)
             logging.info(f"Exporting data to {export_dir}")
             splits = [
                 "train",
@@ -1479,7 +1537,7 @@ class CustomCoDETRObjectDetection:
 
     @staticmethod
     def _find_file_iteratively(start_path, filename):
-        """Given a filename, look for the full filepath in a dataset folder structure"""
+        """Direct access or recursively search for a file in a directory structure."""
         # Convert start_path to a Path object
         start_path = Path(start_path)
 
@@ -1538,27 +1596,24 @@ class CustomCoDETRObjectDetection:
             folder_inference = os.path.join("coco")
 
         # Get model from Hugging Face
+        dataset_name = None
+        config_key = None
         try:
             if inference_settings["model_hf"] is None:
                 hf_path = self.hf_repo_name
             else:
                 hf_path = inference_settings["model_hf"]
 
-            # Extract dataset and config from hf_path
-            dataset_config_str = hf_path.split("/")[-1]
-            # All Co-DETR configs start with "co_"
-            config_index = dataset_config_str.find("co_")
-            dataset_name = dataset_config_str[:config_index][
-                :-1
-            ]  # Remove the trailing "_"
-            config_key = dataset_config_str[config_index:]
+            dataset_name, config_key = get_dataset_and_model_from_hf_id(hf_path)
 
-            logging.info(
-                f"Downloading model {hf_path} from Hugging Face: Co-DETR config {config_key} trained on {dataset_name}."
-            )
             download_folder = os.path.join(
                 self.root_codetr_models, dataset_name, config_key
             )
+
+            logging.info(
+                f"Downloading model {hf_path} from Hugging Face into {download_folder}"
+            )
+            os.makedirs(download_folder, exist_ok=True)
 
             file_path = hf_hub_download(
                 repo_id=hf_path,
@@ -1630,8 +1685,8 @@ class CustomCoDETRObjectDetection:
         root_dir_samples = sample.filepath
 
         # Convert results into V51 file format
-        detection_threshold = inference_settings["inference_settings"]
-        pred_key = f"pred_od_{self.config_key}_{self.dataset_name}"
+        detection_threshold = inference_settings["detection_threshold"]
+        pred_key = f"pred_od_{config_key}-{dataset_name}"
         for key, value in tqdm(data.items(), desc="Processing Co-DETR detection"):
             try:
                 # Get filename

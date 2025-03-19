@@ -2,7 +2,6 @@ import logging
 import os
 
 import fiftyone as fo
-import plotly.graph_objects as go
 from fiftyone import ViewField as F
 from PIL import Image, ImageDraw
 
@@ -11,9 +10,12 @@ from utils.selector import select_by_class
 
 
 class AnomalyDetectionDataPreparation:
+    """Class to prepare datasets for anomaly detection by separating normal from rare class data and creating binary masks for anomalies."""
+
     def __init__(
         self, dataset, dataset_name, export_root="output/datasets/", config=None
     ):
+        """Initialize AnomalyDetectionDataPreparation object with dataset and configuration for data processing."""
         self.dataset = dataset
         self.dataset_ano_dec = None
         self.dataset_name = dataset_name
@@ -49,14 +51,15 @@ class AnomalyDetectionDataPreparation:
             return None
 
     def fisheye8k(self):
+        """Prepares Fisheye8K dataset for anomaly detection by filtering data from one camera, separating rare classes, and generating binary masks."""
         logging.info(
             f"Running anomaly detection data preparation for dataset {self.dataset_name}"
         )
         dataset_name_ano_dec = f"{self.dataset_name}_anomaly_detection"
 
         if dataset_name_ano_dec in fo.list_datasets():
-            logging.info(
-                f"Dataset {self.dataset_name} was already prepared for anomaly detection."
+            logging.warning(
+                f"Dataset {self.dataset_name} was already prepared for anomaly detection. Skipping data export."
             )
             self.dataset_ano_dec = fo.load_dataset(dataset_name_ano_dec)
         else:

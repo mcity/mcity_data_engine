@@ -12,8 +12,6 @@
   <img alt="Visitors" src="https://visitor-badge.laobi.icu/badge?page_id=mcity.mcity_data_engine"/>
 </p>
 
-The Mcity Data Engine is an essential tool in the Mcity makerspace for transportation innovators making AI algorithms and seeking actionable data insights through machine learning. Details on the Data Engine can be found in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki).
-
 <p align='center'>
 
 <a target="_blank" rel="noopener noreferrer" href="https://colab.research.google.com/github/mcity/mcity_data_engine/blob/main/fish_eye_8k_colab.ipynb">
@@ -22,14 +20,14 @@ The Mcity Data Engine is an essential tool in the Mcity makerspace for transport
   <img alt="Mcity Data Engine Google Colab Demo" src="">
 </picture>
 </a>
-  
+
 <a target="_blank" rel="noopener noreferrer" href="https://github.com/mcity/mcity_data_engine/wiki">
 <picture>
   <source srcset="https://github.com/user-attachments/assets/e3e1cd10-5195-4db7-9147-11b75e078662" width="15%">
   <img alt="Mcity Data Engine Wiki" src="">
 </picture>
 </a>
-  
+
 <a target="_blank" rel="noopener noreferrer" href="https://mcity.github.io/mcity_data_engine/">
 <picture>
   <source srcset="https://github.com/user-attachments/assets/b93f0c88-172d-4eed-8dac-3fdb82436f71"
@@ -53,8 +51,15 @@ width="15%">
 </a>
 </p>
 
-On February 24 2025, Daniel Bogdoll held a talk about the initial release of the Mcity Data Engine in Ann Arbor, Michigan. The recording provides insights into the general architecture, it's features and eco-system integrations, and demonstrates successful data curation and model training for improved detection of vulnerable road users (VRU):
+The Mcity Data Engine is an essential tool in the Mcity makerspace for transportation innovators making AI algorithms and seeking actionable data insights through machine learning. Details on the Data Engine can be found in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki). The data engine supports all stages to continuously improve AI models based on raw visual data:
 
+<div align="center">
+      <picture>
+  <source srcset="https://github.com/user-attachments/assets/f775ee92-9f59-43be-a9ac-1d313d2862e1" width="60%">
+  <img alt="Mcity Data Engine Overview" src="">
+</picture></div>
+
+On February 24, 2025, Daniel Bogdoll, a research scholar at Mcity, gave a presentation on the first release of the Mcity Data Engine in Ann Arbor, Michigan. The recording provides insight into the general architecture, its features and ecosystem integrations, and demonstrates successful data curation and model training for improved Vulnerable Road User (VRU) detection:
 <div align="center">
       <a href="https://www.youtube.com/watch?v=ciT8YwQCHwo">
          <img src="https://github.com/user-attachments/assets/dcd2cd42-9cc0-4cf0-abab-a4d4ebd14198" style="width:60%;">
@@ -63,16 +68,16 @@ On February 24 2025, Daniel Bogdoll held a talk about the initial release of the
 
 ## Online Demo: Data Selection with Embeddings
 
-To get a first feel of the Mcity Data Engine, we provide an online demo in a [Google Colab](https://colab.research.google.com/github/mcity/mcity_data_engine/blob/main/fish_eye_8k_colab.ipynb) environment. We will load the [Fisheye8K dataset](https://huggingface.co/datasets/Voxel51/fisheye8k) and demonstrate the Mcity Data Engine workflow [Embedding Selection](https://github.com/mcity/mcity_data_engine/wiki/Workflows#embedding-selection). This workflow leverages a set of models to compute image embeddings which are used to determine which samples are both representative and rare. This subset will finally be visualized in the Voxel51 UI, highlighting how often a sample was picked by a model.
+To get a first feel for the Mcity Data Engine, we provide an online demo in a [Google Colab](https://colab.research.google.com/github/mcity/mcity_data_engine/blob/main/fish_eye_8k_colab.ipynb) environment. We will load the [Fisheye8K dataset](https://huggingface.co/datasets/Voxel51/fisheye8k) and demonstrate the Mcity Data Engine workflow [Embedding Selection](https://github.com/mcity/mcity_data_engine/wiki/Workflows#embedding-selection). This workflow leverages a set of models to compute image embeddings which are used to determine both representative and rare samples. The dataset is then visualized in the Voxel51 UI, highlighting how often a sample was picked by the workflow.
 
-Keep in mind that most workflows of the Mcity Data Engine require a more powerful GPU, so the possibilities within the Colab environment are limited. Other workflows might not work.
+Note that most of the Mcity Data Engine workflows require a more powerful GPU, so the possibilities within the Colab environment are limited. Other workflows may not work.
 
 Online demo on Google Colab: [Mcity Data Engine Web Demo](https://colab.research.google.com/github/mcity/mcity_data_engine/blob/main/fish_eye_8k_colab.ipynb
 )
 
 ## Local Execution
 
-At least one GPU is required for the Data Engine. Check the hardware setups we have tested in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki/Environments). To download the repository and install requirements run:
+At least one GPU is required for many of the Mcity Data Engine workflows. Check the hardware setups we have tested in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki/Environments). To download the repository and install the requirements run:
 ```
 git clone --recurse-submodules git@github.com:mcity/mcity_data_engine.git
 cd mcity_data_engine
@@ -143,18 +148,15 @@ git add .gitmodules $(git submodule foreach --quiet 'echo $name')
 └── requirements.txt            # Python dependencies (pip install -r requirements.txt)
 ```
 
-## Documentation
-
-Open the [docs/index.html](./docs/index.html) file locally with your browser to see the API documentation. The documentation is updated automatically by pdoc with Github Actions, generating pull requests.
-
 ## Training
 
-Training runs are logged with [Weights and Biases (WandB)](https://wandb.ai/mcity/mcity-data-engine). 
+Training runs are logged with [Weights and Biases (WandB)](https://wandb.ai/mcity/mcity-data-engine).
 
-In order to change the standard WandB directory, add the following line to the bottom of your ```~/.profile``` file and then run ```source ~/.profile```:
+In order to change the standard WandB directory, run
 
 ```
-export WANDB_DIR="<your_path>/mcity_data_engine/logs"
+echo 'export WANDB_DIR="<your_path>/mcity_data_engine/logs"' >> ~/.profile
+source ~/.profile
 ```
 
 ## Contribution
@@ -176,11 +178,10 @@ Special thanks to these amazing people for contributing to the Mcity Data Engine
 If you use the Mcity Data Engine in your research, feel free to cite the project:
 
 ```bibtex
-@article{bogdoll2024mcitydataengine,
+@article{bogdoll2025mcitydataengine,
   title={Mcity Data Engine},
-  author={Bogdoll, Daniel and Stevens, Gregory},
+  author={Bogdoll, Daniel and Anata, Rajanikant Patnaik and Stevens, Gregory},
   journal={GitHub. Note: https://github.com/mcity/mcity_data_engine},
-  year={2024}
+  year={2025}
 }
 ```
-

@@ -18,6 +18,8 @@ def wandb_init(
     sync_tensorboard=True,
     wandb_activate=True,
 ):
+    """Initialize a Weights & Biases run for experiment tracking and logging with optional TensorBoard sync."""
+
     # Logging dir
     if log_dir is None:
         project_folder = re.sub(r"[^\w\-_]", "_", project_name)
@@ -49,6 +51,7 @@ def wandb_init(
 
 
 def wandb_close(exit_code=0):
+    """Close active W&B run and unpatch tensorboard logging, returning exit code 0 by default."""
 
     try:
         logging.info(f"Closing Weights and Biases run with exit_code {exit_code}")

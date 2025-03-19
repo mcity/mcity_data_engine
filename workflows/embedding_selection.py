@@ -16,11 +16,6 @@ from tqdm import tqdm
 from config.config import GLOBAL_SEED, HF_DO_UPLOAD, HF_ROOT, NUM_WORKERS
 from utils.sample_field_operations import add_sample_field
 
-"""
-Implementing Voxel51 brain methods.
-https://docs.voxel51.com/brain.html
-"""
-
 BRAIN_TAXONOMY = {
     "field": "embedding_selection",
     "value_compute_representativeness": "representativeness_center",
@@ -35,6 +30,8 @@ BRAIN_TAXONOMY = {
 
 
 class EmbeddingSelection:
+    """Class for computing and managing embeddings, uniqueness, and representations for dataset samples with https://docs.voxel51.com/brain.html."""
+
     def __init__(
         self,
         dataset,
@@ -43,6 +40,8 @@ class EmbeddingSelection:
         log_dir,
         embeddings_path="./output/embeddings/",
     ):
+        """Initialize the EmbeddingSelection with dataset, model, and configuration for embedding-based data selection."""
+
         # WandB counter
         self.steps = 0
         self.dataset = dataset
@@ -101,25 +100,12 @@ class EmbeddingSelection:
                 self.model_already_used = True
 
     def __del__(self):
+        """Destructor that decrements step counter and closes the writer."""
         self.steps -= 1  # +1 after every function, need to decrement for final step
         self.writer.close()
 
     def compute_embeddings(self, mode):
-        """
-        Computes and stores embeddings for the given model name. Uses V51 pre-defined dim. reduction methods.
-
-        This method performs the following steps:
-        1. Retrieves the list of pre-defined dimensionality reduction methods.
-        4. Loads or computes embeddings for the model.
-        5. Saves the computed embeddings to disk.
-        6. Computes and stores visualizations for the embeddings using various dimensionality reduction methods.
-
-        Parameters:
-        model_name: Model name for which embeddings need to be computed.
-
-        Raises:
-        Warning: If a model is not part of the V51 model zoo or does not provide embeddings.
-        """
+        """Computes and stores embeddings for the given model name. Uses V51 pre-defined dim. reduction methods."""
         start_time = time.time()
 
         dim_reduction_methods = list(fob.brain_config.visualization_methods.keys())
@@ -257,28 +243,7 @@ class EmbeddingSelection:
         self.steps += 1
 
     def compute_similarity(self):
-        """
-        Computes the similarity of embeddings for the dataset.
-
-        This method indexes the dataset by similarity and calculates the cosine
-        distance for the embeddings without dimensionality reduction. It iterates
-        over the available embedding models and computes or loads the similarity
-        results for each model.
-
-        The similarity results are stored in the `self.similarities` dictionary
-        with keys derived from the embedding model names.
-
-        References:
-            - Voxel51 Brain Similarity Documentation:
-              https://docs.voxel51.com/user_guide/brain.html#similarity
-
-        Attributes:
-            self.embeddings_model (dict): A dictionary of embedding models.
-            self.brains (dict): A dictionary to store brain results.
-            self.similarities (dict): A dictionary to store similarity results.
-            self.dataset (Dataset): The dataset object to compute similarities on.
-
-        """
+        """Computes the similarity of embeddings for the dataset."""
 
         start_time = time.time()
         if self.similiarity_key in self.brains:
@@ -300,30 +265,7 @@ class EmbeddingSelection:
 
     def compute_representativeness(self, threshold):
         """
-        Computes the representativeness of frames in the dataset using specified
-        embedding models and methods.
-
-        Args:
-            threshold (float, optional): The threshold value for selecting
-                representative frames. Defaults to 0.99.
-
-        This method iterates over the embedding models and computes the
-        representativeness using different methods. The results are stored in
-        the dataset, and frames that meet the threshold criteria are updated
-        with a specific field and value from the brain taxonomy.
-
-        The method uses the following representativeness computation methods:
-            - "cluster-center"
-            - "cluster-center-downweight"
-
-        The computed representativeness is stored in the dataset under keys
-        generated from the embedding model names and methods. If the key
-        already exists in the brains attribute, the existing similarities
-        are loaded from the dataset.
-
-        The method also updates the dataset samples that meet the threshold
-        criteria by setting a specific field to a value defined in the brain
-        taxonomy and saving the changes.
+        Computes the representativeness of frames in the dataset.
 
         References:
             - https://docs.voxel51.com/brain.html#image-representativeness
@@ -377,24 +319,8 @@ class EmbeddingSelection:
         """
         Computes a subset of unique images from the dataset using a greedy algorithm.
 
-        This method identifies a subset of images whose embeddings are as far apart as possible,
-        maximizing the k=1 neighbor distance. The percentage of unique images to be found is
-        specified by the `perct_unique` parameter.
-
-        Args:
-            perct_unique (float): The percentage of unique images to find in the dataset.
-                      Default is 0.01 (1%).
-
-        Notes:
-            - The method checks if any sample in the dataset already has the label indicating
-              uniqueness. If such samples exist, the method does nothing.
-            - If no such samples exist, the method iterates over the similarities and computes
-              unique images using the `find_unique` method of each similarity object.
-            - The unique images are then tagged with a specific field and value and saved back
-              to the dataset.
-
         References:
-            - Voxel51 Brain documentation: https://docs.voxel51.com/user_guide/brain.html#cifar-10-example
+            - https://docs.voxel51.com/user_guide/brain.html#cifar-10-example
         """
 
         start_time = time.time()
@@ -434,18 +360,7 @@ class EmbeddingSelection:
 
     def compute_unique_images_deterministic(self, threshold):
         """
-        Computes a deterministic uniqueness score for each sample in the dataset
-        and updates the dataset with the computed uniqueness values. Weighted k-neighbors distances for each sample.
-
-        This method iterates over the embeddings models, computes the uniqueness
-        score for each embedding, and updates the dataset with the computed scores.
-        Samples with uniqueness scores greater than or equal to the specified
-        threshold are marked with a specific field and value.
-
-        Args:
-            threshold (float, optional): The threshold value for determining
-            unique samples. Samples with uniqueness scores greater than or
-            equal to this threshold will be marked. Default is 0.99.
+        Computes a deterministic uniqueness score for each sample in the dataset.
 
         References:
             - https://docs.voxel51.com/api/fiftyone.brain.html#fiftyone.brain.compute_uniqueness
@@ -479,32 +394,8 @@ class EmbeddingSelection:
         self.writer.add_scalar("brain/duration_in_seconds", duration, self.steps)
         self.steps += 1
 
-    def find_samples_by_text(self, prompt, model_name, k=5):
-        # TODO Implement if of interest
-        # https://docs.voxel51.com/api/fiftyone.core.collections.html#fiftyone.core.collections.SampleCollection.sort_by_similarity
-        if model_name == "clip-vit-base32-torch":
-            view = self.dataset.sort_by_similarity(prompt, k=k)
-
-    def compute_duplicate_images(self, fraction=0.99):
-        # TODO Implement if of interest
-        # https://docs.voxel51.com/brain.html#finding-near-duplicate-images
-        pass
-
     def compute_similar_images(self, dist_threshold, neighbour_count):
-        """
-        Computes and assigns similar images based on a distance threshold and neighbour count.
-
-        This method checks if samples have already assigned fields and if not, it finds unique views
-        and assigns neighbours based on similarity. It iterates through the similarities and updates
-        the dataset with the computed values.
-
-        Parameters:
-        dist_threshold (float): The distance threshold to consider for similarity. Default is 0.03.
-        neighbour_count (int): The number of neighbours to consider for each sample. Default is 3.
-
-        Returns:
-        None
-        """
+        """Computes and assigns similar images based on a distance threshold and neighbour count."""
         start_time = time.time()
         field = BRAIN_TAXONOMY["field"]
         field_model = BRAIN_TAXONOMY["field_model"]

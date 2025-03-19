@@ -38,6 +38,7 @@ def dataset_v51():
 
 
 def test_zero_shot_inference(dataset_v51):
+    """Tests zero-shot object detection workflow by running inference on a dataset and validating detection outputs."""
 
     config = {
         "n_post_processing_worker_per_inference_worker": 1,
@@ -169,6 +170,7 @@ def test_zero_shot_inference(dataset_v51):
 
 
 def test_ensemble_selection(dataset_v51):
+    """Integration test for the workflow_ensemble_selection function that verifies detection tagging and unique instance counting."""
 
     dataset_info = {
         "name": "fisheye8k_zero_shot_test",
