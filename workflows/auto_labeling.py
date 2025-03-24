@@ -1758,6 +1758,11 @@ class CustomCoDETRObjectDetection:
         """Execute Co-DETR container with specified parameters using Docker or Singularity"""
 
         try:
+            # Convert relative paths to absolute paths (necessary under WSL2)
+            root_codetr_abs = os.path.abspath(self.root_codetr)
+            volume_data_abs = os.path.abspath(volume_data)
+            root_codetr_models_abs = os.path.abspath(self.root_codetr_models)
+
             # Check if using Docker or Singularity and define the appropriate command
             if container_tool == "docker":
                 command = [
@@ -1768,11 +1773,11 @@ class CustomCoDETRObjectDetection:
                     "--workdir",
                     workdir,
                     "--volume",
-                    f"{self.root_codetr}:{workdir}",
+                    f"{root_codetr_abs}:{workdir}",
                     "--volume",
-                    f"{volume_data}:{workdir}/data:ro",
+                    f"{volume_data_abs}:{workdir}/data:ro",
                     "--volume",
-                    f"{self.root_codetr_models}:{workdir}/hf_models:ro",
+                    f"{root_codetr_models_abs}:{workdir}/hf_models:ro",
                     "--shm-size=8g",
                     image,
                     param_function,
