@@ -20,9 +20,7 @@ import numpy as np
 import psutil
 import torch
 import torch.multiprocessing as mp
-import wandb
 from accelerate.test_utils.testing import get_backend
-from datasets import Split
 from fiftyone import ViewField as F
 from huggingface_hub import HfApi, hf_hub_download
 from PIL import Image
@@ -41,6 +39,7 @@ from transformers import (
 )
 from ultralytics import YOLO
 
+import wandb
 from config.config import (
     ACCEPTED_SPLITS,
     GLOBAL_SEED,
@@ -50,6 +49,7 @@ from config.config import (
     WANDB_ACTIVE,
     WORKFLOWS,
 )
+from datasets import Split
 from utils.dataset_loader import get_supported_datasets
 from utils.logging import configure_logging
 from utils.sample_field_operations import add_sample_field
@@ -1452,8 +1452,10 @@ class CustomCoDETRObjectDetection:
 
         # Check if model already exists
         output_folder_codetr = os.path.join(self.root_codetr, "output")
+        os.makedirs(output_folder_codetr, exist_ok=True)
         param_config_name = os.path.splitext(os.path.basename(param_config))[0]
         best_models_dir = os.path.join(output_folder_codetr, "best")
+        os.makedirs(best_models_dir, exist_ok=True)
         # Best model files follow the naming scheme "config_dataset.pth"
         pth_model_files = (
             [f for f in os.listdir(best_models_dir) if f.endswith(".pth")]
