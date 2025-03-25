@@ -1,6 +1,6 @@
 [submodule "custom_models/CoDETR/Co-DETR"]
 	path = custom_models/CoDETR/Co-DETR
-	url = git@github.com:mcity/mcity-Co-DETR.git.git
+	url = git@github.com:mcity/mcity-Co-DETR.git
 [submodule "mcity_data_engine_scripts"]
 	path = mcity_data_engine_scripts
 	url = https://github.com/mcity/mcity_data_engine_scripts
