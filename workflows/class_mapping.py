@@ -73,6 +73,11 @@ class ClassMapper:
     def process_detection(self, image, detection, candidate_labels):
         """Process a single detection with the model."""
         # Convert bounding box to pixel coordinates.
+        image = image.convert("RGB")
+        # Skip processing if original image was PNG
+        if image.format == "PNG":
+            return None, 0.0  # Skip with zero confidence
+
         img_width, img_height = image.size
         bbox = detection.bounding_box
         min_x, min_y, width, height = bbox
@@ -81,6 +86,15 @@ class ClassMapper:
 
         # Crop image to detection region.
         image_patch = image.crop((x1, y1, x2, y2))
+
+        image_patch = image_patch.convert("RGB")  # Discard alpha
+
+        # --- Fix 2: Resize to model input size ---
+        target_size = (384, 384)  # Adjust per model
+        image_patch = image_patch.resize(target_size, Image.Resampling.LANCZOS)
+
+        # --- Fix 3: Debugging ---
+        logging.debug(f"Processed image shape: {image_patch.size}, mode: {image_patch.mode}")
 
         # Prepare inputs for the model.
         if self.hf_model_config_name == "SiglipConfig":
@@ -250,7 +264,10 @@ class ClassMapper:
         sample_count = 0  # For logging steps
 
         for sample in self.dataset.iter_samples(progress=True, autosave=True):
+
             sample_count += 1
+            if sample_count<5200 or sample_count>5500:
+                continue
             try:
                 image = Image.open(sample.filepath)
             except Exception as e:

@@ -460,6 +460,35 @@ def load_fisheye_8k(dataset_info):
 
     return dataset
 
+def load_visdrone_fisheye(dataset_info):
+    """Loads visdrone fisheye 8k dataset from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
+
+    dataset_name = dataset_info["name"]
+    hf_dataset_name = dataset_info["hf_dataset_name"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name, overwrite=True)
+        _post_process_dataset(dataset)
+
+    return dataset
+
+def load_visheye_dummy(dataset_info):
+    """Loads visheye 8k dummy dataset from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
+
+    dataset_name = dataset_info["name"]
+    hf_dataset_name = dataset_info["hf_dataset_name"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name, overwrite=True)
+        _post_process_dataset(dataset)
+
+    return dataset
 
 def load_mars_multiagent(dataset_info):
     """Load the MARS multi-agent dataset from Hugging Face."""

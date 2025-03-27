@@ -1599,10 +1599,12 @@ class CustomCoDETRObjectDetection:
         dataset_name = None
         config_key = None
         try:
-            if inference_settings["model_hf"] is None:
-                hf_path = self.hf_repo_name
-            else:
-                hf_path = inference_settings["model_hf"]
+            #if inference_settings["model_hf"] is None:
+            #    hf_path = self.hf_repo_name
+            #else:
+            #    hf_path = inference_settings["model_hf"]
+
+            hf_path = "Abeyankar/visdrone_fisheye-v51-complete_co_deformable_detr_r50_1x_coco"
 
             dataset_name, config_key = get_dataset_and_model_from_hf_id(hf_path)
 
@@ -1726,19 +1728,23 @@ class CustomCoDETRObjectDetection:
 
         # Run V51 evaluation
         if inference_settings["do_eval"] is True:
-            eval_key = f"eval_{self.config_key}_{self.dataset_name}"
+            #eval_key = f"eval_{self.config_key}_{self.dataset_name}"
+            eval_key = 'eval_co_deformable_detr_r50_1x_coco_visdrone_fisheye_v51_complete'
 
             if inference_settings["inference_on_evaluation"] is True:
                 dataset_view = dataset.match_tags(["test", "val"])
             else:
                 dataset_view = dataset
 
-            dataset_view.evaluate_detections(
+
+
+            results = dataset_view.evaluate_detections(
                 pred_key,
                 gt_field=gt_field,
                 eval_key=eval_key,
                 compute_mAP=True,
             )
+            results.print_report()
 
     def _run_container(
         self,
@@ -1757,8 +1763,13 @@ class CustomCoDETRObjectDetection:
 
         try:
             # Check if using Docker or Singularity and define the appropriate command
+            # Convert all paths to absolute paths
+            root_codetr_abs = os.path.abspath(self.root_codetr)
+            root_codetr_models_abs = os.path.abspath(self.root_codetr_models)
+            volume_data_abs = os.path.abspath(volume_data)
+
             if container_tool == "docker":
-                command = [
+                command = ["sudo",
                     "docker",
                     "run",
                     "--gpus",
@@ -1766,11 +1777,11 @@ class CustomCoDETRObjectDetection:
                     "--workdir",
                     workdir,
                     "--volume",
-                    f"{self.root_codetr}:{workdir}",
+                    f"{root_codetr_abs}:{workdir}",
                     "--volume",
-                    f"{volume_data}:{workdir}/data:ro",
+                    f"{volume_data_abs}:{workdir}/data:ro",
                     "--volume",
-                    f"{self.root_codetr_models}:{workdir}/hf_models:ro",
+                    f"{root_codetr_models_abs}:{workdir}/hf_models:ro",
                     "--shm-size=8g",
                     image,
                     param_function,

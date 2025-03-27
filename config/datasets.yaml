@@ -37,3 +37,9 @@ datasets:
     loader_fct: load_annarbor_rolling
     local_path: datasets/dataengine_rolling/1/decoded
     v51_type: FiftyOneDataset
+  - name: visdrone_fisheye-v51-complete
+    loader_fct: load_visdrone_fisheye
+    hf_dataset_name: Abeyankar/Visdrone_fisheye-v51-complete
+  - name: visheye_dummy
+    loader_fct: load_visheye_dummy
+    hf_dataset_name: Abeyankar/visheye_dummy

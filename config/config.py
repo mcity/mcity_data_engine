@@ -6,7 +6,7 @@ SELECTED_WORKFLOW = ["class_mapping"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "fisheye8k",
+    "name": "visdrone_fisheye-v51-complete",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
@@ -45,7 +45,7 @@ WORKFLOWS = {
         ],
     },
     "anomaly_detection": {
-        "mode": ["train", "inference"],  # "train" and "inference" supported
+        "mode": ["train"],  # "train" and "inference" supported
         "epochs": 12,
         "early_stop_patience": 5,
         "anomalib_image_models": {  # Choose from https://anomalib.readthedocs.io/en/v1.2.0/markdown/guides/reference/models/image/index.html
@@ -62,10 +62,10 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": ["train", "inference"],  # "train" and "inference" supported
+        "mode": ["inference"],  # "train" and "inference" supported
         "model_source": [
-            "hf_models_objectdetection",
-            "ultralytics",
+            #"hf_models_objectdetection",
+            #"ultralytics",
             "custom_codetr",
         ],
         "n_worker_dataloader": 3,
@@ -115,7 +115,7 @@ WORKFLOWS = {
             "export_dataset_root": "output/datasets/codetr_data/",
             "configs": [
                 "projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py",
-                # "projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
+                #"projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
             ],
             "n_gpus": "1",
             "container_tool": "docker",
@@ -267,7 +267,7 @@ WORKFLOWS = {
 
     "class_mapping": {
         # get the source and target dataset names from datasets.yaml
-        "dataset_source": "fisheye8k",
+        "dataset_source": "visdrone_fisheye-v51-complete",
         "dataset_target": "mcity_fisheye_2000",
          # Choose any number of models from the options below hf_models_zeroshot_classification, to not include a model for class mapping, just comment it out
          #https://huggingface.co/docs/transformers/model_doc/auto#transformers.AutoModelForZeroShotImageClassification
@@ -285,10 +285,10 @@ WORKFLOWS = {
         },
         "candidate_labels": {
             #Target class(Generalized class) : Source classes(specific categories)
-            "Car": ["car", "van", "pickup"],
-            "Truck": ["truck", "pickup"],
+            "car": ["car", "van"],
+            #"truck": ["truck", "pickup"],
             #One_to_one_mapping
-            "Bike" : ["motorbike/cycler"]
+            "bike" : ["motorbike/cycler"]
             #Can add other class mappings in here
         }
     }
@@ -308,9 +308,9 @@ GLOBAL_SEED = 0
 
 """Hugging Face Config"""
 #: Hugging Face name or Organization
-HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
+HF_ROOT = "Abeyankar"  # https://huggingface.co/mcity-data-engine
 #: Determins if model weights should be uploaded to Hugging Face
-HF_DO_UPLOAD = False
+HF_DO_UPLOAD = True
 
 """Weights and Biases Config"""
 #: Determines if tracking with Weights and Biases is activated
