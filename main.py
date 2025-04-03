@@ -6,6 +6,7 @@ import time
 import warnings
 from typing import Dict, List
 
+import os
 import torch
 
 IGNORE_FUTURE_WARNINGS = True
@@ -691,6 +692,8 @@ class WorkflowExecutor:
 
                     if SUPPORTED_MODEL_SOURCES[0] in selected_model_source:
                         # Hugging Face Models
+                        # Single GPU mode (https://github.com/huggingface/transformers/issues/28740)
+                        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
                         hf_models = config_autolabel["hf_models_objectdetection"]
 
                         # Dataset Conversion
