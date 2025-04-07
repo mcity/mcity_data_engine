@@ -37,3 +37,7 @@ datasets:
     loader_fct: load_annarbor_rolling
     local_path: datasets/dataengine_rolling/1/decoded
     v51_type: FiftyOneDataset
+  - name: SUNRGBD
+    loader_fct: load_sunrgbd
+    local_path: /home/wizard/mcity_data_engine/SUNRGBD
+    v51_type: FiftyOneDataset
