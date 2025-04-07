@@ -1,5 +1,5 @@
 absl-py==2.1.0
-accelerate==1.4.0
+accelerate==1.6.0
 aiohttp==3.10.6
 alembic==1.13.3
 anomalib==1.2.0
