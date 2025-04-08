@@ -7,10 +7,9 @@ import traceback
 
 import boto3
 import wandb
+from aws_stream_filter_framerate import SampleTimestamps
 from dotenv import load_dotenv
 from tqdm import tqdm
-
-from aws_stream_filter_framerate import SampleTimestamps
 
 WANDB_ACTIVE=False
 
