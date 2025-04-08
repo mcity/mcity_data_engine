@@ -1,12 +1,12 @@
+import os
 import psutil
 
-
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["class_mapping"]
+SELECTED_WORKFLOW = ["auto_label_mask"]  # Choose from WORKFLOWS keys
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "fisheye8k",
+    "name": "fisheye8k_mask_test",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
@@ -186,15 +186,14 @@ WORKFLOWS = {
             "delivery driver",
         ],
     },
-    "mask_teacher": {
+    "auto_label_mask": {
         "semantic_segmentation": {
             "sam2": {
-                "prompt_field": None,  # None or Voxel51 field with bbox detections
+                "prompt_field": None,
                 "models": [
                     "segment-anything-2-hiera-tiny-image-torch",
                     "segment-anything-2-hiera-small-image-torch",
                     "segment-anything-2-hiera-base-plus-image-torch",
-                    "segment-anything-2-hiera-large-image-torch",
                     "segment-anything-2.1-hiera-tiny-image-torch",
                     "segment-anything-2.1-hiera-small-image-torch",
                     "segment-anything-2.1-hiera-base-plus-image-torch",
@@ -204,7 +203,6 @@ WORKFLOWS = {
         },
         "depth_estimation": {
             "dpt": {
-                "prompt_field": None,
                 "models": {
                     "Intel/dpt-swinv2-tiny-256",
                     "Intel/dpt-swinv2-large-384",
@@ -218,19 +216,22 @@ WORKFLOWS = {
                 },
             },
             "depth_anything": {
-                "prompt_field": None,
                 "models": {
                     "LiheYoung/depth-anything-base-hf",
                     "LiheYoung/depth-anything-large-hf",
                     "LiheYoung/depth-anything-small-hf",
                 },
             },
+            "depth_pro": {
+                "models": {
+                    "apple/DepthPro-hf",
+                }
+            },
             "glpn": {
-                "prompt_field": None,
-                "models": {"vinvino02/glpn-nyu", "vinvino02/glpn-kitti"},
+                "models": {"vinvino02/glpn-nyu",
+                           "vinvino02/glpn-kitti"},
             },
             "zoe_depth": {
-                "prompt_field": None,
                 "models": {
                     "Intel/zoedepth-nyu-kitti",
                     "Intel/zoedepth-nyu",
