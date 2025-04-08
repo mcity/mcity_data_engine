@@ -475,8 +475,8 @@ def load_visdrone_fisheye(dataset_info):
 
     return dataset
 
-def load_visheye_dummy(dataset_info):
-    """Loads visheye 8k dummy dataset from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
+def load_visdrone_fisheye_mcity(dataset_info):
+    """Loads the combined dataset from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
 
     dataset_name = dataset_info["name"]
     hf_dataset_name = dataset_info["hf_dataset_name"]

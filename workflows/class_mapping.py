@@ -73,10 +73,6 @@ class ClassMapper:
     def process_detection(self, image, detection, candidate_labels):
         """Process a single detection with the model."""
         # Convert bounding box to pixel coordinates.
-        image = image.convert("RGB")
-        # Skip processing if original image was PNG
-        if image.format == "PNG":
-            return None, 0.0  # Skip with zero confidence
 
         img_width, img_height = image.size
         bbox = detection.bounding_box
@@ -87,23 +83,24 @@ class ClassMapper:
         # Crop image to detection region.
         image_patch = image.crop((x1, y1, x2, y2))
 
-        image_patch = image_patch.convert("RGB")  # Discard alpha
+        #image_patch = image_patch.convert("RGB")  # Discard alpha
 
-        # --- Fix 2: Resize to model input size ---
-        target_size = (384, 384)  # Adjust per model
-        image_patch = image_patch.resize(target_size, Image.Resampling.LANCZOS)
 
         # --- Fix 3: Debugging ---
-        logging.debug(f"Processed image shape: {image_patch.size}, mode: {image_patch.mode}")
-
         # Prepare inputs for the model.
         if self.hf_model_config_name == "SiglipConfig":
+            target_size = (384, 384)  # Adjust per model
+            image_patch = image_patch.resize(target_size, Image.Resampling.LANCZOS)
             inputs = self.processor(text=candidate_labels, images=image_patch, padding="max_length", return_tensors="pt")
 
         elif self.hf_model_config_name == "CLIPSegConfig":
+            target_size = (224, 224)  # Adjust per model
+            image_patch = image_patch.resize(target_size, Image.Resampling.LANCZOS)
             inputs = self.processor(text=candidate_labels, images=[image_patch]*len(candidate_labels), padding="max_length", return_tensors="pt")
 
         else:
+            target_size = (224, 224)  # Adjust per model
+            image_patch = image_patch.resize(target_size, Image.Resampling.LANCZOS)
             inputs = self.processor(images=image_patch, text=candidate_labels, return_tensors="pt", padding=True)
 
         # Ensure all tensors in the processed inputs are moved to the designated device.
@@ -266,8 +263,8 @@ class ClassMapper:
         for sample in self.dataset.iter_samples(progress=True, autosave=True):
 
             sample_count += 1
-            if sample_count<5200 or sample_count>5500:
-                continue
+            #if sample_count<5200 or sample_count>5500:
+            #    continue
             try:
                 image = Image.open(sample.filepath)
             except Exception as e:
@@ -311,11 +308,12 @@ class ClassMapper:
                     tag = f"new_class_{self.model_name}_{predicted_label}"
                     if tag not in det.tags:
                         det.tags.append(tag)
+                        det.label = predicted_label
                         self.stats["changes_made"] += 1
-                        if predicted_label != current_label:
-                            self.stats["tags_added_per_category"][predicted_label] = (
-                                self.stats["tags_added_per_category"].get(predicted_label, 0) + 1
-                            )
+                        #if predicted_label != current_label:
+                        self.stats["tags_added_per_category"][predicted_label] = (
+                            self.stats["tags_added_per_category"].get(predicted_label, 0) + 1
+                        )
 
                         tb_writer.add_scalar(f"Tags_Added/{predicted_label}",
                                             self.stats["tags_added_per_category"].get(predicted_label, 0),

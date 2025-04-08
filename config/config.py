@@ -2,11 +2,11 @@ import psutil
 
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["class_mapping"]
+SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "visdrone_fisheye-v51-complete",
+    "name": "visdrone_fisheye_mcity_v51",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
@@ -62,7 +62,7 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": ["inference"],  # "train" and "inference" supported
+        "mode": ["train"],  # "train" and "inference" supported
         "model_source": [
             #"hf_models_objectdetection",
             #"ultralytics",
@@ -273,12 +273,12 @@ WORKFLOWS = {
          #https://huggingface.co/docs/transformers/model_doc/auto#transformers.AutoModelForZeroShotImageClassification
         "hf_models_zeroshot_classification": [
             "Salesforce/blip2-itm-vit-g",
-            "openai/clip-vit-large-patch14",
-            "google/siglip-so400m-patch14-384",
-            #"google/siglip2-base-patch16-224",
-            "kakaobrain/align-base",
-            "BAAI/AltCLIP",
-            "CIDAS/clipseg-rd64-refined"
+            #"openai/clip-vit-large-patch14",
+            #"google/siglip-so400m-patch14-384",
+            #"google/siglip2-so400m-patch14-384",
+            #"kakaobrain/align-base",
+            #"BAAI/AltCLIP",
+            #"CIDAS/clipseg-rd64-refined"
         ],
         "thresholds": {
             "confidence": 0.2
@@ -286,7 +286,7 @@ WORKFLOWS = {
         "candidate_labels": {
             #Target class(Generalized class) : Source classes(specific categories)
             "car": ["car", "van"],
-            #"truck": ["truck", "pickup"],
+            "truck": ["truck", "pickup"],
             #One_to_one_mapping
             "bike" : ["motorbike/cycler"]
             #Can add other class mappings in here

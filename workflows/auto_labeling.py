@@ -1599,12 +1599,12 @@ class CustomCoDETRObjectDetection:
         dataset_name = None
         config_key = None
         try:
-            #if inference_settings["model_hf"] is None:
-            #    hf_path = self.hf_repo_name
-            #else:
-            #    hf_path = inference_settings["model_hf"]
+            if inference_settings["model_hf"] is None:
+                hf_path = self.hf_repo_name
+            else:
+                hf_path = inference_settings["model_hf"]
 
-            hf_path = "Abeyankar/visdrone_fisheye-v51-complete_co_deformable_detr_r50_1x_coco"
+            #hf_path = "Abeyankar/visdrone_fisheye-v51-complete_co_deformable_detr_r50_1x_coco"
 
             dataset_name, config_key = get_dataset_and_model_from_hf_id(hf_path)
 
@@ -1728,8 +1728,8 @@ class CustomCoDETRObjectDetection:
 
         # Run V51 evaluation
         if inference_settings["do_eval"] is True:
-            #eval_key = f"eval_{self.config_key}_{self.dataset_name}"
-            eval_key = 'eval_co_deformable_detr_r50_1x_coco_visdrone_fisheye_v51_complete'
+            eval_key = f"eval_{self.config_key}_{self.dataset_name}"
+            #eval_key = 'eval_co_deformable_detr_r50_1x_coco_visdrone_fisheye_v51_complete'
 
             if inference_settings["inference_on_evaluation"] is True:
                 dataset_view = dataset.match_tags(["test", "val"])
