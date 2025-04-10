@@ -2,7 +2,7 @@ import os
 import psutil
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["auto_label_mask"]  # Choose from WORKFLOWS keys
+SELECTED_WORKFLOW = ["class_mapping"]  # Choose from WORKFLOWS keys
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
@@ -270,6 +270,10 @@ WORKFLOWS = {
         # get the source and target dataset names from datasets.yaml
         "dataset_source": "fisheye8k",
         "dataset_target": "mcity_fisheye_2000",
+
+        # Set to True to change detection labels in the dataset, Set to False to just add tags without changing labels in the dataset.
+        "change_labels": False,
+
          # Choose any number of models from the options below hf_models_zeroshot_classification, to not include a model for class mapping, just comment it out
          #https://huggingface.co/docs/transformers/model_doc/auto#transformers.AutoModelForZeroShotImageClassification
         "hf_models_zeroshot_classification": [

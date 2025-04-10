@@ -77,7 +77,8 @@ def test_class_mapping(dataset_v51,dataset_v51_2, dataset_v51_3):
             #One_to_one_mapping
             "Bike" : ["motorbike/cycler"]
             #Can add other class mappings in here
-        }
+        },
+        "change_labels": False
     }
 
     models = config["hf_models_zeroshot_classification"]
