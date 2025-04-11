@@ -24,10 +24,7 @@ class AwsDownloader:
     def __init__(self, bucket, prefix, download_path, test_run):
         """Initialize S3 downloader with bucket, prefix, download path and test flag, setting up AWS credentials from .secret file."""
         try:
-            with open(".secret", "r") as file:
-                for line in file:
-                    key, value = line.strip().split("=")
-                    os.environ[key] = value
+
 
             # S3 Client
             self.s3 = boto3.client(
@@ -368,6 +365,7 @@ class AwsDownloader:
 
         # Add files to the task queue
         for file_path in files:
+            print(f"Daownload Path: {self.download_path} Sub folder: {sub_folder} file path: {file_path}")
             absolute_file_path = os.path.join(self.download_path, sub_folder, file_path)
             task_queue.put(absolute_file_path)
 

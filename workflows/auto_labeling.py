@@ -389,9 +389,9 @@ class ZeroShotObjectDetection:
         if set_cpu_affinity:
             # Allow only certain CPU cores
             psutil.Process().cpu_affinity(cpu_cores)
-        logging.info(f"Available CPU cores: {psutil.Process().cpu_affinity()}")
-        max_n_cpus = len(cpu_cores)
-        torch.set_num_threads(max_n_cpus)
+        logging.info(f"Available CPU cores: {psutil.Process().cpu_affinity()} - Length = {len(psutil.Process().cpu_affinity())}")
+        max_n_cpus = len(psutil.Process().cpu_affinity())
+        torch.set_num_threads(abs(max_n_cpus))
 
         # Set GPU
         logging.info(f"GPU {gpu_id}: {torch.cuda.get_device_name(gpu_id)}")
@@ -579,8 +579,10 @@ class ZeroShotObjectDetection:
                     n_images = len(labels)
                     inputs = inputs.to(device, non_blocking=True)
 
-                    with torch.amp.autocast("cuda"), torch.inference_mode():
+                    with torch.cuda.amp.autocast(), torch.inference_mode():
+                        torch.cuda.empty_cache()
                         outputs = model(**inputs)
+                        torch.cuda.empty_cache()
 
                     result = {
                         "inputs": inputs,
