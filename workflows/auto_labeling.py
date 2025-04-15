@@ -1055,6 +1055,7 @@ class HuggingFaceObjectDetection:
         config,
         output_model_path="./output/models/object_detection_hf",
         output_detections_path="./output/detections/",
+        gt_field="ground_truth",
     ):
         """Initialize with dataset, config, and optional output paths."""
         self.dataset = dataset
@@ -1076,7 +1077,7 @@ class HuggingFaceObjectDetection:
             f"{HF_ROOT}/" + f"{self.dataset_name}_{self.model_name}".replace("/", "_")
         )
 
-        self.categories = dataset.default_classes
+        self.categories = dataset.distinct(f"{gt_field}.detections.label")
         self.id2label = {index: x for index, x in enumerate(self.categories, start=0)}
         self.label2id = {v: k for k, v in self.id2label.items()}
 
@@ -1384,7 +1385,7 @@ class CustomCoDETRObjectDetection:
             splits = [
                 "train",
                 "val",
-                "test"
+                "test",
             ]  # CoDETR expects data in 'train' and 'val' folder
             for split in splits:
                 split_view = self.dataset.match_tags(split)
@@ -1620,6 +1621,9 @@ class CustomCoDETRObjectDetection:
         except Exception as e:
             logging.error(f"An error occured during model download: {e}")
 
+        model_path = os.path.join(dataset_name, config_key, "model.pth")
+        logging.info(f"Starting inference for model {model_path}")
+
         inference_result = self._run_container(
             volume_data=volume_data,
             param_function=param_function,
@@ -1627,19 +1631,18 @@ class CustomCoDETRObjectDetection:
             param_n_gpus=param_n_gpus,
             container_tool=container_tool,
             param_inference_dataset_folder=folder_inference,
-            param_inference_model_checkpoint=os.path.join(
-                dataset_name, config_key, "model.pth"
-            ),
+            param_inference_model_checkpoint=model_path,
         )
 
         # Convert results from JSON output into V51 dataset
         # Files follow format inference_results_{timestamp}.json (run_inference.py)
-        os.makedirs(inference_output_folder,exist_ok=True)
+        os.makedirs(inference_output_folder, exist_ok=True)
         output_files = [
             f
             for f in os.listdir(inference_output_folder)
             if f.startswith("inference_results_") and f.endswith(".json")
         ]
+        logging.debug(f"Found files with inference content: {output_files}")
 
         if not output_files:
             logging.error(
@@ -1724,13 +1727,16 @@ class CustomCoDETRObjectDetection:
 
         # Run V51 evaluation
         if inference_settings["do_eval"] is True:
-            eval_key = pred_key.replace("pred_","eval_").replace("-","_")
+            eval_key = pred_key.replace("pred_", "eval_").replace("-", "_")
 
             if inference_settings["inference_on_test"] is True:
                 dataset_view = dataset.match_tags(["test"])
             else:
                 dataset_view = dataset
 
+            logging.info(
+                f"Starting evaluation for {pred_key} in evaluation key {eval_key}."
+            )
             dataset_view.evaluate_detections(
                 pred_key,
                 gt_field=gt_field,
