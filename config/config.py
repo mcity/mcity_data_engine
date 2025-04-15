@@ -1,6 +1,5 @@
 import psutil
 
-
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
 SELECTED_WORKFLOW = ["auto_labeling"]
 
@@ -8,6 +7,7 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 SELECTED_DATASET = {
     "name": "mcity_fisheye_2100",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
+    "custom_view": "view_vru_mcity_fisheye",  # 'None' (full dataset) or select function from utils/custom_view
 }
 
 #: Workflows and associated parameters
@@ -62,11 +62,11 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": ["train", "inference"],  # "train" and "inference" supported
+        "mode": ["inference"],  # "train" and "inference" supported
         "model_source": [
-            #"hf_models_objectdetection",
-            "ultralytics",
-            #"custom_codetr",
+            "hf_models_objectdetection",
+            # "ultralytics",
+            # "custom_codetr",
         ],
         "n_worker_dataloader": 3,
         "epochs": 200,
@@ -82,42 +82,42 @@ WORKFLOWS = {
             "detection_threshold": 0.2,
         },
         "hf_models_objectdetection": {  # HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
-            "microsoft/conditional-detr-resnet-50": {"batch_size": 4},
-            #"Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
-            #"facebook/detr-resnet-50": {"batch_size": 1},
-            #"facebook/detr-resnet-50-dc5": {"batch_size": 1, "image_size": [960, 960]},
-            "facebook/detr-resnet-101": {"batch_size": 4, "image_size": [960, 960]},
-            #"facebook/detr-resnet-101-dc5": {"batch_size": 1, "image_size": [960, 960]},
-            "facebook/deformable-detr-detic": {
-               "batch_size": 4,
-               "image_size": [960, 960],
-            },
-            #"facebook/deformable-detr-box-supervised": {
+            # "microsoft/conditional-detr-resnet-50": {"batch_size": 4},
+            # "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
+            # "facebook/detr-resnet-50": {"batch_size": 1},
+            # "facebook/detr-resnet-50-dc5": {"batch_size": 1, "image_size": [960, 960]},
+            # "facebook/detr-resnet-101": {"batch_size": 4, "image_size": [960, 960]},
+            # "facebook/detr-resnet-101-dc5": {"batch_size": 1, "image_size": [960, 960]},
+            # "facebook/deformable-detr-detic": {
+            #    "batch_size": 4,
+            #    "image_size": [960, 960],
+            # },
+            # "facebook/deformable-detr-box-supervised": {
             #   "batch_size": 1,
             #   "image_size": [960, 960],
-            #},
-            "SenseTime/deformable-detr": {"batch_size": 4, "image_size": [960, 960]},
-            #"SenseTime/deformable-detr-with-box-refine": {
+            # },
+            # "SenseTime/deformable-detr": {"batch_size": 4, "image_size": [960, 960]},
+            # "SenseTime/deformable-detr-with-box-refine": {
             #   "batch_size": 1,
             #   "image_size": [960, 960],
-            #},
-            #"jozhang97/deta-swin-large": {
+            # },
+            # "jozhang97/deta-swin-large": {
             #   "batch_size": 1,
             #   "image_size": [960, 960],
-            #},
-            "jozhang97/deta-swin-large-o365": {
-               "batch_size": 4,
-               "image_size": [960, 960],
-            },
-            "hustvl/yolos-base": {"batch_size": 4},
+            # },
+            # "jozhang97/deta-swin-large-o365": {
+            #    "batch_size": 4,
+            #    "image_size": [960, 960],
+            # },
+            # "hustvl/yolos-base": {"batch_size": 4},
             "IDEA-Research/dab-detr-resnet-50": {
-               "batch_size": 4,
-               "image_size": [960, 960],
+                "batch_size": 4,
+                "image_size": [960, 960],
             },
-            "PekingU/rtdetr_v2_r18vd": {
-               "batch_size": 4,
-               "image_size": [960, 960],
-            },
+            # "PekingU/rtdetr_v2_r18vd": {
+            #    "batch_size": 4,
+            #    "image_size": [960, 960],
+            # },
         },
         "custom_codetr": {
             "export_dataset_root": "output/datasets/codetr_data/",
@@ -131,9 +131,9 @@ WORKFLOWS = {
         "ultralytics": {
             "export_dataset_root": "output/datasets/ultralytics_data/",
             "models": {  # Pick from https://docs.ultralytics.com/models/
-                "yolo11n": {"batch_size": 16, "img_size": 960},
-                "yolo11x": {"batch_size": 1, "img_size": 960},
-                "yolo12n": {"batch_size": 16, "img_size": 960},
+                # "yolo11n": {"batch_size": 16, "img_size": 960},
+                # "yolo11x": {"batch_size": 1, "img_size": 960},
+                # "yolo12n": {"batch_size": 16, "img_size": 960},
                 "yolo12x": {"batch_size": 1, "img_size": 640},
             },
         },
@@ -272,34 +272,31 @@ WORKFLOWS = {
             "delivery driver",
         ],
     },
-
     "class_mapping": {
         # get the source and target dataset names from datasets.yaml
         "dataset_source": "fisheye8k",
         "dataset_target": "mcity_fisheye_2000",
-         # Choose any number of models from the options below hf_models_zeroshot_classification, to not include a model for class mapping, just comment it out
-         #https://huggingface.co/docs/transformers/model_doc/auto#transformers.AutoModelForZeroShotImageClassification
+        # Choose any number of models from the options below hf_models_zeroshot_classification, to not include a model for class mapping, just comment it out
+        # https://huggingface.co/docs/transformers/model_doc/auto#transformers.AutoModelForZeroShotImageClassification
         "hf_models_zeroshot_classification": [
             "Salesforce/blip2-itm-vit-g",
             "openai/clip-vit-large-patch14",
             "google/siglip-so400m-patch14-384",
-            #"google/siglip2-base-patch16-224",
+            # "google/siglip2-base-patch16-224",
             "kakaobrain/align-base",
             "BAAI/AltCLIP",
-            "CIDAS/clipseg-rd64-refined"
+            "CIDAS/clipseg-rd64-refined",
         ],
-        "thresholds": {
-            "confidence": 0.2
-        },
+        "thresholds": {"confidence": 0.2},
         "candidate_labels": {
-            #Target class(Generalized class) : Source classes(specific categories)
+            # Target class(Generalized class) : Source classes(specific categories)
             "Car": ["car", "van", "pickup"],
             "Truck": ["truck", "pickup"],
-            #One_to_one_mapping
-            "Bike" : ["motorbike/cycler"]
-            #Can add other class mappings in here
-        }
-    }
+            # One_to_one_mapping
+            "Bike": ["motorbike/cycler"],
+            # Can add other class mappings in here
+        },
+    },
 }
 
 """Global settings"""

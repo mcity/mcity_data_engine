@@ -10,6 +10,7 @@ from fiftyone.utils.huggingface import load_from_hub
 from nuscenes.nuscenes import NuScenes
 
 from config.config import ACCEPTED_SPLITS, GLOBAL_SEED, NUM_WORKERS, PERSISTENT
+from utils.custom_view import view_vru_mcity_fisheye
 from utils.sample_field_operations import rename_sample_field
 
 
@@ -33,6 +34,7 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
         dataset = globals()[loader_function](dataset_info)
         n_samples_original = len(dataset)
         n_samples_requested = selected_dataset["n_samples"]
+        custom_view_requested = selected_dataset["custom_view"]
 
         if (
             n_samples_requested is not None
@@ -70,6 +72,15 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
                     f"Dataset size was reduced from {len(dataset)} to {len(combined_view)} samples."
                 )
                 return combined_view, dataset_info
+
+        elif custom_view_requested is not None:
+            try:
+                dataset_view = globals()[custom_view_requested](dataset)
+                return dataset_view, dataset_info
+            except Exception as e:
+                logging.error(
+                    f"Calling the custom view {custom_view_requested} failed: {e}"
+                )
 
     else:
         logging.error(
