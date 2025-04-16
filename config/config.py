@@ -5,9 +5,9 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "mcity_fisheye_2000",
+    "name": "mcity_fisheye_2000_vru_only",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
-    "custom_view": "vru_mcity_fisheye",  # 'None' (full dataset) or select function from utils/custom_view
+    "custom_view": None,  # 'None' (full dataset) or select function from utils/custom_view
 }
 
 #: Workflows and associated parameters
@@ -134,7 +134,7 @@ WORKFLOWS = {
                 "yolo11n": {"batch_size": 16, "img_size": 960},
                 # "yolo11x": {"batch_size": 1, "img_size": 960},
                 # "yolo12n": {"batch_size": 16, "img_size": 960},
-                # "yolo12x": {"batch_size": 1, "img_size": 640},
+                # "yolo12x": {"batch_size": 1, "img_size": 960},
             },
         },
     },
