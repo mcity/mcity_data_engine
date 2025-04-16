@@ -5,9 +5,9 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "mcity_fisheye_2100",
+    "name": "mcity_fisheye_2000",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
-    "custom_view": "view_vru_mcity_fisheye",  # 'None' (full dataset) or select function from utils/custom_view
+    "custom_view": "vru_mcity_fisheye",  # 'None' (full dataset) or select function from utils/custom_view
 }
 
 #: Workflows and associated parameters
@@ -62,14 +62,14 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": ["inference"],  # "train" and "inference" supported
+        "mode": ["train", "inference"],  # "train" and "inference" supported
         "model_source": [
-            "hf_models_objectdetection",
-            # "ultralytics",
+            # "hf_models_objectdetection",
+            "ultralytics",
             # "custom_codetr",
         ],
         "n_worker_dataloader": 3,
-        "epochs": 200,
+        "epochs": 50,
         "early_stop_patience": 5,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -131,10 +131,10 @@ WORKFLOWS = {
         "ultralytics": {
             "export_dataset_root": "output/datasets/ultralytics_data/",
             "models": {  # Pick from https://docs.ultralytics.com/models/
-                # "yolo11n": {"batch_size": 16, "img_size": 960},
+                "yolo11n": {"batch_size": 16, "img_size": 960},
                 # "yolo11x": {"batch_size": 1, "img_size": 960},
                 # "yolo12n": {"batch_size": 16, "img_size": 960},
-                "yolo12x": {"batch_size": 1, "img_size": 640},
+                # "yolo12x": {"batch_size": 1, "img_size": 640},
             },
         },
     },
@@ -315,7 +315,7 @@ GLOBAL_SEED = 0
 #: Hugging Face name or Organization
 HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
 #: Determins if model weights should be uploaded to Hugging Face
-HF_DO_UPLOAD = True
+HF_DO_UPLOAD = False
 
 """Weights and Biases Config"""
 #: Determines if tracking with Weights and Biases is activated
