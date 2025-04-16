@@ -324,8 +324,8 @@ def load_mcity_fisheye_2000(dataset_info):
     return dataset
 
 
-def load_mcity_fisheye_2100_vru(dataset_info):
-    """Loads the Mcity Fisheye 2100 VRU dataset from HuggingFace Hub or locally if it exists."""
+def load_dataset_from_hf_hub(dataset_info):
+    """Loads a dataset from HuggingFace Hub or locally if it exists."""
     dataset_name = dataset_info["name"]
     hf_dataset_name = dataset_info["hf_dataset_name"]
 
