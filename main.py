@@ -796,7 +796,7 @@ class WorkflowExecutor:
                                 "model_name": model_name,
                                 "v51_dataset_name": self.dataset_info["name"],
                                 "epochs": epochs,
-                                "patience": config_autolabel["early_stop_threshold"],
+                                "patience": config_autolabel["early_stop_patience"],
                                 "batch_size": models_ultralytics[model_name][
                                     "batch_size"
                                 ],
