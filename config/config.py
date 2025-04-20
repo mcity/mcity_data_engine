@@ -5,7 +5,7 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "mcity_fisheye_2000_vru_only",
+    "name": "mcity_fisheye_2100_vru_only",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
     "custom_view": None,  # 'None' (full dataset) or select function from utils/custom_view
 }
@@ -39,8 +39,8 @@ WORKFLOWS = {
             # "resnet152-imagenet-torch",
             # "vgg19-imagenet-torch",
             # "classification-transformer-torch",
-            "detection-transformer-torch",
-            "zero-shot-detection-transformer-torch",
+            # "detection-transformer-torch",
+            # "zero-shot-detection-transformer-torch",
             # "zero-shot-classification-transformer-torch",
         ],
     },
@@ -62,15 +62,15 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": ["train", "inference"],  # "train" and "inference" supported
+        "mode": ["train"],  # "train" and "inference" supported
         "model_source": [
             # "hf_models_objectdetection",
             "ultralytics",
             # "custom_codetr",
         ],
-        "n_worker_dataloader": 3,
-        "epochs": 50,
-        "early_stop_patience": 5,
+        "n_worker_dataloader": 8,
+        "epochs": 1000,
+        "early_stop_patience": 0,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
         "weight_decay": 0.0001,
@@ -130,10 +130,12 @@ WORKFLOWS = {
         },
         "ultralytics": {
             "export_dataset_root": "output/datasets/ultralytics_data/",
+            "multi_scale": False,
+            "cos_lr": True,
             "models": {  # Pick from https://docs.ultralytics.com/models/
-                "yolo11n": {"batch_size": 16, "img_size": 960},
+                # "yolo11n": {"batch_size": 8, "img_size": 1280},
                 # "yolo11x": {"batch_size": 1, "img_size": 960},
-                # "yolo12n": {"batch_size": 16, "img_size": 960},
+                "yolo12n": {"batch_size": 8, "img_size": 1280},
                 # "yolo12x": {"batch_size": 1, "img_size": 960},
             },
         },

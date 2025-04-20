@@ -5,6 +5,7 @@ import os
 import queue
 import random
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -21,6 +22,7 @@ import psutil
 import torch
 import torch.multiprocessing as mp
 from accelerate.test_utils.testing import get_backend
+from datasets import Split
 from fiftyone import ViewField as F
 from huggingface_hub import HfApi, hf_hub_download
 from PIL import Image
@@ -49,7 +51,6 @@ from config.config import (
     WANDB_ACTIVE,
     WORKFLOWS,
 )
-from datasets import Split
 from utils.dataset_loader import get_supported_datasets
 from utils.logging import configure_logging
 from utils.sample_field_operations import add_sample_field
@@ -838,18 +839,15 @@ class UltralyticsObjectDetection:
     ):
         """Export dataset to YOLO format for Ultralytics training."""
         ultralytics_data_path = os.path.join(export_dataset_root, dataset_info["name"])
-        # Check if export directory already exists
+        # Delete export directory if it already exists
         if os.path.exists(ultralytics_data_path):
-            logging.warning(
-                f"Export directory {ultralytics_data_path} already exists. Skipping export."
-            )
-            return
+            shutil.rmtree(ultralytics_data_path)
 
         logging.info("Exporting data for training with Ultralytics")
         classes = dataset.distinct(f"{label_field}.detections.label")
 
         # Make directory
-        os.makedirs(ultralytics_data_path, exist_ok=True)
+        os.makedirs(ultralytics_data_path, exist_ok=False)
 
         for split in ACCEPTED_SPLITS:
             split_view = dataset.match_tags(split)
@@ -875,7 +873,11 @@ class UltralyticsObjectDetection:
             patience=self.config["patience"],
             batch=self.config["batch_size"],
             imgsz=self.config["img_size"],
+            multi_scale=self.config["multi_scale"],
+            cos_lr=self.config["cos_lr"],
             seed=GLOBAL_SEED,
+            optimizer="AdamW",  # "auto" as default
+            pretrained=True,
             exist_ok=True,
             amp=True,
         )

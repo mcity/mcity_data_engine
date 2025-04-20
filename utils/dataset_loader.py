@@ -10,7 +10,7 @@ from fiftyone.utils.huggingface import load_from_hub
 from nuscenes.nuscenes import NuScenes
 
 from config.config import ACCEPTED_SPLITS, GLOBAL_SEED, NUM_WORKERS, PERSISTENT
-from utils.custom_view import vru_mcity_fisheye
+from utils.custom_view import max_detections, subset_splits, vru_mcity_fisheye
 from utils.sample_field_operations import rename_sample_field
 
 
@@ -25,7 +25,7 @@ def get_supported_datasets(config_path="config/datasets.yaml"):
         logging.error(f"Available datasets could not be retrieved: {e}")
 
 
-def load_dataset(selected_dataset: str) -> fo.Dataset:
+def load_dataset(selected_dataset: str, n_iteration=0) -> fo.Dataset:
     """Loads a dataset by name, optionally reducing it to a requested number of samples while maintaining original split distributions."""
     dataset_info = load_dataset_info(selected_dataset["name"])
 
@@ -76,7 +76,7 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
         elif custom_view_requested is not None:
             try:
                 logging.warning(f"Applying custom view {custom_view_requested}.")
-                dataset_view = globals()[custom_view_requested](dataset)
+                dataset_view = globals()[custom_view_requested](dataset, n_iteration)
                 return dataset_view, dataset_info
             except Exception as e:
                 logging.error(
