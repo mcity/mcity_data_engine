@@ -258,7 +258,7 @@ pandocfilters==1.5.1
 parso==0.8.4
 pathlib2==2.3.7.post1
 pathspec==0.12.1
-pdoc==15.0.1
+pdoc==15.0.3
 pexpect==4.9.0
 pillow==10.4.0
 platformdirs==4.3.6
