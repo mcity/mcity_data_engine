@@ -865,6 +865,12 @@ class UltralyticsObjectDetection:
         """Train the YOLO model for object detection using Ultralytics and optionally upload to Hugging Face."""
         model = YOLO(self.config["model_name"], task="detect")
         # https://docs.ultralytics.com/modes/train/#train-settings
+
+        # Use all available GPUs
+        device = "0"  # Default to GPU 0
+        if torch.cuda.device_count() > 1:
+            device = ",".join(map(str, range(torch.cuda.device_count())))
+
         results = model.train(
             data=f"{self.ultralytics_data_path}/dataset.yaml",
             epochs=self.config["epochs"],
@@ -880,6 +886,7 @@ class UltralyticsObjectDetection:
             pretrained=True,
             exist_ok=True,
             amp=True,
+            device=device
         )
         metrics = model.val()
         logging.info(f"Model Performance: {metrics}")
