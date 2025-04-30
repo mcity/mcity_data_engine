@@ -11,7 +11,8 @@ from aws_stream_filter_framerate import SampleTimestamps
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from config.config import WANDB_ACTIVE
+WANDB_ACTIVE=False
+
 
 load_dotenv()
 
@@ -171,8 +172,9 @@ class AwsDownloader:
 
                                         # Upload data
                                         time_start = time.time()
+                                        print(camera)
                                         file_size_mb = sampler.update_upload_file(
-                                            target, selected_indices
+                                            target, selected_indices, camera
                                         )
 
                                         time_end = time.time()

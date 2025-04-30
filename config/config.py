@@ -1,11 +1,12 @@
+import os
 import psutil
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["auto_labeling"]
+SELECTED_WORKFLOW = ["embedding_selection"]  # Choose from WORKFLOWS keys
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "mcity_fisheye_2100_vru_only",
+    "name": "fisheye8k",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
     "custom_view": None,  # 'None' (full dataset) or select function from utils/custom_view
 }
@@ -196,15 +197,14 @@ WORKFLOWS = {
             "delivery driver",
         ],
     },
-    "mask_teacher": {
+    "auto_label_mask": {
         "semantic_segmentation": {
             "sam2": {
-                "prompt_field": None,  # None or Voxel51 field with bbox detections
+                "prompt_field": None,
                 "models": [
                     "segment-anything-2-hiera-tiny-image-torch",
                     "segment-anything-2-hiera-small-image-torch",
                     "segment-anything-2-hiera-base-plus-image-torch",
-                    "segment-anything-2-hiera-large-image-torch",
                     "segment-anything-2.1-hiera-tiny-image-torch",
                     "segment-anything-2.1-hiera-small-image-torch",
                     "segment-anything-2.1-hiera-base-plus-image-torch",
@@ -214,7 +214,6 @@ WORKFLOWS = {
         },
         "depth_estimation": {
             "dpt": {
-                "prompt_field": None,
                 "models": {
                     "Intel/dpt-swinv2-tiny-256",
                     "Intel/dpt-swinv2-large-384",
@@ -228,19 +227,22 @@ WORKFLOWS = {
                 },
             },
             "depth_anything": {
-                "prompt_field": None,
                 "models": {
                     "LiheYoung/depth-anything-base-hf",
                     "LiheYoung/depth-anything-large-hf",
                     "LiheYoung/depth-anything-small-hf",
                 },
             },
+            "depth_pro": {
+                "models": {
+                    "apple/DepthPro-hf",
+                }
+            },
             "glpn": {
-                "prompt_field": None,
-                "models": {"vinvino02/glpn-nyu", "vinvino02/glpn-kitti"},
+                "models": {"vinvino02/glpn-nyu",
+                           "vinvino02/glpn-kitti"},
             },
             "zoe_depth": {
-                "prompt_field": None,
                 "models": {
                     "Intel/zoedepth-nyu-kitti",
                     "Intel/zoedepth-nyu",
@@ -278,8 +280,11 @@ WORKFLOWS = {
         # get the source and target dataset names from datasets.yaml
         "dataset_source": "fisheye8k",
         "dataset_target": "mcity_fisheye_2000",
-        # Choose any number of models from the options below hf_models_zeroshot_classification, to not include a model for class mapping, just comment it out
-        # https://huggingface.co/docs/transformers/model_doc/auto#transformers.AutoModelForZeroShotImageClassification
+        # Set to True to change detection labels in the dataset, Set to False to just add tags without changing labels in the dataset.
+        "change_labels": False,
+
+         # Choose any number of models from the options below hf_models_zeroshot_classification, to not include a model for class mapping, just comment it out
+         #https://huggingface.co/docs/transformers/model_doc/auto#transformers.AutoModelForZeroShotImageClassification
         "hf_models_zeroshot_classification": [
             "Salesforce/blip2-itm-vit-g",
             "openai/clip-vit-large-patch14",

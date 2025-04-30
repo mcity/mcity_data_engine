@@ -45,10 +45,10 @@ from workflows.aws_download import AwsDownloader
 from workflows.class_mapping import ClassMapper
 from workflows.embedding_selection import EmbeddingSelection
 from workflows.ensemble_selection import EnsembleSelection
-from workflows.teacher_mask import MaskTeacher
+from workflows.auto_label_mask import AutoLabelMask
+from workflows.class_mapping import ClassMapper
 
 wandb_run = None  # Init globally to make sure it is available
-
 
 def signal_handler(sig, frame):
     """Handle Ctrl+C signal by cleaning up resources and exiting."""
@@ -400,40 +400,33 @@ def workflow_zero_shot_object_detection(dataset, dataset_info, config):
     return True
 
 
-def workflow_mask_teacher(dataset, dataset_info):
-    """Runs semantic segmentation and depth estimation inference on a dataset using various models."""
+def workflow_auto_label_mask(dataset, dataset_info, config):
     try:
-        DEPTH_ESTIMATION_MODELS = WORKFLOWS["mask_teacher"]["depth_estimation"]
-        SEMANTIC_SEGMENTATION_MODELS = WORKFLOWS["mask_teacher"][
-            "semantic_segmentation"
-        ]
+        depth_config = config["depth_estimation"]
+        seg_config = config["semantic_segmentation"]
 
-        for model_name in DEPTH_ESTIMATION_MODELS:
-            teacher = MaskTeacher(
+        for architecture_name, architecture_info in depth_config.items():
+            auto_labeler = AutoLabelMask(
                 dataset=dataset,
                 dataset_info=dataset_info,
-                model_name=model_name,
+                model_name=architecture_name,
                 task_type="depth_estimation",
-                model_config=WORKFLOWS["mask_teacher"]["depth_estimation"][model_name],
+                model_config=architecture_info,
             )
-            teacher.run_inference()
+            auto_labeler.run_inference()
 
-        for model_name in SEMANTIC_SEGMENTATION_MODELS:
-            teacher = MaskTeacher(
+        for architecture_name, architecture_info in seg_config.items():
+            auto_labeler = AutoLabelMask(
                 dataset=dataset,
                 dataset_info=dataset_info,
-                model_name=model_name,
+                model_name=architecture_name,
                 task_type="semantic_segmentation",
-                model_config=WORKFLOWS["mask_teacher"]["semantic_segmentation"][
-                    model_name
-                ],
+                model_config=architecture_info,
             )
-            teacher.run_inference()
-
-        return dataset
+            auto_labeler.run_inference()
 
     except Exception as e:
-        logging.error(f"Mask Teacher failed: {e}")
+        logging.error(f"Auto-labeling mask workflow failed: {e}")
         raise
 
 
@@ -853,8 +846,9 @@ class WorkflowExecutor:
                         self.dataset, self.dataset_info, run_config
                     )
 
-                elif workflow == "mask_teacher":
-                    workflow_mask_teacher(self.dataset, self.dataset_info)
+                elif workflow == "auto_label_mask":
+                    config = WORKFLOWS["auto_label_mask"]
+                    workflow_auto_label_mask(self.dataset, self.dataset_info, config)
 
                 elif workflow == "class_mapping":
                     # Config

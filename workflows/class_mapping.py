@@ -21,6 +21,7 @@ class ClassMapper:
         self.model_name = model_name
         # Get default config from WORKFLOWS and update with any provided config.
         self.config = WORKFLOWS["class_mapping"].copy()
+        self.change_labels = config["change_labels"]
         if config:
             self.config.update(config)
 
@@ -84,12 +85,18 @@ class ClassMapper:
 
         # Prepare inputs for the model.
         if self.hf_model_config_name == "SiglipConfig":
+            target_size = (384, 384)  # Adjust per model
+            image_patch = image_patch.resize(target_size, Image.Resampling.LANCZOS)
             inputs = self.processor(text=candidate_labels, images=image_patch, padding="max_length", return_tensors="pt")
 
         elif self.hf_model_config_name == "CLIPSegConfig":
+            target_size = (224, 224)  # Adjust per model
+            image_patch = image_patch.resize(target_size, Image.Resampling.LANCZOS)
             inputs = self.processor(text=candidate_labels, images=[image_patch]*len(candidate_labels), padding="max_length", return_tensors="pt")
 
         else:
+            target_size = (224, 224)  # Adjust per model
+            image_patch = image_patch.resize(target_size, Image.Resampling.LANCZOS)
             inputs = self.processor(images=image_patch, text=candidate_labels, return_tensors="pt", padding=True)
 
         # Ensure all tensors in the processed inputs are moved to the designated device.
@@ -294,11 +301,15 @@ class ClassMapper:
                     tag = f"new_class_{self.model_name}_{predicted_label}"
                     if tag not in det.tags:
                         det.tags.append(tag)
+
+                        #Change Lables if the flag is set to True
+                        if self.change_labels:
+                            det.label = predicted_label
                         self.stats["changes_made"] += 1
-                        if predicted_label != current_label:
-                            self.stats["tags_added_per_category"][predicted_label] = (
-                                self.stats["tags_added_per_category"].get(predicted_label, 0) + 1
-                            )
+
+                        self.stats["tags_added_per_category"][predicted_label] = (
+                            self.stats["tags_added_per_category"].get(predicted_label, 0) + 1
+                        )
 
                         tb_writer.add_scalar(f"Tags_Added/{predicted_label}",
                                             self.stats["tags_added_per_category"].get(predicted_label, 0),
