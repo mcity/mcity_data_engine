@@ -100,7 +100,7 @@ def test_hf_object_detection(dataset_v51, dataset_hf, mode):
             "n_worker_dataloader": 1,
             "inference_settings": {
                 "do_eval": True,
-                "inference_on_evaluation": True,
+                "inference_on_test": True,
                 "model_hf": None,  # None (automatic selection) or Hugging Face ID
                 "detection_threshold": 0.2,
             },
@@ -134,7 +134,7 @@ def test_hf_object_detection(dataset_v51, dataset_hf, mode):
             ), f"More than one detection field found: {predictions_fields}"
 
             # Only test requested samples
-            if run_config["inference_settings"]["inference_on_evaluation"] is True:
+            if run_config["inference_settings"]["inference_on_test"] is True:
                 dataset_view = dataset_v51.match_tags(["test", "val"])
             else:
                 dataset_view = dataset_v51
