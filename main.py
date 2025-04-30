@@ -887,27 +887,20 @@ class WorkflowExecutor:
 
 
 def main():
-    N_ITERATIONS = 1
-    for n_iteration in range(N_ITERATIONS):
-        logging.info(
-            f"Iteration {n_iteration+1}/{N_ITERATIONS} with index {n_iteration}"
-        )
-        """Executes the data processing workflow, loads dataset, and launches Voxel51 visualization interface."""
-        time_start = time.time()
-        configure_logging()
+    """Executes the data processing workflow, loads dataset, and launches Voxel51 visualization interface."""
+    time_start = time.time()
+    configure_logging()
 
-        # Signal handler for CTRL + C
-        signal.signal(signal.SIGINT, signal_handler)
+    # Signal handler for CTRL + C
+    signal.signal(signal.SIGINT, signal_handler)
 
-        # Execute workflows
-        dataset, dataset_info = load_dataset(SELECTED_DATASET, n_iteration)
-        executor = WorkflowExecutor(
-            SELECTED_WORKFLOW,
-            SELECTED_DATASET["name"],
-            dataset,
-            dataset_info,
-        )
-        executor.execute()
+    # Execute workflows
+    dataset, dataset_info = load_dataset(SELECTED_DATASET)
+
+    executor = WorkflowExecutor(
+        SELECTED_WORKFLOW, SELECTED_DATASET["name"], dataset, dataset_info
+    )
+    executor.execute()
 
     # Launch V51 session
     dataset.reload()
