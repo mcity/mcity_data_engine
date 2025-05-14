@@ -9,7 +9,7 @@ import json
 
 app = FastAPI()
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 groq_client = AsyncGroq(api_key=GROQ_API_KEY)
 MCP_TRANSPORT = SSETransport(url="http://localhost:8000/sse")
 
