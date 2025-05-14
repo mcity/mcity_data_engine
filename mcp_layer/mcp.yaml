@@ -1,0 +1,8 @@
+name: mcity_config_context
+description: Mcity Data Engine config exposed to agents
+root: ..
+files:
+  - path: config/config.py
+    type: python
+  - path: config/datasets.yaml
+    type: yaml

@@ -880,9 +880,19 @@ class UltralyticsObjectDetection:
             seed=GLOBAL_SEED,
             exist_ok=True,
             amp=True,
+            verbose=False
         )
         metrics = model.val()
-        logging.info(f"Model Performance: {metrics}")
+
+        summary = {
+            "mAP50": metrics.box.map50,     # Method call
+            "mAP50-95": metrics.box.map,    # Method call
+            "Precision": metrics.box.mp,    # Method call
+            "Recall": metrics.box.mr      # Method call
+        }
+
+        logging.info(f"📊 Model Summary: {summary}")
+        #logging.info(f"Model Performance: {metrics}")
 
         # Upload model to Hugging Face
         if HF_DO_UPLOAD:

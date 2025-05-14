@@ -6,7 +6,7 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "visdrone_fisheye_mcity_v51",
+    "name": "mcity_fisheye_2100",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
@@ -62,14 +62,14 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": ["train"],  # "train" and "inference" supported
+        "mode": ["train", "inference"],
         "model_source": [
-            #"hf_models_objectdetection",
-            #"ultralytics",
+            "hf_models_objectdetection",
+            "ultralytics",
             "custom_codetr",
         ],
         "n_worker_dataloader": 3,
-        "epochs": 12,
+        "epochs": 1,
         "early_stop_patience": 5,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -83,50 +83,35 @@ WORKFLOWS = {
         },
         "hf_models_objectdetection": {  # HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
             "microsoft/conditional-detr-resnet-50": {"batch_size": 1},
-            # "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
-            # "facebook/detr-resnet-50": {"batch_size": 1},
-            # "facebook/detr-resnet-50-dc5": {"batch_size": 1, "image_size": [960, 960]},
-            # "facebook/detr-resnet-101": {"batch_size": 1, "image_size": [960, 960]},
-            # "facebook/detr-resnet-101-dc5": {"batch_size": 1, "image_size": [960, 960]},
-            # "facebook/deformable-detr-detic": {
-            #    "batch_size": 1,
-            #    "image_size": [960, 960],
-            # },
-            # "facebook/deformable-detr-box-supervised": {
-            #    "batch_size": 1,
-            #    "image_size": [960, 960],
-            # },
-            # "SenseTime/deformable-detr": {"batch_size": 1, "image_size": [960, 960]},
-            # "SenseTime/deformable-detr-with-box-refine": {
-            #    "batch_size": 1,
-            #    "image_size": [960, 960],
-            # },
-            # "jozhang97/deta-swin-large": {
-            #    "batch_size": 1,
-            #    "image_size": [960, 960],
-            # },
-            # "jozhang97/deta-swin-large-o365": {
-            #    "batch_size": 1,
-            #    "image_size": [960, 960],
-            # },
-            # "hustvl/yolos-base": {"batch_size": 1},
+            "Omnifact/conditional-detr-resnet-101-dc5": {"batch_size": 1},
+            "facebook/detr-resnet-50": {"batch_size": 1},
+            "facebook/detr-resnet-50-dc5": {"batch_size": 1, "image_size": [960, 960]},
+            "facebook/detr-resnet-101": {"batch_size": 1, "image_size": [960, 960]},
+            "facebook/detr-resnet-101-dc5": {"batch_size": 1, "image_size": [960, 960]},
+            "facebook/deformable-detr-detic": {"batch_size": 1, "image_size": [960, 960],},
+            "facebook/deformable-detr-box-supervised": {"batch_size": 1, "image_size": [960, 960], },
+            "SenseTime/deformable-detr": {"batch_size": 1, "image_size": [960, 960]},
+            "SenseTime/deformable-detr-with-box-refine": {"batch_size": 1, "image_size": [960, 960],},
+            "jozhang97/deta-swin-large": {"batch_size": 1, "image_size": [960, 960], },
+            "jozhang97/deta-swin-large-o365": {"batch_size": 1,"image_size": [960, 960],},
+            "hustvl/yolos-base": {"batch_size": 1},
         },
         "custom_codetr": {
             "export_dataset_root": "output/datasets/codetr_data/",
             "configs": [
                 "projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py",
-                #"projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
+                "projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
             ],
             "n_gpus": "1",
             "container_tool": "docker",
         },
         "ultralytics": {
             "export_dataset_root": "output/datasets/ultralytics_data/",
-            "models": {  # Pick from https://docs.ultralytics.com/models/
-                # "yolo11n": {"batch_size": 16, "img_size": 960},
-                # "yolo11x": {"batch_size": 1, "img_size": 960},
+            "models": {
+                "yolo11n": {"batch_size": 16, "img_size": 960},
+                "yolo11x": {"batch_size": 1, "img_size": 960},
                 "yolo12n": {"batch_size": 16, "img_size": 960},
-                # "yolo12x": {"batch_size": 1, "img_size": 640},
+                "yolo12x": {"batch_size": 1, "img_size": 640},
             },
         },
     },
