@@ -92,7 +92,7 @@ pip install -r requirements.txt
 
 Login with your [Weights and Biases](https://wandb.ai/) and [Hugging Face](https://huggingface.co/) accounts:
 ```
-wandb.login()
+wandb login
 huggingface-cli login
 ```
 

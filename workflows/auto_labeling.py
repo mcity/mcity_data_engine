@@ -5,6 +5,7 @@ import os
 import queue
 import random
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -20,7 +21,6 @@ import numpy as np
 import psutil
 import torch
 import torch.multiprocessing as mp
-import wandb
 from accelerate.test_utils.testing import get_backend
 from datasets import Split
 from fiftyone import ViewField as F
@@ -41,6 +41,7 @@ from transformers import (
 )
 from ultralytics import YOLO
 
+import wandb
 from config.config import (
     ACCEPTED_SPLITS,
     GLOBAL_SEED,
@@ -838,37 +839,38 @@ class UltralyticsObjectDetection:
     ):
         """Export dataset to YOLO format for Ultralytics training."""
         ultralytics_data_path = os.path.join(export_dataset_root, dataset_info["name"])
-        # Check if export directory already exists
+        # Delete export directory if it already exists
         if os.path.exists(ultralytics_data_path):
-            logging.warning(
-                f"Export directory {ultralytics_data_path} already exists. Skipping export."
-            )
-            return
+            shutil.rmtree(ultralytics_data_path)
 
         logging.info("Exporting data for training with Ultralytics")
         classes = dataset.distinct(f"{label_field}.detections.label")
 
         # Make directory
-        os.makedirs(ultralytics_data_path, exist_ok=True)
+        os.makedirs(ultralytics_data_path, exist_ok=False)
 
         for split in ACCEPTED_SPLITS:
             split_view = dataset.match_tags(split)
 
-            if split == "test":  # YOLO expects train and val
-                split = "val"
-
-            split_view.export(
-                export_dir=ultralytics_data_path,
-                dataset_type=fo.types.YOLOv5Dataset,
-                label_field=label_field,
-                classes=classes,
-                split=split,
-            )
+            if split == "val" or split == "train":  # YOLO expects train and val
+                split_view.export(
+                    export_dir=ultralytics_data_path,
+                    dataset_type=fo.types.YOLOv5Dataset,
+                    label_field=label_field,
+                    classes=classes,
+                    split=split,
+                )
 
     def train(self):
         """Train the YOLO model for object detection using Ultralytics and optionally upload to Hugging Face."""
         model = YOLO(self.config["model_name"], task="detect")
         # https://docs.ultralytics.com/modes/train/#train-settings
+
+        # Use all available GPUs
+        device = "0"  # Default to GPU 0
+        if torch.cuda.device_count() > 1:
+            device = ",".join(map(str, range(torch.cuda.device_count())))
+
         results = model.train(
             data=f"{self.ultralytics_data_path}/dataset.yaml",
             epochs=self.config["epochs"],
@@ -877,9 +879,14 @@ class UltralyticsObjectDetection:
             patience=self.config["patience"],
             batch=self.config["batch_size"],
             imgsz=self.config["img_size"],
+            multi_scale=self.config["multi_scale"],
+            cos_lr=self.config["cos_lr"],
             seed=GLOBAL_SEED,
+            optimizer="AdamW",  # "auto" as default
+            pretrained=True,
             exist_ok=True,
             amp=True,
+            device=device
         )
         metrics = model.val()
         logging.info(f"Model Performance: {metrics}")
@@ -955,11 +962,10 @@ class UltralyticsObjectDetection:
         model = YOLO(self.model_path)
 
         detection_threshold = inference_settings["detection_threshold"]
-        if inference_settings["inference_on_evaluation"] is True:
-            INFERENCE_SPLITS = ["val", "test"]
-            dataset_eval_view = self.dataset.match_tags(INFERENCE_SPLITS)
+        if inference_settings["inference_on_test"] is True:
+            dataset_eval_view = self.dataset.match_tags("test")
             if len(dataset_eval_view) == 0:
-                logging.error(f"Dataset misses splits: {INFERENCE_SPLITS}")
+                logging.error("Dataset misses split 'test'")
             dataset_eval_view.apply_model(
                 model, label_field=pred_key, confidence_thresh=detection_threshold
             )
@@ -971,8 +977,8 @@ class UltralyticsObjectDetection:
         if inference_settings["do_eval"]:
             eval_key = f"eval_{self.config['model_name']}_{dataset_name}"
 
-            if inference_settings["inference_on_evaluation"] is True:
-                dataset_view = self.dataset.match_tags(["test", "val"])
+            if inference_settings["inference_on_test"] is True:
+                dataset_view = self.dataset.match_tags(["test"])
             else:
                 dataset_view = self.dataset
 
@@ -1058,6 +1064,7 @@ class HuggingFaceObjectDetection:
         config,
         output_model_path="./output/models/object_detection_hf",
         output_detections_path="./output/detections/",
+        gt_field="ground_truth",
     ):
         """Initialize with dataset, config, and optional output paths."""
         self.dataset = dataset
@@ -1079,7 +1086,7 @@ class HuggingFaceObjectDetection:
             f"{HF_ROOT}/" + f"{self.dataset_name}_{self.model_name}".replace("/", "_")
         )
 
-        self.categories = dataset.default_classes
+        self.categories = dataset.distinct(f"{gt_field}.detections.label")
         self.id2label = {index: x for index, x in enumerate(self.categories, start=0)}
         self.label2id = {v: k for k, v in self.id2label.items()}
 
@@ -1293,8 +1300,8 @@ class HuggingFaceObjectDetection:
 
         pred_key = f"pred_od_{self.model_name_key}-{dataset_name}"
 
-        if inference_settings["inference_on_evaluation"] is True:
-            INFERENCE_SPLITS = ["val", "test"]
+        if inference_settings["inference_on_test"] is True:
+            INFERENCE_SPLITS = ["test"]
             dataset_eval_view = self.dataset.match_tags(INFERENCE_SPLITS)
         else:
             dataset_eval_view = self.dataset
@@ -1348,8 +1355,8 @@ class HuggingFaceObjectDetection:
                 r"[\W-]+", "_", "eval_" + self.model_name + "_" + self.dataset_name
             )
 
-            if inference_settings["inference_on_evaluation"] is True:
-                dataset_view = self.dataset.match_tags(["test", "val"])
+            if inference_settings["inference_on_test"] is True:
+                dataset_view = self.dataset.match_tags(["test"])
             else:
                 dataset_view = self.dataset
 
@@ -1391,8 +1398,6 @@ class CustomCoDETRObjectDetection:
             ]  # CoDETR expects data in 'train' and 'val' folder
             for split in splits:
                 split_view = self.dataset.match_tags(split)
-                if split == "test":  # Assign 'test' split to 'val'
-                    split = "val"
                 split_view.export(
                     dataset_type=fo.types.COCODetectionDataset,
                     data_path=os.path.join(export_dir, f"{split}2017"),
@@ -1452,8 +1457,10 @@ class CustomCoDETRObjectDetection:
 
         # Check if model already exists
         output_folder_codetr = os.path.join(self.root_codetr, "output")
+        os.makedirs(output_folder_codetr, exist_ok=True)
         param_config_name = os.path.splitext(os.path.basename(param_config))[0]
         best_models_dir = os.path.join(output_folder_codetr, "best")
+        os.makedirs(best_models_dir, exist_ok=True)
         # Best model files follow the naming scheme "config_dataset.pth"
         pth_model_files = (
             [f for f in os.listdir(best_models_dir) if f.endswith(".pth")]
@@ -1590,8 +1597,8 @@ class CustomCoDETRObjectDetection:
         logging.info(f"Launching inference for Co-DETR config {param_config}.")
         volume_data = os.path.join(self.export_dir_root, self.dataset_name)
 
-        if inference_settings["inference_on_evaluation"] is True:
-            folder_inference = os.path.join("coco", "val2017")
+        if inference_settings["inference_on_test"] is True:
+            folder_inference = os.path.join("coco", "test2017")
         else:
             folder_inference = os.path.join("coco")
 
@@ -1623,6 +1630,9 @@ class CustomCoDETRObjectDetection:
         except Exception as e:
             logging.error(f"An error occured during model download: {e}")
 
+        model_path = os.path.join(dataset_name, config_key, "model.pth")
+        logging.info(f"Starting inference for model {model_path}")
+
         inference_result = self._run_container(
             volume_data=volume_data,
             param_function=param_function,
@@ -1630,18 +1640,18 @@ class CustomCoDETRObjectDetection:
             param_n_gpus=param_n_gpus,
             container_tool=container_tool,
             param_inference_dataset_folder=folder_inference,
-            param_inference_model_checkpoint=os.path.join(
-                dataset_name, config_key, "model.pth"
-            ),
+            param_inference_model_checkpoint=model_path,
         )
 
         # Convert results from JSON output into V51 dataset
         # Files follow format inference_results_{timestamp}.json (run_inference.py)
+        os.makedirs(inference_output_folder, exist_ok=True)
         output_files = [
             f
             for f in os.listdir(inference_output_folder)
             if f.startswith("inference_results_") and f.endswith(".json")
         ]
+        logging.debug(f"Found files with inference content: {output_files}")
 
         if not output_files:
             logging.error(
@@ -1726,13 +1736,16 @@ class CustomCoDETRObjectDetection:
 
         # Run V51 evaluation
         if inference_settings["do_eval"] is True:
-            eval_key = f"eval_{self.config_key}_{self.dataset_name}"
+            eval_key = pred_key.replace("pred_", "eval_").replace("-", "_")
 
-            if inference_settings["inference_on_evaluation"] is True:
-                dataset_view = dataset.match_tags(["test", "val"])
+            if inference_settings["inference_on_test"] is True:
+                dataset_view = dataset.match_tags(["test"])
             else:
                 dataset_view = dataset
 
+            logging.info(
+                f"Starting evaluation for {pred_key} in evaluation key {eval_key}."
+            )
             dataset_view.evaluate_detections(
                 pred_key,
                 gt_field=gt_field,
@@ -1756,6 +1769,11 @@ class CustomCoDETRObjectDetection:
         """Execute Co-DETR container with specified parameters using Docker or Singularity"""
 
         try:
+            # Convert relative paths to absolute paths (necessary under WSL2)
+            root_codetr_abs = os.path.abspath(self.root_codetr)
+            volume_data_abs = os.path.abspath(volume_data)
+            root_codetr_models_abs = os.path.abspath(self.root_codetr_models)
+
             # Check if using Docker or Singularity and define the appropriate command
             if container_tool == "docker":
                 command = [
@@ -1766,11 +1784,11 @@ class CustomCoDETRObjectDetection:
                     "--workdir",
                     workdir,
                     "--volume",
-                    f"{self.root_codetr}:{workdir}",
+                    f"{root_codetr_abs}:{workdir}",
                     "--volume",
-                    f"{volume_data}:{workdir}/data:ro",
+                    f"{volume_data_abs}:{workdir}/data:ro",
                     "--volume",
-                    f"{self.root_codetr_models}:{workdir}/hf_models:ro",
+                    f"{root_codetr_models_abs}:{workdir}/hf_models:ro",
                     "--shm-size=8g",
                     image,
                     param_function,

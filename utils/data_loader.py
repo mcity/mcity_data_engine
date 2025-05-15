@@ -30,7 +30,11 @@ class FiftyOneTorchDatasetCOCO(torch.utils.data.Dataset):
         """Initialize dataset from Voxel51 (fiftyone) dataset with optional transforms and ground truth field name."""
         logging.info(f"Collecting data for torch dataset conversion.")
         self.transforms = transforms
-        self.classes = fiftyone_dataset.default_classes
+        try:
+            self.classes = fiftyone_dataset.distinct(f"{gt_field}.detections.label")
+        except Exception as e:
+            logging.debug(f"Classes could not be found in dataset: {e}.")
+            self.classes = []
         self.labels_map_rev = {c: i for i, c in enumerate(self.classes)}
         self.dataset_length = len(fiftyone_dataset)
 

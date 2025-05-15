@@ -13,6 +13,7 @@ from fiftyone.utils.huggingface import load_from_hub
 from nuscenes.nuscenes import NuScenes
 
 from config.config import ACCEPTED_SPLITS, GLOBAL_SEED, NUM_WORKERS, PERSISTENT
+from utils.custom_view import max_detections, subset_splits, vru_mcity_fisheye
 from utils.sample_field_operations import rename_sample_field
 
 
@@ -27,7 +28,7 @@ def get_supported_datasets(config_path="config/datasets.yaml"):
         logging.error(f"Available datasets could not be retrieved: {e}")
 
 
-def load_dataset(selected_dataset: str) -> fo.Dataset:
+def load_dataset(selected_dataset: str, n_iteration=0) -> fo.Dataset:
     """Loads a dataset by name, optionally reducing it to a requested number of samples while maintaining original split distributions."""
     dataset_info = load_dataset_info(selected_dataset["name"])
 
@@ -36,6 +37,7 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
         dataset = globals()[loader_function](dataset_info)
         n_samples_original = len(dataset)
         n_samples_requested = selected_dataset["n_samples"]
+        custom_view_requested = selected_dataset["custom_view"]
 
         if (
             n_samples_requested is not None
@@ -73,6 +75,16 @@ def load_dataset(selected_dataset: str) -> fo.Dataset:
                     f"Dataset size was reduced from {len(dataset)} to {len(combined_view)} samples."
                 )
                 return combined_view, dataset_info
+
+        elif custom_view_requested is not None:
+            try:
+                logging.warning(f"Applying custom view {custom_view_requested}.")
+                dataset_view = globals()[custom_view_requested](dataset, n_iteration)
+                return dataset_view, dataset_info
+            except Exception as e:
+                logging.error(
+                    f"Calling the custom view {custom_view_requested} failed: {e}"
+                )
 
     else:
         logging.error(
@@ -315,8 +327,8 @@ def load_mcity_fisheye_2000(dataset_info):
     return dataset
 
 
-def load_mcity_fisheye_2100_vru(dataset_info):
-    """Loads the Mcity Fisheye 2100 VRU dataset from HuggingFace Hub or locally if it exists."""
+def load_dataset_from_hf_hub(dataset_info):
+    """Loads a dataset from HuggingFace Hub or locally if it exists."""
     dataset_name = dataset_info["name"]
     hf_dataset_name = dataset_info["hf_dataset_name"]
 

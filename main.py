@@ -1,5 +1,6 @@
 import datetime
 import logging
+import os
 import signal
 import sys
 import time
@@ -41,6 +42,7 @@ from workflows.auto_labeling import (
     ZeroShotObjectDetection,
 )
 from workflows.aws_download import AwsDownloader
+from workflows.class_mapping import ClassMapper
 from workflows.embedding_selection import EmbeddingSelection
 from workflows.ensemble_selection import EnsembleSelection
 from workflows.auto_label_mask import AutoLabelMask
@@ -326,8 +328,8 @@ def workflow_auto_labeling_custom_codetr(
         mode = run_config["mode"]
 
         detector = CustomCoDETRObjectDetection(dataset, dataset_info, run_config)
+        detector.convert_data()
         if "train" in mode:
-            detector.convert_data()
             detector.update_config_file(
                 dataset_name=dataset_info["name"],
                 config_file=run_config["config"],
@@ -451,7 +453,15 @@ def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activat
 
     return True
 
-def workflow_class_mapping(dataset, dataset_info, run_config, wandb_activate=True, test_dataset_source=None, test_dataset_target=None):
+
+def workflow_class_mapping(
+    dataset,
+    dataset_info,
+    run_config,
+    wandb_activate=True,
+    test_dataset_source=None,
+    test_dataset_target=None,
+):
     """Runs class mapping workflow to align labels between the source dataset and target dataset."""
     try:
         wandb_exit_code = 0
@@ -461,21 +471,29 @@ def workflow_class_mapping(dataset, dataset_info, run_config, wandb_activate=Tru
             project_name="Class Mapping",
             dataset_name=dataset_info["name"],
             config=run_config,
-            wandb_activate=wandb_activate
+            wandb_activate=wandb_activate,
         )
         class_mapping_models = run_config["hf_models_zeroshot_classification"]
 
-        for model_name in (pbar := tqdm(class_mapping_models, desc="Processing Class Mapping")):
+        for model_name in (
+            pbar := tqdm(class_mapping_models, desc="Processing Class Mapping")
+        ):
             pbar.set_description(f"Zero Shot Classification model {model_name}")
             mapper = ClassMapper(dataset, model_name, run_config)
             try:
-                stats = mapper.run_mapping(test_dataset_source,test_dataset_target)
+                stats = mapper.run_mapping(test_dataset_source, test_dataset_target)
                 # Display statistics only if mapping was successful
                 source_class_counts = stats["total_processed"]
                 logging.info("\nClassification Results for Source Dataset:")
                 for source_class, count in stats["source_class_counts"].items():
-                    percentage = (count / source_class_counts) * 100 if source_class_counts > 0 else 0
-                    logging.info(f"{source_class}: {count} samples processed ({percentage:.1f}%)")
+                    percentage = (
+                        (count / source_class_counts) * 100
+                        if source_class_counts > 0
+                        else 0
+                    )
+                    logging.info(
+                        f"{source_class}: {count} samples processed ({percentage:.1f}%)"
+                    )
 
                 # Display statistics for tags added to Target Dataset
                 logging.info("\nTag Addition Results (Target Dataset Tags):")
@@ -493,6 +511,7 @@ def workflow_class_mapping(dataset, dataset_info, run_config, wandb_activate=Tru
         wandb_close(wandb_exit_code)
 
     return True
+
 
 def cleanup_memory(do_extensive_cleanup=False):
     """Clean up memory after workflow execution. 'do_extensive_cleanup' recommended for multiple training sessions in a row."""
@@ -683,6 +702,8 @@ class WorkflowExecutor:
 
                     if SUPPORTED_MODEL_SOURCES[0] in selected_model_source:
                         # Hugging Face Models
+                        # Single GPU mode (https://github.com/huggingface/transformers/issues/28740)
+                        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
                         hf_models = config_autolabel["hf_models_objectdetection"]
 
                         # Dataset Conversion
@@ -768,7 +789,7 @@ class WorkflowExecutor:
                                 "model_name": model_name,
                                 "v51_dataset_name": self.dataset_info["name"],
                                 "epochs": epochs,
-                                "patience": config_autolabel["early_stop_threshold"],
+                                "patience": config_autolabel["early_stop_patience"],
                                 "batch_size": models_ultralytics[model_name][
                                     "batch_size"
                                 ],
@@ -777,6 +798,8 @@ class WorkflowExecutor:
                                 "inference_settings": config_autolabel[
                                     "inference_settings"
                                 ],
+                                "multi_scale": config_ultralytics["multi_scale"],
+                                "cos_lr": config_ultralytics["cos_lr"],
                             }
 
                             workflow_auto_labeling_ultralytics(self.dataset, run_config)
@@ -833,7 +856,11 @@ class WorkflowExecutor:
 
                     # Workflow
                     workflow_class_mapping(
-                        self.dataset, self.dataset_info, run_config,test_dataset_source=None, test_dataset_target=None
+                        self.dataset,
+                        self.dataset_info,
+                        run_config,
+                        test_dataset_source=None,
+                        test_dataset_target=None,
                     )
 
                 else:

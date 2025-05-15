@@ -3,11 +3,11 @@ import random
 import fiftyone as fo
 import pytest
 import torch
+from datasets import Dataset, Split
 from fiftyone.utils.huggingface import load_from_hub
 from torch.utils.data import DataLoader
 
 from config.config import ACCEPTED_SPLITS
-from datasets import Dataset, Split
 from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
 from utils.dataset_loader import get_split
 
@@ -321,7 +321,7 @@ def test_detection_preservation(dataset_v51, torch_dataset, converter_torch_hf):
     torch_categories = torch_sample[1]["category_id"]
 
     # Build category mapping
-    categories = dataset_v51.default_classes
+    categories = dataset_v51.distinct(f"{fisheye8k_gt_field}.detections.label")
     category_map = {label: idx for idx, label in enumerate(categories)}
 
     # Verify torch detection count matches
