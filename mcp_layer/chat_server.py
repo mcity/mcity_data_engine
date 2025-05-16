@@ -14,12 +14,29 @@ groq_client = AsyncGroq(api_key=GROQ_API_KEY)
 MCP_TRANSPORT = SSETransport(url="http://localhost:8000/sse")
 
 SYSTEM_PROMPT = """
-You are the MCity Data Engine Agent. Your job is to help the user configure the `auto_labeling` workflow.
+You are the MCity Data Engine Agent. Your job is to help the user configure and run the `auto_labeling` workflow using the MCity Data Engine.
 
-* Guide the user to choose a `model_source` (ultralytics, hf_models_objectdetection, or custom_codetr).
-* Then help them select a specific model or config within that source.
-* Call MCP tools to update config.py and run main.py.
-* You can also explain what workflows and models do.
+Your responsibilities are:
+
+1. Guide the user to choose a `model_source` (ultralytics, hf_models_objectdetection, or custom_codetr), When the user selects a `model_source`, ALWAYS call the tool `list_model_sources_and_models` to fetch available models from the local config — DO NOT guess or hallucinate.
+2. Then help them select a specific model or config within that source.
+3. Use the `configure_auto_labeling` tool to set the model. ONLY pass `selected_source` and `selected_model` to this tool. Do NOT include hyperparameters like `mode` or `epochs` here.
+4. If the user wants to modify hyperparameters, update any of the following:
+   - `mode`: Options are ["train"], ["inference"], or ["train", "inference"]
+   - `epochs`: Suggested default is 10
+   - `early_stop_patience`: Suggested default is 5
+   - `early_stop_threshold`: Suggested default is 0
+   - `learning_rate`: Suggested default is 5e-5
+   - `weight_decay`: Suggested default is 0.0001
+   - `max_grad_norm`: Suggested default is 0.01
+5. After changing a hyperparameter, DO NOT immediately run the workflow. Instead, ask:
+   “Would you like to modify any other hyperparameters before we start the workflow?” And Finally  call `set_auto_labeling_hyperparams`.
+6. Only run `run_auto_labeling` when the user explicitly says something like:
+   - “Run the workflow”
+   - “Start training”
+   - “Let’s begin”
+
+You can also explain what workflows, models, or hyperparameters do. Follow up with appropriate tool calls based on what the user wants to do.
 """
 
 @app.post("/chat")
@@ -79,6 +96,29 @@ async def chat(request: Request):
                     "properties": {}
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "set_auto_labeling_hyperparams",
+                "description": "Update hyperparameters like mode, epochs, learning_rate, etc. for auto_labeling workflow.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "mode": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Pipeline mode(s): train, inference, or both."
+                        },
+                        "epochs": {"type": "integer", "description": "Number of training epochs."},
+                        "early_stop_patience": {"type": "integer", "description": "Patience for early stopping."},
+                        "early_stop_threshold": {"type": "number", "description": "Improvement threshold for early stopping."},
+                        "learning_rate": {"type": "number", "description": "Learning rate for the optimizer."},
+                        "weight_decay": {"type": "number", "description": "Weight decay (L2 penalty)."},
+                        "max_grad_norm": {"type": "number", "description": "Max norm for gradient clipping."}
+                    }
+                }
+            }
         }
     ]
 
@@ -136,13 +176,45 @@ async def chat(request: Request):
         })
 
         for result in tool_results:
+            fn_name = result["name"]
+            tool_output = str(result.get("result", result.get("error", "Tool error.")))
+
+            if fn_name == "run_auto_labeling":
+                tool_output_raw = result.get("result", result.get("error", "Tool error."))
+                tool_output = tool_output_raw.text if hasattr(tool_output_raw, "text") else str(tool_output_raw)
+                # Ask LLM to summarize the classification report
+                summary_prompt = f"""
+                Here's a classification report from an object detection model run. Briefly summarize how the model performed.
+                {tool_output}
+                Only mention:
+                - Which class did best
+                - Which class was worst
+                - What does the micro/macro F1 tell us about generalization
+
+                """
+                summary_response = await groq_client.chat.completions.create(
+                    model="llama3-70b-8192",
+                    messages=[{"role": "user", "content": summary_prompt}]
+                )
+                summary = summary_response.choices[0].message.content.strip()
+
+                # Combine both into the final reply
+                reply = (
+                    f"{summary}\n\n"
+                    f"📊 **Full Classification Report:**\n"
+                    f"```\n{tool_output.strip()}\n```"
+                )
+                return {"reply": reply}
+
+            # For other tools, keep old flow
             messages.append({
                 "role": "tool",
                 "tool_call_id": result["tool_call_id"],
-                "name": result["name"],
-                "content": str(result.get("result", result.get("error", "Tool error.")))
+                "name": fn_name,
+                "content": tool_output
             })
 
+        # Continue with normal summarization for other tools
         final_response = await groq_client.chat.completions.create(
             model="llama3-70b-8192",
             messages=messages
@@ -152,7 +224,6 @@ async def chat(request: Request):
         reply = assistant_message.content
 
     return {"reply": reply}
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
