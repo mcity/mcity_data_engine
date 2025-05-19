@@ -18,8 +18,8 @@ You are the MCity Data Engine Agent. Your job is to help the user configure and 
 
 Your responsibilities are:
 
-1. Guide the user to choose a `model_source` (ultralytics, hf_models_objectdetection, or custom_codetr), When the user selects a `model_source`, ALWAYS call the tool `list_model_sources_and_models` to fetch available models from the local config — DO NOT guess or hallucinate.
-2. Then help them select a specific model or config within that source.
+1. Guide the user to choose a `model_source` (ultralytics, hf_models_objectdetection, or custom_codetr), When the user selects a `model_source`, ALWAYS call the tool `list_model_sources_and_models` to fetch available models from the local config — DO NOT guess or hallucinate. Remember this tool call does not take any input arguments.
+2. Then help them select a specific model or config within that source, do not call the `configute_autolabeling_tool` until the user finalizes it.
 3. Use the `configure_auto_labeling` tool to set the model. ONLY pass `selected_source` and `selected_model` to this tool. Do NOT include hyperparameters like `mode` or `epochs` here.
 4. If the user wants to modify hyperparameters, update any of the following:
    - `mode`: Options are ["train"], ["inference"], or ["train", "inference"]
@@ -30,8 +30,9 @@ Your responsibilities are:
    - `weight_decay`: Suggested default is 0.0001
    - `max_grad_norm`: Suggested default is 0.01
 5. After changing a hyperparameter, DO NOT immediately run the workflow. Instead, ask:
-   “Would you like to modify any other hyperparameters before we start the workflow?” And Finally  call `set_auto_labeling_hyperparams`.
-6. Only run `run_auto_labeling` when the user explicitly says something like:
+   “Would you like to modify any other hyperparameters before we start the workflow?” And Finally  call `set_auto_labeling_hyperparams`, by passing all the hyperparameters that the user changed, and the others can remain default.
+6. Ensure that the hyperparameters have been updated by the `set_auto_labeling_hyperparams`, with the parameters that the user mentioned.
+7. Finally confirm with the user to run `run_auto_labeling`, do not explicityly ask them ifthey want to use the tool. Rather let them know that the hyperparameters have been updated successfully and the workflow is ready to be executed. remember this tool does not take any input arguments, thus execute it when the user explicitly says something like:
    - “Run the workflow”
    - “Start training”
    - “Let’s begin”
@@ -131,6 +132,16 @@ async def chat(request: Request):
     )
 
     assistant_message = response.choices[0].message
+    hyperparam_cache = {
+    "mode": ["train", "inference"],
+    "epochs": 10,
+    "early_stop_patience": 5,
+    "early_stop_threshold": 0,
+    "learning_rate": 5e-5,
+    "weight_decay": 0.0001,
+    "max_grad_norm": 0.01,
+    }
+
 
     if hasattr(assistant_message, "tool_calls") and assistant_message.tool_calls:
         tool_calls = assistant_message.tool_calls
@@ -146,7 +157,15 @@ async def chat(request: Request):
                     fn_args = {}
 
                 try:
-                    result = await mcp_client.call_tool(fn_name, fn_args)
+                    if fn_name == "set_auto_labeling_hyperparams":
+                        # Update local cache only with provided values
+                        for k, v in fn_args.items():
+                            if v is not None:
+                                hyperparam_cache[k] = v
+                        # Send full set to MCP tool
+                        result = await mcp_client.call_tool(fn_name, hyperparam_cache.copy())
+                    else:
+                        result = await mcp_client.call_tool(fn_name, fn_args)
                     tool_results.append({
                         "tool_call_id": call.id,
                         "name": fn_name,

@@ -3,6 +3,7 @@ import subprocess
 import re
 import asyncio
 from pathlib import Path
+import os
 
 mcp = FastMCP("AutoLabeling Agent")
 
@@ -116,7 +117,7 @@ def set_auto_labeling_hyperparams(
     mode: list = None,
     epochs: int = None,
     early_stop_patience: int = None,
-    early_stop_threshold: float = None,
+    early_stop_threshold: int = None,
     learning_rate: float = None,
     weight_decay: float = None,
     max_grad_norm: float = None,
@@ -197,10 +198,14 @@ def list_model_sources_and_models() -> dict:
 @mcp.tool()
 async def run_auto_labeling() -> str:
     """Run main.py, save full logs, and return only the evaluation summary."""
+    env = os.environ.copy()
+    env["HUGGINGFACE_TOKEN"] = ""
     process = await asyncio.create_subprocess_exec(
-        "python", str(MAIN_PATH),
+        "python", "-u", str(MAIN_PATH),
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT
+        stderr=asyncio.subprocess.STDOUT,
+        cwd=str(MAIN_PATH.parent),
+        env = env
     )
 
     output = ""
