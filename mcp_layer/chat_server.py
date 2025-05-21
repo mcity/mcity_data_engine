@@ -10,18 +10,20 @@ import json
 app = FastAPI()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-groq_client = AsyncGroq(api_key=GROQ_API_KEY)
+groq_client = AsyncGroq(api_key="")
 MCP_TRANSPORT = SSETransport(url="http://localhost:8000/sse")
 
 SYSTEM_PROMPT = """
-You are the MCity Data Engine Agent. Your job is to help the user configure and run the `auto_labeling` workflow using the MCity Data Engine.
-
+You are the MCity Data Engine Agent. Your job is to help the user first choose a workflow(there are two options 1-Auto labeling, 2-Class Mapping) and then help the user configure the selected workflow and finally run the workflow using the MCity Data Engine.
+Do not mention about the mcp tool calls to the user when calling them, a it seems more technical, give them a general statement relevant to the particular tool call.
 Your responsibilities are:
 
-1. Guide the user to choose a `model_source` (ultralytics, hf_models_objectdetection, or custom_codetr), When the user selects a `model_source`, ALWAYS call the tool `list_model_sources_and_models` to fetch available models from the local config — DO NOT guess or hallucinate. Remember this tool call does not take any input arguments.
-2. Then help them select a specific model or config within that source, do not call the `configute_autolabeling_tool` until the user finalizes it.
-3. Use the `configure_auto_labeling` tool to set the model. ONLY pass `selected_source` and `selected_model` to this tool. Do NOT include hyperparameters like `mode` or `epochs` here.
-4. If the user wants to modify hyperparameters, update any of the following:
+1. Guide the user to select a workflow(auto_labeling or class_mapping)
+2. Then call the `select_workflow` mcp tool based on the workflow that the user selected, remember it takes in only one argument(valid argument examples - auto_labeling or class_mapping), once the user selects a workflow guide them to configure the workflow as explained in the subsequent steps
+3. If the user selected the auto_labeling workflow, Guide the user to choose a `model_source` (ultralytics, hf_models_objectdetection, or custom_codetr), When the user selects a `model_source`, ALWAYS call the tool `list_model_sources_and_models` to fetch available models from the local config — DO NOT guess or hallucinate. Remember this tool call does not take any input arguments.
+4. Then help them select a specific model or config within that source, do not call the `configute_autolabeling_tool` until the user finalizes it.
+5. Use the `configure_auto_labeling` tool to set the model. ONLY pass `selected_source` and `selected_model` to this tool. Do NOT include hyperparameters like `mode` or `epochs` here.
+6. If the user wants to modify hyperparameters, update any of the following:
    - `mode`: Options are ["train"], ["inference"], or ["train", "inference"]
    - `epochs`: Suggested default is 10
    - `early_stop_patience`: Suggested default is 5
@@ -29,10 +31,17 @@ Your responsibilities are:
    - `learning_rate`: Suggested default is 5e-5
    - `weight_decay`: Suggested default is 0.0001
    - `max_grad_norm`: Suggested default is 0.01
-5. After changing a hyperparameter, DO NOT immediately run the workflow. Instead, ask:
+7. After changing a hyperparameter, DO NOT immediately run the workflow. Instead, ask:
    “Would you like to modify any other hyperparameters before we start the workflow?” And Finally  call `set_auto_labeling_hyperparams`, by passing all the hyperparameters that the user changed, and the others can remain default.
-6. Ensure that the hyperparameters have been updated by the `set_auto_labeling_hyperparams`, with the parameters that the user mentioned.
-7. Finally confirm with the user to run `run_auto_labeling`, do not explicityly ask them ifthey want to use the tool. Rather let them know that the hyperparameters have been updated successfully and the workflow is ready to be executed. remember this tool does not take any input arguments, thus execute it when the user explicitly says something like:
+8. Ensure that the hyperparameters have been updated by the `set_auto_labeling_hyperparams`, with the parameters that the user mentioned.
+9. If the user selected the auto_labeling workflow, Finally confirm with the user to run `run_auto_labeling`, do not explicitly ask them if they want to use the tool. Rather let them know that the hyperparameters have been updated successfully and the workflow is ready to be executed. remember this tool does not take any input arguments, thus execute it when the user explicitly says something like:
+   - “Run the workflow”
+   - “Start training”
+   - “Let’s begin”
+10. If the user chooses the class_mapping workflow, ask the user if they would like to see the available models.
+12. Once the user wants to know the available models, help the user choose a model from the available models, call `list_class_mapping_models`, remember this tool does not take in any input arguments. Do not explicitly mention that this particular tool was called, rather list the available models.
+13. Then use the `configure_class_mapping_model` tool to set the model. Only pass one argument, which is the `selected model` to this tool.
+14. Then finally confirm with the user to run `run_class_mapping`, do not explicitly ask them if they want to use the tool. Rather let them know that the model has been selected and the workflow is ready to be executed. remember this tool does not take any input arguments, thus execute it when the user explicitly says something like:
    - “Run the workflow”
    - “Start training”
    - “Let’s begin”
@@ -55,6 +64,24 @@ async def chat(request: Request):
 
     # Define MCP tools for Groq
     tools = [
+
+        {
+            "type": "function",
+            "function": {
+                "name": "select_workflow",
+                "description": "Set the selected workflow (auto_labeling or class_mapping) in the config file.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "workflow_name": {
+                            "type": "string",
+                            "description": "The name of the workflow to activate (auto_labeling or class_mapping)"
+                        }
+                    },
+                    "required": ["workflow_name"]
+                }
+            }
+        },
         {
             "type": "function",
             "function": {
@@ -91,7 +118,18 @@ async def chat(request: Request):
             "type": "function",
             "function": {
                 "name": "run_auto_labeling",
-                "description": "Run main.py and stream logs in real time.",
+                "description": "Run main.py for auto_labeling workflow and stream logs in real time.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+                {
+            "type": "function",
+            "function": {
+                "name": "run_class_mapping",
+                "description": "Run main.py for class_mapping workflow and stream logs in real time.",
                 "parameters": {
                     "type": "object",
                     "properties": {}
@@ -120,7 +158,36 @@ async def chat(request: Request):
                     }
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_class_mapping_models",
+                "description": "Lists zero-shot classification models available for class mapping.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "configure_class_mapping_model",
+                "description": "Enables the selected model for class_mapping by commenting out all other zero-shot models.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "selected_model": {
+                            "type": "string",
+                            "description": "The HuggingFace zero-shot classification model to use."
+                        }
+                    },
+                    "required": ["selected_model"]
+                }
+            }
         }
+
     ]
 
     # Step 1: Initial response

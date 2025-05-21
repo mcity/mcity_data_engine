@@ -2,11 +2,11 @@ import psutil
 
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["auto_labeling"]
+SELECTED_WORKFLOW = ["class_mapping"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "mcity_fisheye_2100",
+    "name": "fisheye8k",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
 }
 
@@ -62,11 +62,11 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": ["train", "inference"],
+        "mode": ['train', 'inference'],
         "model_source": [
-            "hf_models_objectdetection",
-            "ultralytics",
-            "custom_codetr",
+        "hf_models_objectdetection",
+        "ultralytics",
+        "custom_codetr",
         ],
         "n_worker_dataloader": 3,
         "epochs": 1,
@@ -252,31 +252,32 @@ WORKFLOWS = {
 
     "class_mapping": {
         # get the source and target dataset names from datasets.yaml
-        "dataset_source": "visdrone_fisheye-v51-complete",
+        "dataset_source": "fisheye8k",
         "dataset_target": "mcity_fisheye_2000",
+        # Set to True to change detection labels in the dataset, Set to False to just add tags without changing labels in the dataset.
+        "change_labels": False,
+
          # Choose any number of models from the options below hf_models_zeroshot_classification, to not include a model for class mapping, just comment it out
          #https://huggingface.co/docs/transformers/model_doc/auto#transformers.AutoModelForZeroShotImageClassification
         "hf_models_zeroshot_classification": [
-            "Salesforce/blip2-itm-vit-g",
-            #"openai/clip-vit-large-patch14",
-            #"google/siglip-so400m-patch14-384",
-            #"google/siglip2-so400m-patch14-384",
-            #"kakaobrain/align-base",
-            #"BAAI/AltCLIP",
-            #"CIDAS/clipseg-rd64-refined"
+        "Salesforce/blip2-itm-vit-g",
+        # "openai/clip-vit-large-patch14",
+        # "google/siglip-so400m-patch14-384",
+        # "google/siglip2-base-patch16-224",
+        # "kakaobrain/align-base",
+        # "BAAI/AltCLIP",
+        # "CIDAS/clipseg-rd64-refined",
         ],
-        "thresholds": {
-            "confidence": 0.2
-        },
+        "thresholds": {"confidence": 0.2},
         "candidate_labels": {
-            #Target class(Generalized class) : Source classes(specific categories)
-            "car": ["car", "van"],
-            "truck": ["truck", "pickup"],
-            #One_to_one_mapping
-            "bike" : ["motorbike/cycler"]
-            #Can add other class mappings in here
-        }
-    }
+            # Target class(Generalized class) : Source classes(specific categories)
+            "Car": ["car", "van", "pickup"],
+            "Truck": ["truck", "pickup"],
+            # One_to_one_mapping
+            "Bike": ["motorbike/cycler"],
+            # Can add other class mappings in here
+        },
+    },
 }
 
 """Global settings"""
