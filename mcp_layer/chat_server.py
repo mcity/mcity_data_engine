@@ -19,7 +19,7 @@ Do not mention about the mcp tool calls to the user when calling them, a it seem
 Your responsibilities are:
 
 1. Guide the user to select a workflow(auto_labeling or class_mapping)
-2. Then call the `select_workflow` mcp tool based on the workflow that the user selected, remember it takes in only one argument(valid argument examples - auto_labeling or class_mapping), once the user selects a workflow guide them to configure the workflow as explained in the subsequent steps
+2. Then make sure to call the `select_workflow` mcp tool based on the workflow that the user selected, remember it takes in only one argument(valid argument examples - auto_labeling or class_mapping), once the user selects a workflow guide them to configure the workflow as explained in the subsequent steps
 3. If the user selected the auto_labeling workflow, Guide the user to choose a `model_source` (ultralytics, hf_models_objectdetection, or custom_codetr), When the user selects a `model_source`, ALWAYS call the tool `list_model_sources_and_models` to fetch available models from the local config — DO NOT guess or hallucinate. Remember this tool call does not take any input arguments.
 4. Then help them select a specific model or config within that source, do not call the `configute_autolabeling_tool` until the user finalizes it.
 5. Use the `configure_auto_labeling` tool to set the model. ONLY pass `selected_source` and `selected_model` to this tool. Do NOT include hyperparameters like `mode` or `epochs` here.
@@ -40,8 +40,10 @@ Your responsibilities are:
    - “Let’s begin”
 10. If the user chooses the class_mapping workflow, ask the user if they would like to see the available models.
 12. Once the user wants to know the available models, help the user choose a model from the available models, call `list_class_mapping_models`, remember this tool does not take in any input arguments. Do not explicitly mention that this particular tool was called, rather list the available models.
-13. Then use the `configure_class_mapping_model` tool to set the model. Only pass one argument, which is the `selected model` to this tool.
-14. Then finally confirm with the user to run `run_class_mapping`, do not explicitly ask them if they want to use the tool. Rather let them know that the model has been selected and the workflow is ready to be executed. remember this tool does not take any input arguments, thus execute it when the user explicitly says something like:
+13. Then make sure to use the `configure_class_mapping_model` tool to set the model. Only pass one argument, which is the `selected model` to this tool.
+14. Once the user has selected the model, ask the user to select the source dataset, on which they would like to perform class mapping. The currently supported source datasets are fisheye8k_mini and fisheye8k.
+15. Once the user selects a source dataset, use the `set_class_mapping_dataset_source` tool to set the data source. . Only pass one argument, which is the `selected data source` to this tool.
+16. Make sure to confirm with the user before running the `run_class_mapping` tool, do not explicitly ask them if they want to use the tool. Rather let them know that the model has been selected and the workflow is ready to be executed. remember this tool does not take any input arguments, thus execute it when the user explicitly says something like:
    - “Run the workflow”
    - “Start training”
    - “Let’s begin”
@@ -79,6 +81,24 @@ async def chat(request: Request):
                         }
                     },
                     "required": ["workflow_name"]
+                }
+            }
+        },
+
+        {
+            "type": "function",
+            "function": {
+                "name": "set_class_mapping_dataset_source",
+                "description": "Updates the dataset_source field inside the class_mapping section of config.py.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_source": {
+                            "type": "string",
+                            "description": "The name of the dataset source to use ('fisheye8k', 'fisheye8k_mini')"
+                        }
+                    },
+                    "required": ["dataset_source"]
                 }
             }
         },
@@ -292,6 +312,35 @@ async def chat(request: Request):
                 )
                 return {"reply": reply}
 
+            elif fn_name == "run_class_mapping":
+                tool_output_raw = result.get("result", result.get("error", "Tool error."))
+                tool_output = tool_output_raw.text if hasattr(tool_output_raw, "text") else str(tool_output_raw)
+
+                # Optional: add summarization for class mapping
+                summary_prompt = f"""
+                Here's the output from a class mapping workflow. Summarize what was done based on the tag addition results section.
+
+                {tool_output}
+
+                Only include:
+                - How many tags were added
+                - If any tags were skipped
+                - Mention the model used, if stated
+                """
+
+                summary_response = await groq_client.chat.completions.create(
+                    model="llama3-70b-8192",
+                    messages=[{"role": "user", "content": summary_prompt}]
+                )
+                summary = summary_response.choices[0].message.content.strip()
+
+                reply = (
+                    f"{summary}\n\n"
+                    f"🧠 **Class Mapping Output:**\n"
+                    f"```\n{tool_output.strip()}\n```"
+                )
+                return {"reply": reply}
+
             # For other tools, keep old flow
             messages.append({
                 "role": "tool",
@@ -310,6 +359,7 @@ async def chat(request: Request):
         reply = assistant_message.content
 
     return {"reply": reply}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)

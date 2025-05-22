@@ -334,68 +334,118 @@ async def run_auto_labeling() -> str:
             f"🛠 Please check the log file or terminal output for errors."
         )
 
+@mcp.tool()
+def set_class_mapping_dataset_source(dataset_source: str) -> str:
+    """
+    Updates the `dataset_source` in the class_mapping workflow section of config.py.
+    """
+    lines = CONFIG_PATH.read_text().split('\n')
+    modified = []
+    in_class_mapping = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Detect start of class_mapping block
+        if '"class_mapping": {' in line:
+            in_class_mapping = True
+            modified.append(line)
+            continue
+
+        # If inside class_mapping block, look for dataset_source
+        if in_class_mapping:
+            if '"dataset_source":' in stripped:
+                indent = " " * (len(line) - len(line.lstrip()))
+                modified.append(f'{indent}"dataset_source": "{dataset_source}",')
+                continue
+
+            # Detect end of class_mapping block
+            if "}" in stripped:
+                in_class_mapping = False
+
+        # Default case: keep the line
+        modified.append(line)
+
+    CONFIG_PATH.write_text('\n'.join(modified))
+    return f"✅ Class Mapping dataset source set to `{dataset_source}`."
+
 
 @mcp.tool()
 async def run_class_mapping() -> str:
-    """Run main.py for class_mapping and extract only tag addition results for user."""
+    """Run main.py for class_mapping with improved subprocess handling."""
     env = os.environ.copy()
     env["HUGGINGFACE_TOKEN"] = ""
 
-    process = await asyncio.create_subprocess_exec(
-        "python", "-u", str(MAIN_PATH),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-        cwd=str(MAIN_PATH.parent),
-        env=env
-    )
-
-    output = ""
-    tag_summary = ""
-    capture = False
-
-    while True:
-        line = await process.stdout.readline()
-        if not line:
-            break
-        decoded = line.decode("utf-8", errors="ignore")
-        print(decoded, end="")  # Stream to terminal
-        output += decoded
-
-        # Start capturing at tag results
-        if "Tag Addition Results (Target Dataset Tags):" in decoded:
-            capture = True
-            tag_summary = decoded
-            continue
-
-        # Stop at model line
-        if "Zero Shot Classification model" in decoded:
-            capture = False
-            continue
-
-        if capture:
-            tag_summary += decoded
-
-    await process.wait()
-
-    # Save full logs
-    log_path = "output/logs/last_class_mapping_log.txt"
-    Path(log_path).parent.mkdir(parents=True, exist_ok=True)
-    with open(log_path, "w", encoding="utf-8") as f:
-        f.write(output)
-
-    if process.returncode == 0:
-        return (
-            f"✅ Class Mapping completed successfully.\n\n"
-            f"🧠 **Tag Addition Summary:**\n```\n{tag_summary.strip()}\n```\n"
-            f"📄 Full logs saved to `{log_path}`"
-        )
-    else:
-        return (
-            f"❌ Class Mapping failed with exit code {process.returncode}.\n"
-            f"📄 Full logs saved to `{log_path}`\n"
-            f"🛠 Please check the log file or terminal output for errors."
+    try:
+        # Use communicate() instead of readline loop to prevent deadlocks
+        process = await asyncio.create_subprocess_exec(
+            "python", "-u", str(MAIN_PATH),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(MAIN_PATH.parent),
+            env=env
         )
 
+        # Get all output at once to prevent buffer issues
+        stdout_data, stderr_data = await process.communicate()
+
+        # Decode output
+        output = stdout_data.decode("utf-8", errors="ignore") if stdout_data else ""
+        error_output = stderr_data.decode("utf-8", errors="ignore") if stderr_data else ""
+
+        # Print to terminal for debugging
+        if output:
+            print("STDOUT:", output)
+        if error_output:
+            print("STDERR:", error_output)
+
+        # Extract tag summary from output
+        tag_lines = []
+        capture = False
+
+        for line in error_output.splitlines():
+
+            if "Tag Addition Results (Target Dataset Tags):" in line:
+                capture = True
+                tag_lines.append(line)  # Include the triggering line
+                continue  # Avoid falling through to the elif
+            elif capture and line.startswith("Zero Shot Classification model"):
+                break
+            elif capture:
+                tag_lines.append(line)
+
+        print(tag_lines)
+
+        tag_summary = "\n".join(tag_lines).strip() if tag_lines else "No tag addition results found."
+
+        print(tag_summary)
+
+
+        # Save full logs
+        log_path = "output/logs/last_class_mapping_log.txt"
+        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write("=== STDOUT ===\n")
+            f.write(output)
+            f.write("\n\n=== STDERR ===\n")
+            f.write(error_output)
+            f.write(f"\n\n=== EXIT CODE ===\n{process.returncode}")
+
+        if process.returncode == 0:
+            return (
+                f"✅ Class Mapping completed successfully.\n\n"
+                f"🧠 **Tag Addition Summary:**\n```\n{tag_summary}\n```\n"
+                f"📄 Full logs saved to `{log_path}`"
+            )
+        else:
+            return (
+                f"❌ Class Mapping failed with exit code {process.returncode}.\n"
+                f"📄 Error details: {error_output[-5000:]}\n"
+                f"📄 Full logs saved to `{log_path}`"
+            )
+
+    except Exception as e:
+        return f"❌ Error executing class mapping: {str(e)}"
 
 if __name__ == "__main__":
     mcp.run(transport="sse", host="0.0.0.0", port=8000)
