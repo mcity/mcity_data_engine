@@ -391,7 +391,7 @@ torchvision==0.20.1
 tornado==6.4.1
 tqdm==4.67.1
 traitlets==5.14.3
-transformers==4.49.0
+transformers==4.52.4
 triton==3.1.0
 types-python-dateutil==2.9.0.20241206
 types-setuptools==75.6.0.20241126
