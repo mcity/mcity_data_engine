@@ -490,6 +490,127 @@ def load_visdrone_fisheye_mcity(dataset_info):
 
     return dataset
 
+def load_mcity_clean(dataset_info):
+    """Loads the relabeled mcity ds from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
+
+    dataset_name = dataset_info["name"]
+    hf_dataset_name = dataset_info["hf_dataset_name"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name, overwrite=True)
+        _post_process_dataset(dataset)
+
+    return dataset
+
+def load_mcity_clean_crowd_updated(dataset_info):
+    """Loads the relabeled mcity ds from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
+
+    dataset_name = dataset_info["name"]
+    hf_dataset_name = dataset_info["hf_dataset_name"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name, overwrite=True)
+        _post_process_dataset(dataset)
+
+    return dataset
+
+
+def load_mtl(dataset_info):
+    """Loads the mtl 7k dataset from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
+
+    dataset_name = dataset_info["name"]
+    hf_dataset_name = dataset_info["hf_dataset_name"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name, overwrite=True)
+        _post_process_dataset(dataset)
+
+    return dataset
+
+def load_mcity_clean_crowd(dataset_info):
+    """Loads the relabeled mcity ds from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
+
+    dataset_name = dataset_info["name"]
+    hf_dataset_name = dataset_info["hf_dataset_name"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name, overwrite=True)
+        _post_process_dataset(dataset)
+
+    return dataset
+
+def load_mtl_mini(dataset_info):
+    """Loads the mtl mini ds from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
+
+    dataset_name = dataset_info["name"]
+    hf_dataset_name = dataset_info["hf_dataset_name"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name, overwrite=True)
+        _post_process_dataset(dataset)
+
+    return dataset
+
+def load_visdrone_fisheye_mcity_clean(dataset_info):
+    """Loads the relabeled mcity ds from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
+
+    dataset_name = dataset_info["name"]
+    hf_dataset_name = dataset_info["hf_dataset_name"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name, overwrite=True)
+        _post_process_dataset(dataset)
+
+    return dataset
+
+def load_mtl_mist(dataset_info):
+    """Loads the 7k ds from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
+
+    dataset_name = dataset_info["name"]
+    hf_dataset_name = dataset_info["hf_dataset_name"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name, overwrite=True)
+        _post_process_dataset(dataset)
+
+    return dataset
+
+def load_mtl_inference(dataset_info):
+    """Loads the 7k inference from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
+
+    dataset_name = dataset_info["name"]
+    hf_dataset_name = dataset_info["hf_dataset_name"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name, overwrite=True)
+        _post_process_dataset(dataset)
+
+    return dataset
+
 def load_mars_multiagent(dataset_info):
     """Load the MARS multi-agent dataset from Hugging Face."""
     hugging_face_id = "ai4ce/MARS/Multiagent_53scene"

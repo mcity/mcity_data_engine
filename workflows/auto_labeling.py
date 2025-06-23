@@ -986,12 +986,15 @@ class UltralyticsObjectDetection:
             else:
                 dataset_view = self.dataset
 
-            dataset_view.evaluate_detections(
+            results = dataset_view.evaluate_detections(
                 pred_key,
                 gt_field=gt_field,
                 eval_key=eval_key,
                 compute_mAP=True,
+                iou = 0.2
             )
+
+            results.print_report()
 
 
 def transform_batch_standalone(
@@ -1609,13 +1612,19 @@ class CustomCoDETRObjectDetection:
         dataset_name = None
         config_key = None
         try:
-            if inference_settings["model_hf"] is None:
-                hf_path = self.hf_repo_name
-            else:
-                hf_path = inference_settings["model_hf"]
 
-            #hf_path = "Abeyankar/visdrone_fisheye-v51-complete_co_deformable_detr_r50_1x_coco"
+            #if inference_settings["model_hf"] is None:
+            #    hf_path = self.hf_repo_name
+            #else:
+            #    hf_path = inference_settings["model_hf"]
 
+            hf_path = "Abeyankar/visdrone_fisheye_mcity_2844_clean_co_deformable_detr_r50_1x_coco"
+
+            #hf_path = "Abeyankar/mtl_ds_7k_co_deformable_detr_r50_1x_coco"
+
+            #hf_path = "Abeyankar/mtl_new_ds_795_co_deformable_detr_r50_1x_coco"
+
+            #hf_path = "Abeyankar/mtl_ds_fin_7k_co_deformable_detr_r50_1x_coco"
             dataset_name, config_key = get_dataset_and_model_from_hf_id(hf_path)
 
             download_folder = os.path.join(
@@ -1753,6 +1762,7 @@ class CustomCoDETRObjectDetection:
                 gt_field=gt_field,
                 eval_key=eval_key,
                 compute_mAP=True,
+                iou=0.01
             )
             results.print_report()
 

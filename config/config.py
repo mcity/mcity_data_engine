@@ -1,8 +1,7 @@
 import psutil
 
-
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["class_mapping"]
+SELECTED_WORKFLOW = ["embedding_selection"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
@@ -39,7 +38,7 @@ WORKFLOWS = {
             # "resnet152-imagenet-torch",
             # "vgg19-imagenet-torch",
             # "classification-transformer-torch",
-            "detection-transformer-torch",
+            #"detection-transformer-torch",
             "zero-shot-detection-transformer-torch",
             # "zero-shot-classification-transformer-torch",
         ],
@@ -62,14 +61,14 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": ['train', 'inference'],
+        "mode": ['inference'],
         "model_source": [
-        "hf_models_objectdetection",
-        "ultralytics",
+        #"hf_models_objectdetection",
+        #"ultralytics",
         "custom_codetr",
         ],
         "n_worker_dataloader": 3,
-        "epochs": 1,
+        "epochs": 20,
         "early_stop_patience": 5,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -79,7 +78,7 @@ WORKFLOWS = {
             "do_eval": True,
             "inference_on_evaluation": True,
             "model_hf": None,  # None (automatic selection) or overwrite with Hugging Face ID. Assumes same model as selected below.
-            "detection_threshold": 0.2,
+            "detection_threshold": 0.29,
         },
         "hf_models_objectdetection": {  # HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
             "microsoft/conditional-detr-resnet-50": {"batch_size": 1},
@@ -100,7 +99,7 @@ WORKFLOWS = {
             "export_dataset_root": "output/datasets/codetr_data/",
             "configs": [
                 "projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py",
-                "projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
+                #"projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
             ],
             "n_gpus": "1",
             "container_tool": "docker",
@@ -108,9 +107,9 @@ WORKFLOWS = {
         "ultralytics": {
             "export_dataset_root": "output/datasets/ultralytics_data/",
             "models": {
-                "yolo11n": {"batch_size": 16, "img_size": 960},
-                "yolo11x": {"batch_size": 1, "img_size": 960},
-                "yolo12n": {"batch_size": 16, "img_size": 960},
+                #"yolo11n": {"batch_size": 16, "img_size": 960},
+                #"yolo11x": {"batch_size": 1, "img_size": 960},
+                #"yolo12n": {"batch_size": 16, "img_size": 960},
                 "yolo12x": {"batch_size": 1, "img_size": 640},
             },
         },

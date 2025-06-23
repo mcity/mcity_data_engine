@@ -1,12 +1,18 @@
 import fiftyone as fo
-
-
+from fiftyone.utils.huggingface import load_from_hub
 # Load your existing dataset
-dataset = fo.load_dataset("mcity-data-engine/mcity-fisheye-vru-2844")
+#dataset = fo.load_dataset("codetr_mini_inference_1")
+#dataset = fo.load_dataset("Abeyankar/mtl_ds_mini_fin")
+dataset = load_from_hub("Abeyankar/mtl_ds_mini_fin")
 
-# Create a view containing samples to edit (use .select() for specific samples)
-view = dataset  # Edit entire dataset, or filter with .match(), .take(), etc.
+# Create a view containing samples to edit
+view = dataset  # or use .match(), .take(), etc.
 
-# Launch CVAT annotation editor for existing bounding boxes
-anno_key = "cvat_existing_field_edit3"  # Unique identifier for this annotation session
-view.annotate(anno_key, label_field="ground_truth")
+# Unique identifier for this annotation session
+anno_key = "cvat_existing_field_edit75"
+
+# Upload in smaller chunks (avoid crashing CVAT server)
+view.annotate(
+    anno_key,
+    label_field="ground_truth"
+)
