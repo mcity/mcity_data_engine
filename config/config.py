@@ -2,11 +2,11 @@ import os
 import psutil
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["embedding_selection"]  # Choose from WORKFLOWS keys
+SELECTED_WORKFLOW = ["dataset_ingest"]  # Choose from WORKFLOWS keys
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "fisheye8k",
+    "name": "custom_dataset",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
     "custom_view": None,  # 'None' (full dataset) or select function from utils/custom_view
 }
@@ -304,6 +304,12 @@ WORKFLOWS = {
             # Can add other class mappings in here
         },
     },
+    "dataset_ingest": {
+        "dataset_name": "custom_dataset",
+        "annotation_format": "auto",  # Options: "auto", "coco", "voc", "yolo", "image_only", "video"
+        "dataset_dir": "/home/dataengine/Downloads/vid",
+        "split_percentages": [0.7, 0.15, 0.15],  # Optional train/val/test
+    }
 }
 
 """Global settings"""

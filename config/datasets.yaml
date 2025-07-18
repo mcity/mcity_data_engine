@@ -47,3 +47,6 @@ datasets:
     loader_fct: load_sunrgbd
     local_path: /home/wizard/mcity_data_engine/SUNRGBD
     v51_type: FiftyOneDataset
+  - name: custom_dataset
+    loader_fct: load_custom_dataset
+    v51_type: FiftyOneDataset

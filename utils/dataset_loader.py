@@ -475,6 +475,19 @@ def load_fisheye_8k(dataset_info):
 
     return dataset
 
+def load_custom_dataset(dataset_info=None):
+    """Loads the 'custom_dataset' from FiftyOne's persistent store."""
+
+    dataset_name = "custom_dataset"
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info(f"✅ Loaded existing FiftyOne dataset: '{dataset_name}'")
+        return dataset
+    else:
+        raise ValueError(f"❌ Dataset '{dataset_name}' not found in FiftyOne. Please run the dataset_ingest workflow first.")
+
+
 
 def load_mars_multiagent(dataset_info):
     """Load the MARS multi-agent dataset from Hugging Face."""
