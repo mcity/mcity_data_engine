@@ -47,7 +47,7 @@ from workflows.embedding_selection import EmbeddingSelection
 from workflows.ensemble_selection import EnsembleSelection
 from workflows.auto_label_mask import AutoLabelMask
 from workflows.class_mapping import ClassMapper
-from workflows.dataset_ingest import run_dataset_ingest
+from workflows.data_ingest import run_data_ingest
 
 wandb_run = None  # Init globally to make sure it is available
 
@@ -863,8 +863,8 @@ class WorkflowExecutor:
                         test_dataset_source=None,
                         test_dataset_target=None,
                     )
-                elif workflow == "dataset_ingest":
-                    dataset = run_dataset_ingest()
+                elif workflow == "data_ingest":
+                    dataset = run_data_ingest()
 
                     dataset_info = {
                         "name": "custom_dataset",
@@ -876,7 +876,7 @@ class WorkflowExecutor:
                     self.dataset_info = dataset_info
                     self.selected_dataset = "custom_dataset"
 
-                    logging.info(f"✅ Dataset ingestion complete. Selected dataset set to 'custom_dataset'.")
+                    logging.info(f"Data ingestion completed successfully.")
 
 
                 else:
@@ -905,7 +905,7 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
 
     # Execute workflows
-    if "dataset_ingest" in SELECTED_WORKFLOW:
+    if "data_ingest" in SELECTED_WORKFLOW:
         executor = WorkflowExecutor(
             SELECTED_WORKFLOW,
             SELECTED_DATASET["name"],
@@ -914,7 +914,7 @@ def main():
         )
         executor.execute()
 
-        # 🔥 FIX: Pull back outputs after ingestion
+        # FIX: Pull back outputs after ingestion
         dataset = executor.dataset
         dataset_info = executor.dataset_info
 
@@ -929,8 +929,6 @@ def main():
         )
         executor.execute()
 
-    # ✅ Now safe to do post-execution steps on `dataset`
-    #dataset.reload()
 
     if dataset is not None:
         dataset.reload()

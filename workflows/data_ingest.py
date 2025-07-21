@@ -5,6 +5,7 @@ import random
 import shutil
 import fiftyone.utils.yolo as fouy
 import fiftyone.utils.video as fouv
+import logging
 from config.config import WORKFLOWS
 
 
@@ -54,24 +55,26 @@ def get_dataset_type(fmt):
 
 
 
-def run_dataset_ingest():
-    config = WORKFLOWS["dataset_ingest"]
+def run_data_ingest():
+    config = WORKFLOWS["data_ingest"]
     dataset_name = config["dataset_name"]
     dataset_dir = config["dataset_dir"]
     split = config.get("split_percentages", [0.7, 0.15, 0.15])
     fmt = config["annotation_format"]
+    fps = config["fps"]
 
     if fmt == "auto":
         fmt = detect_format(dataset_dir)
 
     dataset_type = get_dataset_type(fmt)
 
-    print(f"Ingesting dataset: {dataset_name}")
-    print(f"Detected format: {fmt}")
-    print(f"Loading from: {dataset_dir}")
+    logging.info(f"Ingesting dataset: {dataset_name}")
+    logging.info(f"Detected format: {fmt}")
+    logging.info(f"Loading from: {dataset_dir}")
 
     if dataset_type == "video":
-        print(f"🎞️ Converting videos in {dataset_dir} to frames at 5 FPS...")
+
+        logging.info(f"Converting videos in {dataset_dir} to frames at {fps} FPS...")
 
         # Create temp dataset from videos
         video_dataset = fo.Dataset.from_videos_dir(dataset_dir, name=f"{dataset_name}_video_temp")
@@ -80,10 +83,10 @@ def run_dataset_ingest():
         frames_dir = os.path.join(dataset_dir, "extracted_frames")
         os.makedirs(frames_dir, exist_ok=True)
 
-        # Sample at 5 FPS using FFmpeg
+        # Sample at 1 FPS using FFmpeg
         fouv.sample_videos(
             video_dataset,
-            fps=5,
+            fps=fps,
             output_dir=frames_dir,
             original_frame_numbers=False,
             force_sample=True,
@@ -91,7 +94,7 @@ def run_dataset_ingest():
             progress=True,
         )
 
-        print(f"📸 Sampled frames stored at {frames_dir}")
+        logging.info(f"Sampled frames stored at {frames_dir}")
 
         # Now load as image-only dataset
         dataset = fo.Dataset.from_images_dir(frames_dir, name=dataset_name)
@@ -99,7 +102,7 @@ def run_dataset_ingest():
     elif dataset_type == "image_only":
         dataset = fo.Dataset.from_images_dir(dataset_dir, name = dataset_name)
     elif fmt == "coco":
-        # ✅ Fast path: Single JSON + single image folder (any name)
+        # Fast path: Single JSON + single image folder (any name)
         flat_jsons = [f for f in os.listdir(dataset_dir) if f.endswith(".json")]
         image_dirs = [
             os.path.join(dataset_dir, d)
@@ -109,7 +112,7 @@ def run_dataset_ingest():
 
         if len(flat_jsons) == 1 and len(image_dirs) == 1:
             image_dir = image_dirs[0]
-            print(f"ℹ️ Using {image_dir} for all splits (defaulted to 'train')")
+            logging.info(f"Using {image_dir} for all splits (defaulted to 'train')")
 
             dataset = fo.Dataset.from_dir(
                 dataset_type=fot.COCODetectionDataset,
@@ -119,7 +122,7 @@ def run_dataset_ingest():
             )
 
             dataset.tag_samples("train")
-            print(f"✅ Loaded {len(dataset)} samples from flat COCO directory")
+            logging.info(f"Loaded {len(dataset)} samples from flat COCO directory")
             dataset.persistent = True
 
         else:
@@ -160,7 +163,7 @@ def run_dataset_ingest():
                 # Match to image folder
                 data_path = available_dirs.get(split_name)
                 if not data_path:
-                    print(f"⚠️ Skipping '{split_name}' — No image folder found for '{json_file}'")
+                    logging.info(f"Skipping '{split_name}' — No image folder found for '{json_file}'")
                     continue
 
                 dataset_split = fo.Dataset.from_dir(
@@ -172,9 +175,9 @@ def run_dataset_ingest():
 
                 sample_ids = dataset.add_samples(dataset_split)
                 dataset.select(sample_ids).tag_samples(split_name)
-                print(f"✅ Loaded {len(sample_ids)} samples for split '{split_name}'")
+                logging.info(f"Loaded {len(sample_ids)} samples for split '{split_name}'")
 
-        print("Final split counts:", dataset.count_sample_tags())
+        #logging.info(f"Final split counts: {dataset.count_sample_tags()}")
 
     elif fmt == "cvat":
         dataset = fo.Dataset.from_dir(
@@ -197,7 +200,7 @@ def run_dataset_ingest():
 
                 for split_name in split_names:
                     if f"{split_name}:" not in yaml_content:
-                        print(f"Skipping split '{split_name}' — not found in dataset.yaml")
+                        logging.info(f"Skipping split '{split_name}' — not found in dataset.yaml")
                         continue
 
                     try:
@@ -210,15 +213,15 @@ def run_dataset_ingest():
                         sample_ids = dataset.add_importer(importer, label_field="ground_truth")
 
                         if not sample_ids:
-                            print(f"No samples loaded for split '{split_name}'")
+                            logging.infot(f"No samples loaded for split '{split_name}'")
                             continue
 
                         dataset.select(sample_ids).tag_samples(split_name)
                         loaded_splits[split_name] = sample_ids
 
-                        print(f"Loaded {len(sample_ids)} samples for split '{split_name}'")
+                        logging.info(f"Loaded {len(sample_ids)} samples for split '{split_name}'")
                     except Exception as e:
-                        print(f"Warning: Failed to load split '{split_name}': {e}")
+                        logging.info(f"Warning: Failed to load split '{split_name}': {e}")
 
 
 
@@ -231,7 +234,7 @@ def run_dataset_ingest():
 
                     dataset.select(test_samples[:midpoint]).tag_samples("val")
                     dataset.select(test_samples[midpoint:]).tag_samples("test")
-                    print("Split test → val/test 50-50")
+                    logging.info("Split test → val/test 50-50")
 
                 elif "test" not in loaded_splits and "val" in loaded_splits:
                     val_samples = loaded_splits["val"]
@@ -241,7 +244,7 @@ def run_dataset_ingest():
 
                     dataset.select(val_samples[:midpoint]).tag_samples("val")
                     dataset.select(val_samples[midpoint:]).tag_samples("test")
-                    print("Split val → val/test 50-50")
+                    logging.info("Split val → val/test 50-50")
 
                 elif "val" not in loaded_splits and "test" not in loaded_splits and "train" in loaded_splits:
                     all_train_samples = loaded_splits["train"]
@@ -259,9 +262,9 @@ def run_dataset_ingest():
                     dataset.select(all_train_samples[ n_train : n_train + n_val]).tag_samples("val")
                     dataset.select(all_train_samples[ n_train + n_val:]).tag_samples("test")
 
-                    print(f"Split train → train/val/test with {split} proportion")
+                    logging.info(f"Split train → train/val/test with {split} proportion")
 
-                print("📊 Final split counts:", dataset.count_sample_tags())
+                logging.info(f"Final split counts: {dataset.count_sample_tags()}")
 
         else:
             dataset = fo.Dataset.from_dir(
@@ -273,8 +276,19 @@ def run_dataset_ingest():
 
     dataset.persistent = True
 
+    # Move 'detections' to 'ground_truth' and remove 'detections'
+    for sample in dataset:
+        if sample.has_field("detections"):
+            sample["ground_truth"] = sample["detections"]
+            sample.clear_field("detections")
+            sample.save()
+
+    # Also remove 'detections' from schema if it exists
+    if "detections" in dataset.get_field_schema():
+        dataset.delete_sample_field("detections")
+
     if fmt == "yolo" and os.path.exists(os.path.join(dataset_dir, "dataset.yaml")):
-        print("Detected YOLO dataset with splits defined in dataset.yaml — skipping split and shuffle.")
+        pass
     else:
         # Clear all existing split tags before reassigning
         for tag in ["train", "val", "test"]:
@@ -283,14 +297,18 @@ def run_dataset_ingest():
         dataset.shuffle(seed=51)
 
         n = len(dataset)
-        n_train = int(split[0] * n)
-        n_val = int(split[1] * n)
-        n_test = n - n_train - n_val
+        s_train, s_val, s_test = split
+
+        n_train = int(s_train * n)
+        remaining = n - n_train
+        n_val = int(remaining * (s_val / (s_val + s_test)))
+        n_test = remaining - n_val
+
 
         # Apply tag-based split
         dataset[:n_train].tag_samples("train")
         dataset[n_train:n_train + n_val].tag_samples("val")
         dataset[n_train + n_val:].tag_samples("test")
 
-        print(f"✅ Split applied: train {n_train}, val {n_val}, test {n_test}")
-    print(f"✅ Dataset '{dataset_name}' ingested with {len(dataset)} samples")
+        logging.info(f"Split applied: train {n_train}, val {n_val}, test {n_test}")
+    logging.info(f"Dataset '{dataset_name}' ingested with {len(dataset)} samples")

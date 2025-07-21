@@ -2,11 +2,11 @@ import os
 import psutil
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["dataset_ingest"]  # Choose from WORKFLOWS keys
+SELECTED_WORKFLOW = ["data_ingest"]  # Choose from WORKFLOWS keys
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "custom_dataset",
+    "name": "fisheye8k",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
     "custom_view": None,  # 'None' (full dataset) or select function from utils/custom_view
 }
@@ -63,14 +63,14 @@ WORKFLOWS = {
         "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
     },
     "auto_labeling": {
-        "mode": ["train"],  # "train" and "inference" supported
+        "mode": ["train","inference"],  # "train" and "inference" supported
         "model_source": [
             # "hf_models_objectdetection",
             "ultralytics",
             # "custom_codetr",
         ],
         "n_worker_dataloader": 8,
-        "epochs": 1000,
+        "epochs": 1,
         "early_stop_patience": 0,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -304,11 +304,12 @@ WORKFLOWS = {
             # Can add other class mappings in here
         },
     },
-    "dataset_ingest": {
+    "data_ingest": {
         "dataset_name": "custom_dataset",
         "annotation_format": "auto",  # Options: "auto", "coco", "voc", "yolo", "image_only", "video"
-        "dataset_dir": "/home/dataengine/Downloads/vid",
+        "dataset_dir": "/home/dataengine/Downloads/clean_infpt1",
         "split_percentages": [0.7, 0.15, 0.15],  # Optional train/val/test
+        "fps": 2, #Frames per second to convert a Video dataset to Fiftyone Image Dataset
     }
 }
 
