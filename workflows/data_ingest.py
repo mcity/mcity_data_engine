@@ -177,8 +177,6 @@ def run_data_ingest():
                 dataset.select(sample_ids).tag_samples(split_name)
                 logging.info(f"Loaded {len(sample_ids)} samples for split '{split_name}'")
 
-        #logging.info(f"Final split counts: {dataset.count_sample_tags()}")
-
     elif fmt == "cvat":
         dataset = fo.Dataset.from_dir(
             dataset_type=fot.CVATImageDataset,
