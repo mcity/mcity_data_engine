@@ -7,7 +7,39 @@ import fiftyone.utils.yolo as fouy
 import fiftyone.utils.video as fouv
 import logging
 from config.config import WORKFLOWS
+from pathlib import Path
+from ruamel.yaml import YAML
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString as dqs
+import yaml
 
+DATASETS_YAML = Path(__file__).resolve().parent.parent / "config" / "datasets.yaml"
+
+def append_dataset_entry(dataset_name: str, loader_fct: str = "load_custom_dataset"):
+    yaml_path = Path(__file__).resolve().parent.parent / "config" / "datasets.yaml"
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.indent(sequence=4, offset=2)
+
+    with open(yaml_path, "r") as f:
+        data = yaml.load(f)
+
+    # Check for duplicate names
+    if any(d.get("name") == dataset_name for d in data["datasets"]):
+        logging.info(f"Dataset '{dataset_name}' already exists in datasets.yaml. Skipping append.")
+        return
+
+    new_entry = {
+        "name": dqs(dataset_name),
+        "loader_fct": dqs(loader_fct),
+        "v51_type": dqs("FiftyOneDataset")
+    }
+
+    data["datasets"].append(new_entry)
+
+    with open(yaml_path, "w") as f:
+        yaml.dump(data, f)
+
+    logging.info(f"Appended new dataset entry to datasets.yaml: {dataset_name}")
 
 def detect_format(dataset_dir):
     files = os.listdir(dataset_dir)
@@ -57,7 +89,7 @@ def get_dataset_type(fmt):
 
 def run_data_ingest():
     config = WORKFLOWS["data_ingest"]
-    dataset_name = config["dataset_name"]
+    base_name = config["dataset_name"]
     dataset_dir = config["dataset_dir"]
     split = config.get("split_percentages", [0.7, 0.15, 0.15])
     fmt = config["annotation_format"]
@@ -67,6 +99,13 @@ def run_data_ingest():
         fmt = detect_format(dataset_dir)
 
     dataset_type = get_dataset_type(fmt)
+
+    existing = fo.list_datasets()
+
+    i = 1
+    while f"{base_name}{i}" in existing:
+        i += 1
+    dataset_name = f"{base_name}{i}"
 
     logging.info(f"Ingesting dataset: {dataset_name}")
     logging.info(f"Detected format: {fmt}")
@@ -98,6 +137,11 @@ def run_data_ingest():
 
         # Now load as image-only dataset
         dataset = fo.Dataset.from_images_dir(frames_dir, name=dataset_name)
+
+        temp_name = f"{dataset_name}_video_temp"
+        if temp_name in fo.list_datasets():
+            fo.delete_dataset(temp_name)
+            logging.info(f"Deleted temporary dataset: {temp_name}")
 
     elif dataset_type == "image_only":
         dataset = fo.Dataset.from_images_dir(dataset_dir, name = dataset_name)
@@ -310,3 +354,5 @@ def run_data_ingest():
 
         logging.info(f"Split applied: train {n_train}, val {n_val}, test {n_test}")
     logging.info(f"Dataset '{dataset_name}' ingested with {len(dataset)} samples")
+
+    append_dataset_entry(dataset_name)

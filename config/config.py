@@ -6,7 +6,7 @@ SELECTED_WORKFLOW = ["data_ingest"]  # Choose from WORKFLOWS keys
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "fisheye8k",
+    "name": "custom_dset1",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
     "custom_view": None,  # 'None' (full dataset) or select function from utils/custom_view
 }
@@ -169,32 +169,9 @@ WORKFLOWS = {
         },
         "detection_threshold": 0.2,
         "object_classes": [
-            "skater",
-            "child",
-            "bicycle",
-            "bicyclist",
-            "cyclist",
-            "bike",
-            "rider",
-            "motorcycle",
-            "motorcyclist",
-            "pedestrian",
-            "person",
-            "walker",
-            "jogger",
-            "runner",
-            "skateboarder",
-            "scooter",
-            "vehicle",
-            "car",
-            "bus",
-            "truck",
-            "taxi",
-            "van",
-            "pickup truck",
-            "trailer",
-            "emergency vehicle",
-            "delivery driver",
+            "block",
+            "red block",
+            "yellow block"
         ],
     },
     "auto_label_mask": {
@@ -305,9 +282,9 @@ WORKFLOWS = {
         },
     },
     "data_ingest": {
-        "dataset_name": "custom_dataset",
+        "dataset_name": "custom_dset",
         "annotation_format": "auto",  # Options: "auto", "coco", "voc", "yolo", "image_only", "video"
-        "dataset_dir": "/home/dataengine/Downloads/clean_infpt1",
+        "dataset_dir": "/home/dataengine/Downloads/vid",
         "split_percentages": [0.7, 0.15, 0.15],  # Optional train/val/test
         "fps": 2, #Frames per second to convert a Video dataset to Fiftyone Image Dataset
     }
