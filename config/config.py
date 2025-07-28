@@ -2,11 +2,11 @@ import os
 import psutil
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["data_ingest"]  # Choose from WORKFLOWS keys
+SELECTED_WORKFLOW = ["embedding_selection"]  # Choose from WORKFLOWS keys
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "custom_dset1",
+    "name": "fisheye8k",
     "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
     "custom_view": None,  # 'None' (full dataset) or select function from utils/custom_view
 }
@@ -169,9 +169,32 @@ WORKFLOWS = {
         },
         "detection_threshold": 0.2,
         "object_classes": [
-            "block",
-            "red block",
-            "yellow block"
+            "skater",
+            "child",
+            "bicycle",
+            "bicyclist",
+            "cyclist",
+            "bike",
+            "rider",
+            "motorcycle",
+            "motorcyclist",
+            "pedestrian",
+            "person",
+            "walker",
+            "jogger",
+            "runner",
+            "skateboarder",
+            "scooter",
+            "vehicle",
+            "car",
+            "bus",
+            "truck",
+            "taxi",
+            "van",
+            "pickup truck",
+            "trailer",
+            "emergency vehicle",
+            "delivery driver",
         ],
     },
     "auto_label_mask": {
