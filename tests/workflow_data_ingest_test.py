@@ -39,10 +39,10 @@ def test_dataset_ingest_workflow_video(test_video_ingest_dataset_dir):
     Verifies that frames are extracted, splits are applied, and ground_truth exists.
     """
 
-    dataset_name = "video_ingest_test"
+    base_name = "video_ingest_test"
 
     config.WORKFLOWS["data_ingest"] = {
-        "dataset_name": dataset_name,
+        "dataset_name": base_name,
         "dataset_dir": test_video_ingest_dataset_dir,
         "annotation_format": "auto",  # Will auto-detect 'video'
         "fps": 1,
@@ -51,6 +51,8 @@ def test_dataset_ingest_workflow_video(test_video_ingest_dataset_dir):
 
     # Run the workflow
     run_data_ingest()
+
+    dataset_name = "video_ingest_test1"
 
     # Load and validate the output dataset
     dataset = fo.load_dataset(dataset_name)
