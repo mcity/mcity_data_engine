@@ -2,7 +2,7 @@ import os
 import psutil
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["embedding_selection"]  # Choose from WORKFLOWS keys
+SELECTED_WORKFLOW = ["data_ingest"]  # Choose from WORKFLOWS keys
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
@@ -305,7 +305,7 @@ WORKFLOWS = {
         },
     },
     "data_ingest": {
-        "dataset_name": "custom_dset",
+        "dataset_name": "custom_data",
         "annotation_format": "auto",  # Options: "auto", "coco", "voc", "yolo", "image_only", "video"
         "dataset_dir": "/home/dataengine/Downloads/vid",
         "split_percentages": [0.7, 0.15, 0.15],  # Optional train/val/test
