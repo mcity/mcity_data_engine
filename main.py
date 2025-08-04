@@ -47,6 +47,7 @@ from workflows.embedding_selection import EmbeddingSelection
 from workflows.ensemble_selection import EnsembleSelection
 from workflows.auto_label_mask import AutoLabelMask
 from workflows.class_mapping import ClassMapper
+from workflows.data_ingest import run_data_ingest
 
 wandb_run = None  # Init globally to make sure it is available
 
@@ -862,6 +863,21 @@ class WorkflowExecutor:
                         test_dataset_source=None,
                         test_dataset_target=None,
                     )
+                elif workflow == "data_ingest":
+                    dataset = run_data_ingest()
+
+                    dataset_info = {
+                        "name": "custom_dataset",
+                        "v51_type": "FiftyOneDataset",
+                        "splits": ["train", "val", "test"],
+                    }
+
+                    self.dataset = dataset
+                    self.dataset_info = dataset_info
+                    self.selected_dataset = "custom_dataset"
+
+                    logging.info(f"Data ingestion completed successfully.")
+
 
                 else:
                     logging.error(
@@ -889,27 +905,49 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
 
     # Execute workflows
-    dataset, dataset_info = load_dataset(SELECTED_DATASET)
+    if "data_ingest" in SELECTED_WORKFLOW:
+        executor = WorkflowExecutor(
+            SELECTED_WORKFLOW,
+            SELECTED_DATASET["name"],
+            dataset=None,
+            dataset_info=None,
+        )
+        executor.execute()
 
-    executor = WorkflowExecutor(
-        SELECTED_WORKFLOW, SELECTED_DATASET["name"], dataset, dataset_info
-    )
-    executor.execute()
+        # FIX: Pull back outputs after ingestion
+        dataset = executor.dataset
+        dataset_info = executor.dataset_info
 
-    # Launch V51 session
-    dataset.reload()
-    dataset.save()
-    arrange_fields_in_groups(dataset)
-    logging.info(f"Launching Voxel51 session for dataset {dataset_info['name']}.")
+    else:
+        dataset, dataset_info = load_dataset(SELECTED_DATASET)
 
-    # Dataset stats
-    logging.debug(dataset)
-    logging.debug(dataset.stats(include_media=True))
+        executor = WorkflowExecutor(
+            SELECTED_WORKFLOW,
+            SELECTED_DATASET["name"],
+            dataset,
+            dataset_info,
+        )
+        executor.execute()
 
-    # V51 UI launch
-    session = fo.launch_app(
-        dataset, address=V51_ADDRESS, port=V51_PORT, remote=V51_REMOTE
-    )
+
+    if dataset is not None:
+        dataset.reload()
+        dataset.save()
+        arrange_fields_in_groups(dataset)
+        logging.info(f"Launching Voxel51 session for dataset {dataset_info['name']}.")
+
+        # Dataset stats
+        logging.debug(dataset)
+        logging.debug(dataset.stats(include_media=True))
+
+        # V51 UI launch
+        session = fo.launch_app(
+            dataset, address=V51_ADDRESS, port=V51_PORT, remote=V51_REMOTE
+        )
+    else:
+        logging.info("Skipping Voxel51 session.")
+
+
 
     time_stop = time.time()
     logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")

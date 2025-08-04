@@ -475,6 +475,37 @@ def load_fisheye_8k(dataset_info):
 
     return dataset
 
+from config.config import SELECTED_DATASET
+def load_custom_dataset(dataset_info=None):
+    """
+    Loads a dataset from FiftyOne's persistent store using the name from SELECTED_DATASET.
+    If not found, tries to match by suffix and load the latest version.
+    """
+    base_name = SELECTED_DATASET.get("name", "custom_dataset")
+    existing = fo.list_datasets()
+
+    # Try exact match first
+    if base_name in existing:
+        dataset = fo.load_dataset(base_name)
+        logging.info(f"Loaded dataset with exact name: '{base_name}'")
+        return dataset
+
+    # Match prefix like custom_dataset1, custom_dataset2, etc.
+    matching = [name for name in existing if name.startswith(base_name)]
+    if not matching:
+        raise ValueError(f"No dataset found matching '{base_name}' or any suffixed versions.")
+
+    def extract_suffix(name):
+        try:
+            return int(name[len(base_name):])
+        except ValueError:
+            return 0 if name == base_name else -1
+
+    best_match = max(matching, key=extract_suffix)
+    dataset = fo.load_dataset(best_match)
+    logging.info(f"Loaded dataset by suffix match: '{best_match}'")
+    return dataset
+
 
 def load_mars_multiagent(dataset_info):
     """Load the MARS multi-agent dataset from Hugging Face."""
