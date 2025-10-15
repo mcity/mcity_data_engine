@@ -2,7 +2,7 @@ import os
 import psutil
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["data_ingest"]  # Choose from WORKFLOWS keys
+SELECTED_WORKFLOW = ["auto_labeling"]  # Choose from WORKFLOWS keys
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
@@ -66,11 +66,12 @@ WORKFLOWS = {
         "mode": ["train","inference"],  # "train" and "inference" supported
         "model_source": [
             # "hf_models_objectdetection",
-            "ultralytics",
+            #"ultralytics",
             # "custom_codetr",
+            "roboflow",
         ],
-        "n_worker_dataloader": 8,
-        "epochs": 1,
+        "n_worker_dataloader": 3,
+        "epochs": 2,
         "early_stop_patience": 0,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -128,6 +129,24 @@ WORKFLOWS = {
             ],
             "n_gpus": "1",
             "container_tool": "docker",
+        },
+        "roboflow": {  # Roboflow RF-DETR configuration
+            "export_dataset_root": "output/datasets/roboflow_data/",
+            "configs": [
+                "rfdetr_nano",
+                "rfdetr_small",
+                #"rfdetr_medium",
+                #"rfdetr_large",
+            ],
+            # RF-DETR specific parameters only
+            "batch_size": 4,                     # Override default batch size
+            "grad_accum_steps": 4,                # Gradient accumulation steps
+            "lr_encoder": None,                   # Encoder-specific learning rate (optional)
+            "resolution": None,                   # Image resolution, must be divisible by 56 (optional)
+            "use_ema": True,                      # Exponential moving average
+            "gradient_checkpointing": False,      # Memory optimization
+            "early_stopping_min_delta": 0.001,    # Minimum improvement for early stopping
+            "early_stopping_use_ema": True,       # Use EMA model for early stopping
         },
         "ultralytics": {
             "export_dataset_root": "output/datasets/ultralytics_data/",
@@ -327,9 +346,9 @@ GLOBAL_SEED = 0
 
 """Hugging Face Config"""
 #: Hugging Face name or Organization
-HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
+HF_ROOT = "Abeyankar"  # https://huggingface.co/mcity-data-engine
 #: Determins if model weights should be uploaded to Hugging Face
-HF_DO_UPLOAD = False
+HF_DO_UPLOAD = True
 
 """Weights and Biases Config"""
 #: Determines if tracking with Weights and Biases is activated

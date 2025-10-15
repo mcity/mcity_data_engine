@@ -40,7 +40,7 @@ from transformers import (
     TrainingArguments,
 )
 from ultralytics import YOLO
-
+from rfdetr import RFDETRNano, RFDETRSmall, RFDETRMedium, RFDETRLarge
 import wandb
 from config.config import (
     ACCEPTED_SPLITS,
@@ -982,12 +982,14 @@ class UltralyticsObjectDetection:
             else:
                 dataset_view = self.dataset
 
-            dataset_view.evaluate_detections(
+            results = dataset_view.evaluate_detections(
                 pred_key,
                 gt_field=gt_field,
                 eval_key=eval_key,
                 compute_mAP=True,
             )
+
+            results.print_report()
 
 
 def transform_batch_standalone(
@@ -1360,12 +1362,14 @@ class HuggingFaceObjectDetection:
             else:
                 dataset_view = self.dataset
 
-            dataset_view.evaluate_detections(
+            results = dataset_view.evaluate_detections(
                 pred_key,
                 gt_field=gt_field,
                 eval_key=eval_key,
                 compute_mAP=True,
             )
+
+            results.print_report()
 
 
 class CustomCoDETRObjectDetection:
@@ -1746,12 +1750,15 @@ class CustomCoDETRObjectDetection:
             logging.info(
                 f"Starting evaluation for {pred_key} in evaluation key {eval_key}."
             )
-            dataset_view.evaluate_detections(
+
+            results = dataset_view.evaluate_detections(
                 pred_key,
                 gt_field=gt_field,
                 eval_key=eval_key,
                 compute_mAP=True,
             )
+
+            results.print_report()
 
     def _run_container(
         self,
@@ -1834,3 +1841,618 @@ class CustomCoDETRObjectDetection:
         except Exception as e:
             logging.error(f"Error during Co-DETR container run: {e}")
             return False
+
+
+class CustomRFDETRObjectDetection:
+    """Interface for running RF-DETR object detection model training and inference"""
+
+    def __init__(self, dataset, dataset_info, run_config):
+        """Initialize RF-DETR interface with dataset and configuration"""
+        self.dataset = dataset
+        self.dataset_name = dataset_info["name"]
+        self.export_dir_root = run_config["export_dataset_root"]
+        self.config_key = os.path.splitext(os.path.basename(run_config.get("config", "rfdetr")))[0]
+        self.hf_repo_name = f"{HF_ROOT}/{self.dataset_name}_{self.config_key}"
+
+    def convert_data(self):
+        """
+        Convert dataset to RF-DETR COCO format with zero-indexed categories.
+        Automatically creates missing splits by splitting val or test 50/50.
+
+        Expected output structure:
+        dsname/rfdetr/
+            test/
+                _annotations.coco.json
+                images...
+            train/
+                _annotations.coco.json
+                images...
+            valid/
+                _annotations.coco.json
+                images...
+        """
+        export_dir = os.path.join(self.export_dir_root, self.dataset_name, "rfdetr")
+
+        # Check if folder already exists
+        if os.path.exists(export_dir):
+            logging.warning(
+                f"Folder {export_dir} already exists, skipping data export."
+            )
+            return
+
+        # Make directory
+        os.makedirs(export_dir, exist_ok=True)
+        logging.info(f"Exporting data to {export_dir}")
+
+        # Check what splits exist
+        available_tags = self.dataset.distinct("tags")
+        has_train = "train" in available_tags
+        has_val = "val" in available_tags
+        has_test = "test" in available_tags
+
+        logging.info(f"Available splits in dataset: {available_tags}")
+
+        # Handle missing splits - split val or test 50/50
+        if has_train and has_val and not has_test:
+            logging.info("No test split found. Splitting val 50/50 into valid and test...")
+            self._split_50_50("val", "test")
+        elif has_train and has_test and not has_val:
+            logging.info("No val split found. Splitting test 50/50 into valid and test...")
+            self._split_50_50("test", "val")
+        elif not has_train or (not has_val and not has_test):
+            logging.error(
+                f"Dataset must have 'train' and at least one of 'val' or 'test'. "
+                f"Found: {available_tags}"
+            )
+            raise ValueError("Insufficient splits in dataset")
+
+        # RF-DETR expects 'train', 'valid', 'test' splits
+        split_mapping = {
+            "train": "train",
+            "val": "valid",  # Map 'val' to 'valid' for RF-DETR
+            "test": "test"
+        }
+
+        for v51_split, rfdetr_split in split_mapping.items():
+            split_view = self.dataset.match_tags(v51_split)
+
+            if len(split_view) == 0:
+                logging.warning(f"No samples found for split '{v51_split}', skipping.")
+                continue
+
+            split_export_dir = os.path.join(export_dir, rfdetr_split)
+            os.makedirs(split_export_dir, exist_ok=True)
+
+            # Export to COCO format
+            annotation_path = os.path.join(split_export_dir, "_annotations.coco.json")
+
+            logging.info(f"Exporting {len(split_view)} samples to {rfdetr_split}/")
+
+            split_view.export(
+                dataset_type=fo.types.COCODetectionDataset,
+                data_path=split_export_dir,
+                labels_path=annotation_path,
+                label_field="ground_truth",
+            )
+
+            # Fix category IDs: Convert from 1-indexed to 0-indexed
+            self._fix_annotation_indices(annotation_path)
+
+        logging.info(f"Successfully exported dataset to RF-DETR format at {export_dir}")
+
+    def _split_50_50(self, source_split, target_split):
+        """
+        Split a dataset split 50/50 into two splits.
+
+        Args:
+            source_split: The split to divide (e.g., "val" or "test")
+            target_split: The new split to create (e.g., "test" or "val")
+
+        Example:
+            - 1000 val samples → 500 val + 500 test
+            - 1000 test samples → 500 val + 500 test
+        """
+        source_samples = self.dataset.match_tags(source_split)
+        source_ids = source_samples.values("id")
+
+        if len(source_ids) < 2:
+            logging.error(
+                f"Not enough samples in '{source_split}' to split. "
+                f"Need at least 2, found {len(source_ids)}"
+            )
+            raise ValueError(f"Insufficient samples in {source_split} split")
+
+        # Shuffle for random split
+        random.seed(GLOBAL_SEED)  # Use GLOBAL_SEED instead of 42
+        random.shuffle(source_ids)
+
+        # Split 50/50
+        split_point = len(source_ids) // 2
+        keep_in_source = source_ids[:split_point]
+        move_to_target = source_ids[split_point:]
+
+        logging.info(
+            f"Splitting {len(source_ids)} '{source_split}' samples: "
+            f"{len(keep_in_source)} remain in '{source_split}', "
+            f"{len(move_to_target)} moved to '{target_split}'"
+        )
+
+        # Move samples to target split
+        for sample_id in move_to_target:
+            sample = self.dataset[sample_id]
+            sample.tags.remove(source_split)
+            sample.tags.append(target_split)
+            sample.save()
+
+        self.dataset.save()
+        logging.info(f"Successfully created '{target_split}' split from '{source_split}'")
+
+    def _fix_annotation_indices(self, annotation_path):
+        """
+        Fix COCO annotation file to use zero-indexed category IDs.
+
+        Args:
+            annotation_path: Path to the _annotations.coco.json file
+        """
+        if not os.path.exists(annotation_path):
+            logging.error(f"Annotation file not found: {annotation_path}")
+            return
+
+        try:
+            # Create backup
+            backup_path = f"{annotation_path}.backup"
+            if not os.path.exists(backup_path):
+                shutil.copy2(annotation_path, backup_path)
+                logging.debug(f"Created backup: {backup_path}")
+
+            # Read annotation file
+            with open(annotation_path, 'r') as f:
+                data = json.load(f)
+
+            # Fix categories: 1-indexed → 0-indexed
+            if 'categories' in data:
+                for cat in data['categories']:
+                    if cat['id'] > 0:
+                        cat['id'] -= 1
+                logging.debug(f"Fixed {len(data['categories'])} category IDs")
+
+            # Fix annotations: 1-indexed → 0-indexed
+            if 'annotations' in data:
+                for ann in data['annotations']:
+                    if ann['category_id'] > 0:
+                        ann['category_id'] -= 1
+                logging.debug(f"Fixed {len(data['annotations'])} annotation category IDs")
+
+            # Save fixed file
+            with open(annotation_path, 'w') as f:
+                json.dump(data, f, indent=2)
+
+            logging.info(f"Successfully fixed indices in: {annotation_path}")
+
+        except Exception as e:
+            logging.error(f"Error fixing annotation indices in {annotation_path}: {e}")
+            # Restore from backup if something went wrong
+            backup_path = f"{annotation_path}.backup"
+            if os.path.exists(backup_path):
+                shutil.copy2(backup_path, annotation_path)
+                logging.info(f"Restored from backup due to error")
+
+    def train(self, run_config, shared_config):
+        """Train RF-DETR model using shared and model-specific configuration"""
+
+
+
+
+        # Model selection mapping
+        MODEL_REGISTRY = {
+            "rfdetr_nano": RFDETRNano,
+            "rfdetr_small": RFDETRSmall,
+            "rfdetr_medium": RFDETRMedium,
+            "rfdetr_large": RFDETRLarge,
+        }
+
+        model_name = self.config_key.lower()
+
+        if model_name not in MODEL_REGISTRY:
+            logging.error(
+                f"Model '{model_name}' not supported. "
+                f"Available models: {list(MODEL_REGISTRY.keys())}"
+            )
+            raise ValueError(f"Unsupported RF-DETR model: {model_name}")
+
+        # Initialize model
+        logging.info(f"Initializing {model_name}...")
+        ModelClass = MODEL_REGISTRY[model_name]
+        model = ModelClass()
+
+        # Prepare dataset directory
+        dataset_dir = os.path.join(self.export_dir_root, self.dataset_name, "rfdetr")
+
+        if not os.path.exists(dataset_dir):
+            logging.error(f"Dataset directory not found: {dataset_dir}")
+            logging.info("Please run convert_data() first to prepare the dataset.")
+            raise FileNotFoundError(f"Dataset not found at {dataset_dir}")
+
+        # Output directory
+        output_dir = os.path.join("output/models/rfdetr", self.dataset_name, model_name)
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Build training arguments
+        train_kwargs = {
+            "dataset_dir": dataset_dir,
+            "output_dir": output_dir,
+
+            # === SHARED parameters from top-level config ===
+            "epochs": shared_config.get("epochs", 50),
+            "lr": shared_config.get("learning_rate", 1e-4),
+            "weight_decay": shared_config.get("weight_decay", 0.0001),
+
+            # === RF-DETR specific parameters ===
+            "batch_size": run_config.get("batch_size", 16),
+            "grad_accum_steps": run_config.get("grad_accum_steps", 1),
+            "lr_encoder": run_config.get("lr_encoder", None),
+            "resolution": run_config.get("resolution", None),
+            "use_ema": run_config.get("use_ema", True),
+            "gradient_checkpointing": run_config.get("gradient_checkpointing", False),
+
+            # === Logging (use global settings) ===
+            "tensorboard": True,
+            "wandb": WANDB_ACTIVE,
+            "project": f"MCityDataEngine-RFDETR",
+            "run": f"{self.dataset_name}_{model_name}",
+
+            # === Early stopping ===
+            "early_stopping": True,
+            "early_stopping_patience": shared_config.get("early_stop_patience", 10),
+            "early_stopping_min_delta": run_config.get(
+                "early_stopping_min_delta",
+                shared_config.get("early_stop_threshold", 0.001)
+            ),
+            "early_stopping_use_ema": run_config.get("early_stopping_use_ema", True),
+        }
+
+        # Set device - use all available GPUs
+        if torch.cuda.is_available():
+            if torch.cuda.device_count() > 1:
+                device = "cuda"
+                logging.info(f"Using {torch.cuda.device_count()} GPUs for training")
+            else:
+                device = "cuda:0"
+                logging.info("Using single GPU for training")
+        else:
+            device = "cpu"
+            logging.warning("No GPU available, training on CPU")
+
+        train_kwargs["device"] = device
+
+        # Remove None values
+        train_kwargs = {k: v for k, v in train_kwargs.items() if v is not None}
+
+        # Log configuration
+        logging.info("="*70)
+        logging.info("RF-DETR TRAINING CONFIGURATION")
+        logging.info("="*70)
+        logging.info(f"Model: {model_name}")
+        logging.info(f"Dataset: {dataset_dir}")
+        logging.info(f"Output: {output_dir}")
+        logging.info(f"WandB Active: {WANDB_ACTIVE}")
+        for key, value in train_kwargs.items():
+            if key not in ["dataset_dir", "output_dir"]:
+                logging.info(f"  {key}: {value}")
+        logging.info("="*70)
+
+        # Train
+        try:
+            logging.info("Starting RF-DETR training...")
+            model.train(**train_kwargs)
+            logging.info("RF-DETR training completed successfully!")
+
+            # Model paths to check (RF-DETR can save in different locations)
+            possible_model_paths = [
+                os.path.join(output_dir, "checkpoints", "best.pt"),
+                os.path.join(output_dir, "checkpoint_best_total.pth"),
+                os.path.join(output_dir, "best.pt"),
+            ]
+
+            self.model_path = None
+            for path in possible_model_paths:
+                if os.path.exists(path):
+                    self.model_path = path
+                    logging.info(f"Found trained model at: {path}")
+                    break
+
+            if self.model_path is None:
+                logging.warning("Could not find trained model file in expected locations")
+                self.model_path = possible_model_paths[0]  # Default to first path
+
+            # Upload to Hugging Face if configured
+            if HF_DO_UPLOAD:
+                self._upload_to_hf()
+
+            return True
+
+        except Exception as e:
+            logging.error(f"❌ Training failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+
+    def _upload_to_hf(self):
+        """Upload trained RF-DETR model to Hugging Face"""
+
+        if not os.path.exists(self.model_path):
+            logging.warning(f"Model file not found at {self.model_path}, skipping upload.")
+            return
+
+        try:
+            logging.info(f"Uploading RF-DETR model to Hugging Face: {self.hf_repo_name}")
+            api = HfApi()
+
+            # Create repository
+            api.create_repo(
+                self.hf_repo_name,
+                private=True,
+                repo_type="model",
+                exist_ok=True
+            )
+
+            # Upload model file
+            api.upload_file(
+                path_or_fileobj=self.model_path,
+                path_in_repo="best.pt",
+                repo_id=self.hf_repo_name,
+                repo_type="model",
+            )
+
+            logging.info(f"Model uploaded successfully to {self.hf_repo_name}")
+
+        except Exception as e:
+            logging.error(f"Failed to upload model to Hugging Face: {e}")
+            import traceback
+            traceback.print_exc()
+
+
+    def inference(self, inference_settings, gt_field="ground_truth"):
+        """Performs inference using RF-DETR model on a dataset with optional evaluation"""
+
+
+
+        logging.info(f"Running RF-DETR inference on dataset {self.dataset_name}")
+
+        # Model selection mapping
+        MODEL_REGISTRY = {
+            "rfdetr_nano": RFDETRNano,
+            "rfdetr_small": RFDETRSmall,
+            "rfdetr_medium": RFDETRMedium,
+            "rfdetr_large": RFDETRLarge,
+        }
+
+        # Determine model and dataset names
+        dataset_name = None
+        model_name = self.config_key.lower()
+
+        model_hf = inference_settings.get("model_hf", None)
+
+        # Determine model path
+        if model_hf is not None:
+            # Use model from Hugging Face
+            logging.info(f"Using model from Hugging Face: {model_hf}")
+            dataset_name, model_name = get_dataset_and_model_from_hf_id(model_hf)
+
+            # Set up directories
+            download_dir = os.path.join(
+                "output/models/rfdetr", dataset_name, model_name
+            )
+            os.makedirs(download_dir, exist_ok=True)
+
+            # Download model from Hugging Face
+            try:
+                logging.info(f"Downloading model from Hugging Face: {model_hf}")
+                model_path = hf_hub_download(
+                    repo_id=model_hf,
+                    filename="best.pt",
+                    local_dir=download_dir,
+                )
+            except Exception as e:
+                logging.error(f"Failed to download model from Hugging Face: {e}")
+                return False
+        else:
+            # Use locally trained model
+            dataset_name = self.dataset_name
+
+            # Check multiple possible locations
+            possible_paths = [
+                os.path.join("output/models/rfdetr", self.dataset_name, model_name, "checkpoints", "best.pt"),
+                os.path.join("output/models/rfdetr", self.dataset_name, model_name, "checkpoint_best_total.pth"),
+                os.path.join("output/models/rfdetr", self.dataset_name, model_name, "best.pt"),
+            ]
+
+            model_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    model_path = path
+                    logging.info(f"Found model at: {path}")
+                    break
+
+            if model_path is None:
+                # Try downloading from auto-generated HF repo
+                logging.info(f"Local model not found. Attempting to download from {self.hf_repo_name}")
+                download_dir = os.path.join(
+                    "output/models/rfdetr", self.dataset_name, model_name
+                )
+                os.makedirs(download_dir, exist_ok=True)
+
+                try:
+                    model_path = hf_hub_download(
+                        repo_id=self.hf_repo_name,
+                        filename="best.pt",
+                        local_dir=download_dir,
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to load or download model: {e}")
+                    return False
+
+        # Check if model exists
+        if not os.path.exists(model_path):
+            logging.error(f"Model file not found: {model_path}")
+            return False
+
+        logging.info(f"Using model: {model_path}")
+
+        # Initialize model
+        if model_name not in MODEL_REGISTRY:
+            logging.error(f"Model '{model_name}' not supported.")
+            return False
+
+        ModelClass = MODEL_REGISTRY[model_name]
+
+        # Get class names from dataset
+        try:
+            class_names = self.dataset.distinct(f"{gt_field}.detections.label")
+            class_names = sorted(class_names)
+            num_classes = len(class_names)
+            logging.info(f"Found {num_classes} classes: {class_names}")
+        except Exception as e:
+            logging.warning(f"Could not extract class names from dataset: {e}")
+            num_classes = 8  # Default fallback
+            class_names = None
+
+        # Load model with trained weights
+        try:
+            logging.info("Loading RF-DETR model...")
+            model = ModelClass(
+                pretrain_weights=model_path,
+                num_classes=num_classes
+            )
+
+            logging.info("RF-DETR model loaded successfully")
+        except Exception as e:
+            logging.error(f"Failed to load model: {e}")
+            return False
+
+        # Prepare dataset view
+        detection_threshold = inference_settings.get("detection_threshold", 0.2)
+
+        if inference_settings.get("inference_on_test", True):
+            INFERENCE_SPLITS = ["test"]
+            dataset_view = self.dataset.match_tags(INFERENCE_SPLITS)
+            if len(dataset_view) == 0:
+                logging.error(f"Dataset has no splits: {INFERENCE_SPLITS}")
+                return False
+        else:
+            dataset_view = self.dataset
+
+        # Prediction key
+        pred_key = f"pred_od_{model_name}-{dataset_name}"
+
+        logging.info(f"Running inference on {len(dataset_view)} samples...")
+        logging.info(f"Detection threshold: {detection_threshold}")
+
+        # Run inference on each sample
+        try:
+            processed_count = 0
+
+            for sample in tqdm(dataset_view.iter_samples(progress=True, autosave=True),
+                            total=len(dataset_view),
+                            desc="RF-DETR Inference"):
+
+                try:
+                    # Load image
+                    image = Image.open(sample.filepath)
+                    img_width, img_height = image.size
+
+                    # Run inference using RF-DETR's predict method
+                    detections = model.predict(
+                        image,
+                        threshold=detection_threshold
+                    )
+
+                    # Convert supervision detections to FiftyOne format
+                    fo_detections = []
+
+                    if len(detections) > 0:
+                        for i in range(len(detections)):
+                            # Get detection data (RF-DETR returns supervision format)
+                            bbox = detections.xyxy[i]  # [x1, y1, x2, y2] in pixel coordinates
+                            confidence = detections.confidence[i] if detections.confidence is not None else 1.0
+                            class_id = detections.class_id[i] if detections.class_id is not None else 0
+
+                            # Convert to relative coordinates [x, y, width, height]
+                            x1, y1, x2, y2 = bbox
+                            rel_x = x1 / img_width
+                            rel_y = y1 / img_height
+                            rel_w = (x2 - x1) / img_width
+                            rel_h = (y2 - y1) / img_height
+
+                            # Get class name
+                            if class_names and class_id < len(class_names):
+                                class_name = class_names[class_id]
+                            else:
+                                class_name = f"class_{class_id}"
+
+                            # Create FiftyOne detection
+                            fo_detection = fo.Detection(
+                                label=class_name,
+                                bounding_box=[rel_x, rel_y, rel_w, rel_h],
+                                confidence=float(confidence)
+                            )
+                            fo_detections.append(fo_detection)
+
+                    # Save detections to sample
+                    sample[pred_key] = fo.Detections(detections=fo_detections)
+                    processed_count += 1
+
+                except Exception as e:
+                    logging.error(f"Error processing sample {sample.id}: {e}")
+                    continue
+
+            logging.info(f"Inference completed on {processed_count}/{len(dataset_view)} samples")
+            logging.info(f"Predictions saved to field '{pred_key}'")
+
+        except Exception as e:
+            logging.error(f"Error during inference: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+        # Evaluate if requested
+        if inference_settings.get("do_eval", True):
+            eval_key = f"eval_{model_name}_{dataset_name}".replace("-", "_")
+
+            if inference_settings.get("inference_on_test", True):
+                dataset_view = self.dataset.match_tags(["test"])
+            else:
+                dataset_view = self.dataset
+
+            # Filter samples that have both predictions and ground truth
+            dataset_view = dataset_view.exists(pred_key).exists(gt_field)
+
+            if len(dataset_view) == 0:
+                logging.warning("No samples found with both predictions and ground truth for evaluation")
+            else:
+                try:
+                    logging.info(f"Evaluating predictions on {len(dataset_view)} samples...")
+
+                    results = dataset_view.evaluate_detections(
+                        pred_key,
+                        gt_field=gt_field,
+                        eval_key=eval_key,
+                        compute_mAP=True,
+                        iou=0.5  # IoU threshold for matching
+                    )
+
+                    # Print evaluation report
+                    logging.info("="*70)
+                    logging.info("EVALUATION RESULTS")
+                    logging.info("="*70)
+                    results.print_report()
+                    logging.info("="*70)
+
+                    logging.info("Evaluation completed")
+                except Exception as e:
+                    logging.error(f"Evaluation failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+        return True
