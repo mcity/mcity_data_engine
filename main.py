@@ -37,6 +37,7 @@ from utils.wandb_helper import wandb_close, wandb_init
 from workflows.anomaly_detection import Anodec
 from workflows.auto_labeling import (
     CustomCoDETRObjectDetection,
+    CustomRFDETRObjectDetection,
     HuggingFaceObjectDetection,
     UltralyticsObjectDetection,
     ZeroShotObjectDetection,
@@ -686,6 +687,7 @@ class WorkflowExecutor:
                         "hf_models_objectdetection",
                         "ultralytics",
                         "custom_codetr",
+                        "roboflow",
                     ]
 
                     # Common parameters between models
@@ -831,6 +833,79 @@ class WorkflowExecutor:
                             workflow_auto_labeling_custom_codetr(
                                 self.dataset, self.dataset_info, run_config
                             )
+
+                    if SUPPORTED_MODEL_SOURCES[3] in selected_model_source:
+
+                        config_rfdetr = config_autolabel["roboflow"]
+
+                        # Shared config parameters
+                        shared_config = {
+                            "epochs": config_autolabel["epochs"],
+                            "learning_rate": config_autolabel["learning_rate"],
+                            "weight_decay": config_autolabel["weight_decay"],
+                            "early_stop_patience": config_autolabel["early_stop_patience"],
+                            "early_stop_threshold": config_autolabel["early_stop_threshold"],
+                        }
+
+                        run_config = {
+                            "export_dataset_root": config_rfdetr["export_dataset_root"],
+                            "mode": config_autolabel["mode"],
+                            "inference_settings": config_autolabel["inference_settings"],
+                            "config": None,
+                            # RF-DETR specific parameters
+                            "batch_size": config_rfdetr["batch_size"],
+                            "grad_accum_steps": config_rfdetr["grad_accum_steps"],
+                            "lr_encoder": config_rfdetr["lr_encoder"],
+                            "resolution": config_rfdetr["resolution"],
+                            "use_ema": config_rfdetr["use_ema"],
+                            "gradient_checkpointing": config_rfdetr["gradient_checkpointing"],
+                            "early_stopping_min_delta": config_rfdetr["early_stopping_min_delta"],
+                            "early_stopping_use_ema": config_rfdetr["early_stopping_use_ema"],
+                        }
+
+                        rfdetr_configs = config_rfdetr["configs"]
+
+                        for config in (
+                            pbar := tqdm(rfdetr_configs, desc="Processing RF-DETR configurations")
+                        ):
+                            pbar.set_description(f"RF-DETR model {config}")
+                            run_config["config"] = config
+
+                            try:
+                                wandb_exit_code = 0
+                                wandb_run = wandb_init(
+                                    run_name=config,
+                                    project_name="RF-DETR Auto Labeling",
+                                    dataset_name=self.dataset_info["name"],
+                                    config=run_config,
+                                    wandb_activate=True,
+                                )
+
+                                detector = CustomRFDETRObjectDetection(
+                                    self.dataset, self.dataset_info, run_config
+                                )
+
+                                # Convert data to RF-DETR format
+                                detector.convert_data()
+
+                                # Training
+                                if "train" in mode:
+                                    logging.info(f"Training RF-DETR model: {config}")
+                                    detector.train(run_config, shared_config)
+
+                                # Inference
+                                if "inference" in mode:
+                                    logging.info(f"Running inference for RF-DETR model: {config}")
+                                    detector.inference(
+                                        inference_settings=config_autolabel["inference_settings"]
+                                    )
+
+                            except Exception as e:
+                                logging.error(f"Error during RF-DETR workflow with {config}: {e}")
+                                wandb_exit_code = 1
+                            finally:
+                                wandb_close(wandb_exit_code)
+
 
                 elif workflow == "auto_labeling_zero_shot":
                     config = WORKFLOWS["auto_labeling_zero_shot"]
