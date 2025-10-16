@@ -70,8 +70,8 @@ WORKFLOWS = {
             # "custom_codetr",
             "roboflow",
         ],
-        "n_worker_dataloader": 3,
-        "epochs": 2,
+        "n_worker_dataloader": 8,
+        "epochs": 1,
         "early_stop_patience": 0,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -346,9 +346,9 @@ GLOBAL_SEED = 0
 
 """Hugging Face Config"""
 #: Hugging Face name or Organization
-HF_ROOT = "Abeyankar"  # https://huggingface.co/mcity-data-engine
+HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
 #: Determins if model weights should be uploaded to Hugging Face
-HF_DO_UPLOAD = True
+HF_DO_UPLOAD = False
 
 """Weights and Biases Config"""
 #: Determines if tracking with Weights and Biases is activated
