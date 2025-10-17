@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>MCity AI Agent · Chat + Ingestion</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="favicon.ico">
+<style>
+:root{
+ --bg:#0b1020; --panel:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#2563eb;
+--agent:#1f2937; --border:#263248; --radius:12px; --shadow:0 6px 20px rgba(0,0,0,.25);
+font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+}
+*{box-sizing:border-box}
+html, body {
+  height: 100%;
+  margin: 0;
+  background:
+    linear-gradient(rgba(7,12,24,0.70), rgba(7,12,24,0.70)),
+    url('mcity_agent_bg.jpg') no-repeat center center fixed;
+  background-size: cover;
+  color: var(--text);
+}
+.app{height:100%;display:flex;flex-direction:column}
+.app-header{
+  position: relative;
+  display:flex;
+  align-items:center;
+  justify-content:center;          /* center the brand */
+  padding:14px 16px;
+  border-bottom:1px solid var(--border);
+  backdrop-filter:blur(6px);
+}
+
+.brand{
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);     /* truly centered */
+  font-weight: 800;
+  font-size: 40px;                  /* bigger title */
+  letter-spacing: .3px;
+  text-shadow: 0 2px 10px rgba(0,0,0,.45);
+}
+.status{
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  display:flex;gap:8px;align-items:center;
+  color:var(--muted);font-size:13px;
+}
+.status-dot{color:#22c55e;font-size:14px;line-height:1}
+.app-grid{
+display:flex;
+gap:16px;
+flex:1;
+padding:16px;
+max-width:1400px;
+margin:0 auto;
+width:100%;
+min-height:0;
+overflow:hidden;
+}
+.pane{
+background:linear-gradient(180deg, rgba(3,6,18,.85), rgba(3,6,18,.95));
+border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);
+display:flex;flex-direction:column;min-height:0
+}
+/* Chat - 60% width */
+.pane-chat{
+flex:0 0 60%;
+overflow:hidden;
+min-width:350px;
+}
+/* Ingestion - 40% width */
+.pane-ingest{
+flex:0 0 40%;
+padding:16px;
+min-width:320px;
+}
+.chat{
+padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;flex:1
+}
+.msg{display:flex;gap:8px}
+.msg.user{justify-content:flex-end}
+.msg.agent{justify-content:flex-start}
+.bubble{
+max-width:min(75%,720px);padding:10px 12px;border-radius:var(--radius);
+box-shadow:var(--shadow);line-height:1.45;white-space:pre-wrap;word-wrap:break-word
+}
+.user .bubble{background:var(--accent);color:white;border-bottom-right-radius:6px}
+.agent .bubble{background:var(--agent);border:1px solid var(--border);border-bottom-left-radius:6px}
+.typing{opacity:.7;font-size:13px;color:var(--muted);padding:0 4px 6px 4px}
+.composer{
+display:grid;grid-template-columns:1fr auto;gap:10px;padding:12px;border-top:1px solid var(--border);
+background:linear-gradient(180deg, rgba(3,6,18,.6), rgba(3,6,18,.85))
+}
+textarea{
+width:100%;resize:none;max-height:160px;padding:12px;border-radius:10px;border:1px solid var(--border);
+background:#0a1224;color:var(--text);outline:none
+}
+button{
+padding:0 16px;border-radius:10px;border:1px solid var(--border);
+background:var(--accent);color:white;font-weight:600;cursor:pointer;min-width:90px
+}
+button:disabled{opacity:.65;cursor:not-allowed}
+/* Ingestion */
+.ingest-card{
+background:#0a1224;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);
+padding:16px;display:flex;flex-direction:column;gap:12px;min-height:0
+}
+.ingest-card h2{margin:0 0 4px 0}
+.ingest-form{display:flex;flex-direction:column;gap:10px}
+.ingest-form label{font-weight:600;color:var(--muted)}
+.ingest-form input, .ingest-form button{
+padding:10px;border-radius:10px;border:1px solid var(--border);background:#0b1328;color:var(--text)
+}
+.ingest-form input[type="file"]{padding:8px}
+.ingest-form button{background:var(--accent);border-color:transparent}
+.grid-4 {
+  display: grid;
+  grid-template-columns: 80px 80px 80px 80px;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.grid-4 > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.grid-4 label {
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0;
+  font-size: 12px;
+}
+.grid-4 input {
+  padding: 6px 4px;
+  font-size: 13px;
+}
+.ingest-status{font-weight:700;margin-top:6px;min-height:20px}
+.ingest-logs{
+margin-top:6px;padding:10px;background:#000;color:#ffa;height:700px;overflow-y:auto;white-space:pre-wrap;
+border-radius:10px;border:1px solid #1d273f;font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace
+}
+/* log coloring */
+.log-line{margin:0}
+.log-line.progress{color:#93c5fd}
+.log-line.error{color:#fca5a5}
+.log-line.agent{color:#a7f3d0}
+
+/* Only stack on very small screens */
+@media (max-width: 768px){
+.app-grid{
+flex-direction:column;
+}
+.pane-chat{
+flex:1;
+min-width:auto;
+}
+.pane-ingest{
+flex:0 0 auto;
+min-width:auto;
+}
+
+}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="app-header">
+<div class="brand">MCity AI Agent</div>
+<div class="status">
+<span class="status-dot" id="chatStatus">●</span>
+<span id="chatStatusText">chat: ready</span>
+</div>
+</header>
+<div class="app-grid">
+<!-- LEFT: Chat (70%) -->
+<section class="pane pane-chat">
+<main id="chat" class="chat"></main>
+<form id="form" class="composer">
+<textarea id="input" rows="1" placeholder="Type a message…" autocomplete="off"></textarea>
+<button id="send" type="submit">Send</button>
+</form>
+</section>
+<!-- RIGHT: Ingestion (30%) -->
+<aside class="pane pane-ingest">
+<div class="ingest-card">
+<h2>Data Ingestion</h2>
+<form id="ingestForm" enctype="multipart/form-data" class="ingest-form">
+<label>Dataset ZIP</label>
+<input type="file" name="file" required accept=".zip">
+<div class="grid-4">
+  <div>
+    <label>FPS</label>
+    <input type="number" name="fps" value="2" step="1" required>
+  </div>
+  <div>
+    <label>Train %</label>
+    <input type="number" name="train" value="0.7" step="0.01" required>
+  </div>
+  <div>
+    <label>Val %</label>
+    <input type="number" name="val" value="0.2" step="0.01" required>
+  </div>
+  <div>
+    <label>Test %</label>
+    <input type="number" name="test" value="0.1" step="0.01" required>
+  </div>
+</div>
+<button type="submit">Start Ingestion</button>
+</form>
+<div id="ingestStatus" class="ingest-status"></div>
+<div class="progress-wrap" aria-hidden="true">
+<div id="ingestProgress" class="progress"></div>
+</div>
+<pre id="ingestLogs" class="ingest-logs"></pre>
+</div>
+</aside>
+</div>
+</div>
+<script>
+// Chat + Ingestion functionality
+const CHAT_BASE = "http://localhost:8001";  // Chat server
+const INGEST_BASE = "http://localhost:8002"; // Ingestion server
+
+// Chat functionality
+const chatEl = document.getElementById("chat");
+const formEl = document.getElementById("form");
+const inputEl = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+const chatDot = document.getElementById("chatStatus");
+const chatTxt = document.getElementById("chatStatusText");
+
+let history = [];
+
+function addMsg(role, text) {
+    const line = document.createElement("div");
+    line.className = `msg ${role}`;
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = text;
+    line.appendChild(bubble);
+    chatEl.appendChild(line);
+    chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+function setChatStatus(ok) {
+    chatDot.style.color = ok ? "#22c55e" : "#f97316";
+    chatTxt.textContent = ok ? "chat: ready" : "chat: offline";
+}
+
+async function chatSend(content) {
+    addMsg("user", content);
+    // typing indicator
+    const typing = document.createElement("div");
+    typing.className = "typing";
+    typing.textContent = "Agent is typing…";
+    chatEl.appendChild(typing);
+    chatEl.scrollTop = chatEl.scrollHeight;
+
+    try {
+        const res = await fetch(`${CHAT_BASE}/chat`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ message: content, history })
+        });
+        if (!res.ok) throw new Error(`chat failed: ${res.status}`);
+        const data = await res.json();
+        const reply = data.reply || "";
+        typing.remove();
+        addMsg("agent", reply);
+
+        history.push([content, reply]);
+        setChatStatus(true);
+    } catch (err) {
+        typing.remove();
+        addMsg("agent", `❌ ${err.message}`);
+        setChatStatus(false);
+    }
+}
+
+formEl.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const val = inputEl.value.trim();
+    if (!val) return;
+    inputEl.value = "";
+    chatSend(val);
+});
+
+// Ingestion functionality
+document.getElementById('ingestForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const logsEl = document.getElementById('ingestLogs');
+    const statusEl = document.getElementById('ingestStatus');
+
+    logsEl.textContent = "";
+    statusEl.textContent = "Connecting to ingestion server...";
+
+    try {
+        // Test connection first
+        logsEl.textContent += `[INFO] Connecting to ${INGEST_BASE}...\n`;
+        logsEl.scrollTop = logsEl.scrollHeight;
+
+        // Upload the ZIP
+        const uploadRes = await fetch(`${INGEST_BASE}/ingest/upload`, {
+            method: "POST",
+            body: formData,
+            timeout: 10000 // 10 second timeout
+        });
+
+        if (!uploadRes.ok) {
+            const errorText = await uploadRes.text();
+            throw new Error(`Upload failed: ${uploadRes.status} ${uploadRes.statusText}\n${errorText}`);
+        }
+
+        const uploadData = await uploadRes.json();
+        const jobId = uploadData.job_id;
+
+        statusEl.textContent = `Ingestion started (Job: ${jobId})`;
+        logsEl.textContent += `[INFO] Upload successful, Job ID: ${jobId}\n`;
+        logsEl.textContent += `[INFO] Connecting to event stream...\n`;
+        logsEl.scrollTop = logsEl.scrollHeight;
+
+        // Listen to SSE events
+        const evtSource = new EventSource(`${INGEST_BASE}/ingest/stream/${jobId}`);
+
+        evtSource.onopen = () => {
+            logsEl.textContent += `[INFO] Event stream connected\n`;
+            logsEl.scrollTop = logsEl.scrollHeight;
+        };
+
+        evtSource.onerror = (error) => {
+            logsEl.textContent += `[ERROR] Event stream error: ${error.type}\n`;
+            logsEl.scrollTop = logsEl.scrollHeight;
+            statusEl.textContent = "❌ Event stream disconnected";
+        };
+
+        evtSource.addEventListener("log", (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                logsEl.textContent += `[LOG] ${data.data.msg}\n`;
+                logsEl.scrollTop = logsEl.scrollHeight;
+            } catch (e) {
+                logsEl.textContent += `[LOG] ${event.data}\n`;
+                logsEl.scrollTop = logsEl.scrollHeight;
+            }
+        });
+
+        evtSource.addEventListener("progress", (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                logsEl.textContent += `[PROGRESS] ${data.data.current}/${data.data.total}\n`;
+                logsEl.scrollTop = logsEl.scrollHeight;
+            } catch (e) {
+                logsEl.textContent += `[PROGRESS] ${event.data}\n`;
+                logsEl.scrollTop = logsEl.scrollHeight;
+            }
+        });
+
+        evtSource.addEventListener("agent", (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                logsEl.textContent += `[AGENT] ${data.data.msg}\n`;
+                logsEl.scrollTop = logsEl.scrollHeight;
+            } catch (e) {
+                logsEl.textContent += `[AGENT] ${event.data}\n`;
+                logsEl.scrollTop = logsEl.scrollHeight;
+            }
+        });
+
+        evtSource.addEventListener("error", (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                logsEl.textContent += `[ERROR] ${data.data.msg}\n`;
+                logsEl.scrollTop = logsEl.scrollHeight;
+            } catch (e) {
+                logsEl.textContent += `[ERROR] ${event.data}\n`;
+                logsEl.scrollTop = logsEl.scrollHeight;
+            }
+        });
+
+        evtSource.addEventListener("done", () => {
+            statusEl.textContent = "✅ Ingestion complete";
+            logsEl.textContent += `[INFO] Ingestion completed successfully\n`;
+            logsEl.scrollTop = logsEl.scrollHeight;
+            evtSource.close();
+        });
+
+    } catch (err) {
+        let errorMsg = err.message;
+        if (err.name === 'TypeError' && err.message.includes('fetch')) {
+            errorMsg = `Cannot connect to ingestion server at ${INGEST_BASE}. Make sure the server is running.`;
+        }
+
+        statusEl.textContent = "❌ Connection failed";
+        logsEl.textContent += `[ERROR] ${errorMsg}\n`;
+        logsEl.textContent += `[INFO] Troubleshooting:\n`;
+        logsEl.textContent += `  • Check if ingestion server is running on port 8001\n`;
+        logsEl.textContent += `  • Verify CORS is enabled on the server\n`;
+        logsEl.textContent += `  • Check network connectivity\n`;
+        logsEl.scrollTop = logsEl.scrollHeight;
+    }
+});
+</script>
+</body>
+</html>

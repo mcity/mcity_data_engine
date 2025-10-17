@@ -22,6 +22,9 @@ datasets:
   - name: fisheye8k
     loader_fct: load_fisheye_8k
     hf_dataset_name: Voxel51/fisheye8k
+  - name: fisheye8k_mini
+    loader_fct: load_fisheye_8k_mini
+    hf_dataset_name: Abeyankar/fisheye8k-mini
   - name: mcity_fisheye_ano_ped
     loader_fct: load_mcity_fisheye_2000
     local_path: datasets/midadvrb_ano_ped/

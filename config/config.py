@@ -2,13 +2,13 @@ import os
 import psutil
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["auto_labeling"]  # Choose from WORKFLOWS keys
+SELECTED_WORKFLOW = ["auto_labeling_zero_shot"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "fisheye8k",
-    "n_samples": None,  # 'None' (full dataset) or 'int' (subset of the dataset)
-    "custom_view": None,  # 'None' (full dataset) or select function from utils/custom_view
+    "name": "mcity_fisheye_2000",
+    "n_samples": None,
+    "custom_view": None,
 }
 
 #: Workflows and associated parameters
@@ -60,19 +60,24 @@ WORKFLOWS = {
             "AUROC",
             "F1Max",
         ],
-        "data_preparation": {"fisheye8k": {"location": "cam1", "rare_class": "Truck"}},
+        "data_preparation": {
+            "fisheye8k": {
+                "location": "cam1",
+                "rare_class": "Truck"
+            }
+        },
     },
     "auto_labeling": {
-        "mode": ["train","inference"],  # "train" and "inference" supported
+        "mode": ['train', 'inference'],
         "model_source": [
-            # "hf_models_objectdetection",
-            #"ultralytics",
-            # "custom_codetr",
-            "roboflow",
+        # "hf_models_objectdetection",
+        # "ultralytics",
+        # "custom_codetr",
+        "roboflow",
         ],
         "n_worker_dataloader": 8,
         "epochs": 1,
-        "early_stop_patience": 0,
+        "early_stop_patience": 2,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
         "weight_decay": 0.0001,
@@ -90,36 +95,15 @@ WORKFLOWS = {
             # "facebook/detr-resnet-50-dc5": {"batch_size": 1, "image_size": [960, 960]},
             # "facebook/detr-resnet-101": {"batch_size": 4, "image_size": [960, 960]},
             # "facebook/detr-resnet-101-dc5": {"batch_size": 1, "image_size": [960, 960]},
-            # "facebook/deformable-detr-detic": {
-            #    "batch_size": 4,
-            #    "image_size": [960, 960],
-            # },
-            # "facebook/deformable-detr-box-supervised": {
-            #   "batch_size": 1,
-            #   "image_size": [960, 960],
-            # },
+            # "facebook/deformable-detr-detic": {"batch_size": 4, "image_size": [960, 960] },
+            # "facebook/deformable-detr-box-supervised": {"batch_size": 1, "image_size": [960, 960]},
             # "SenseTime/deformable-detr": {"batch_size": 4, "image_size": [960, 960]},
-            # "SenseTime/deformable-detr-with-box-refine": {
-            #   "batch_size": 1,
-            #   "image_size": [960, 960],
-            # },
-            # "jozhang97/deta-swin-large": {
-            #   "batch_size": 1,
-            #   "image_size": [960, 960],
-            # },
-            # "jozhang97/deta-swin-large-o365": {
-            #    "batch_size": 4,
-            #    "image_size": [960, 960],
-            # },
+            # "SenseTime/deformable-detr-with-box-refine": {"batch_size": 1, "image_size": [960, 960]},
+            # "jozhang97/deta-swin-large": {"batch_size": 1, "image_size": [960, 960]},
+            # "jozhang97/deta-swin-large-o365": {"batch_size": 4, "image_size": [960, 960]},
             # "hustvl/yolos-base": {"batch_size": 4},
-            "IDEA-Research/dab-detr-resnet-50": {
-                "batch_size": 4,
-                "image_size": [960, 960],
-            },
-            # "PekingU/rtdetr_v2_r18vd": {
-            #    "batch_size": 4,
-            #    "image_size": [960, 960],
-            # },
+            "IDEA-Research/dab-detr-resnet-50": {"batch_size": 4, "image_size": [960, 960]},
+            # "PekingU/rtdetr_v2_r18vd": {"batch_size": 4, "image_size": [960, 960]},
         },
         "custom_codetr": {
             "export_dataset_root": "output/datasets/codetr_data/",
@@ -134,9 +118,9 @@ WORKFLOWS = {
             "export_dataset_root": "output/datasets/roboflow_data/",
             "configs": [
                 "rfdetr_nano",
-                "rfdetr_small",
-                #"rfdetr_medium",
-                #"rfdetr_large",
+                # "rfdetr_small",
+                # "rfdetr_medium",
+                # "rfdetr_large",
             ],
             # RF-DETR specific parameters only
             "batch_size": 4,                     # Override default batch size
@@ -153,10 +137,10 @@ WORKFLOWS = {
             "multi_scale": False,
             "cos_lr": True,
             "models": {  # Pick from https://docs.ultralytics.com/models/
-                # "yolo11n": {"batch_size": 8, "img_size": 1280},
-                # "yolo11x": {"batch_size": 1, "img_size": 960},
+                "yolo11n": {"batch_size": 8, "img_size": 1280},
+                "yolo11x": {"batch_size": 1, "img_size": 960},
                 "yolo12n": {"batch_size": 8, "img_size": 1280},
-                # "yolo12x": {"batch_size": 1, "img_size": 960},
+                "yolo12x": {"batch_size": 1, "img_size": 960},
             },
         },
     },
@@ -164,28 +148,6 @@ WORKFLOWS = {
         "n_post_processing_worker_per_inference_worker": 5,
         "n_worker_dataloader": 3,
         "prefetch_factor_dataloader": 2,
-        "hf_models_zeroshot_objectdetection": {
-            "omlab/omdet-turbo-swin-tiny-hf": {  # https://huggingface.co/models?pipeline_tag=zero-shot-object-detection&sort=trending&search=omlab%2Fomdet
-                "batch_size": 1,
-                "n_dataset_chunks": 1,  # Number of chunks to split the dataset into for parallel processing
-            },
-            "IDEA-Research/grounding-dino-tiny": {  # https://huggingface.co/models?pipeline_tag=zero-shot-object-detection&sort=trending&search=IDEA-Research%2Fgrounding
-                "batch_size": 1,
-                "n_dataset_chunks": 1,
-            },
-            "google/owlvit-large-patch14": {  # https://huggingface.co/models?pipeline_tag=zero-shot-object-detection&sort=trending&search=google%2Fowlvit
-                "batch_size": 1,
-                "n_dataset_chunks": 1,
-            },
-            "google/owlv2-base-patch16-finetuned": {  # https://huggingface.co/models?pipeline_tag=zero-shot-object-detection&sort=trending&search=google%2Fowlv2
-                "batch_size": 1,
-                "n_dataset_chunks": 1,
-            },
-            "google/owlv2-large-patch14-ensemble": {
-                "batch_size": 1,
-                "n_dataset_chunks": 1,
-            },
-        },
         "detection_threshold": 0.2,
         "object_classes": [
             "skater",
@@ -215,6 +177,13 @@ WORKFLOWS = {
             "emergency vehicle",
             "delivery driver",
         ],
+        "hf_models_zeroshot_objectdetection": {
+            "omlab/omdet-turbo-swin-tiny-hf": {"batch_size": 1, "n_dataset_chunks": 1, },
+            "IDEA-Research/grounding-dino-tiny": {"batch_size": 1, "n_dataset_chunks": 1, },
+            "google/owlvit-large-patch14": {"batch_size": 1, "n_dataset_chunks": 1, },
+            "google/owlv2-base-patch16-finetuned": {"batch_size": 1, "n_dataset_chunks": 1, },
+            "google/owlv2-large-patch14-ensemble": {"batch_size": 1, "n_dataset_chunks": 1, },
+        },
     },
     "auto_label_mask": {
         "semantic_segmentation": {
@@ -308,23 +277,18 @@ WORKFLOWS = {
             "Salesforce/blip2-itm-vit-g",
             "openai/clip-vit-large-patch14",
             "google/siglip-so400m-patch14-384",
-            # "google/siglip2-base-patch16-224",
             "kakaobrain/align-base",
             "BAAI/AltCLIP",
             "CIDAS/clipseg-rd64-refined",
         ],
-        "thresholds": {"confidence": 0.2},
+
         "candidate_labels": {
-            # Target class(Generalized class) : Source classes(specific categories)
-            "Car": ["car", "van", "pickup"],
             "Truck": ["truck", "pickup"],
-            # One_to_one_mapping
-            "Bike": ["motorbike/cycler"],
-            # Can add other class mappings in here
         },
+        "thresholds": {"confidence": 0.2},
     },
     "data_ingest": {
-        "dataset_name": "custom_data",
+        "dataset_name": "custom2",
         "annotation_format": "auto",  # Options: "auto", "coco", "voc", "yolo", "image_only", "video"
         "dataset_dir": "/home/dataengine/Downloads/vid",
         "split_percentages": [0.7, 0.15, 0.15],  # Optional train/val/test

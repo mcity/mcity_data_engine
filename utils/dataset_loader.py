@@ -475,6 +475,21 @@ def load_fisheye_8k(dataset_info):
 
     return dataset
 
+def load_fisheye_8k_mini(dataset_info):
+    """Loads a fisheye 8k mini dataset from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
+
+    dataset_name = dataset_info["name"]
+    hf_dataset_name = dataset_info["hf_dataset_name"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+        dataset = load_from_hub(hf_dataset_name, name=dataset_name)
+        _post_process_dataset(dataset)
+
+    return dataset
+
 from config.config import SELECTED_DATASET
 def load_custom_dataset(dataset_info=None):
     """
