@@ -54,7 +54,7 @@ width="15%">
 </a>
 </p>
 
-The Mcity Data Engine is an essential tool in the Mcity makerspace for transportation innovators making AI algorithms and seeking actionable data insights through machine learning. Details on the Data Engine can be found in the [**Wiki**](https://github.com/mcity/mcity_data_engine/wiki). The data engine supports all stages to continuously improve AI models based on raw visual data:
+The Agentic MCity Data Engine introduces a conversational AI layer that sits seamlessly on top of the core data engine, enabling natural language interaction with complex computer vision workflows. Built using the Model Context Protocol (MCP), the agent acts as an intelligent orchestrator that guides users through workflow configuration and execution without requiring deep technical knowledge:
 
 <div align="center">
       <picture>
@@ -68,6 +68,12 @@ On February 24, 2025, Daniel Bogdoll, a research scholar at Mcity, gave a presen
          <img src="https://github.com/user-attachments/assets/dcd2cd42-9cc0-4cf0-abab-a4d4ebd14198" style="width:60%;">
       </a>
 </div>
+
+## Key Features of the Agentic Implementation:
+Natural Language Configuration: Configure complex workflows through conversational commands instead of manually editing Python config files. The agent translates natural language requests into correct configuration settings, validates parameters, maintains context across conversation turns, and guides users through multi-step workflow setup with intelligent prompts and error prevention.
+
+6 Supported Workflows: 
+
 
 ## Online Demo: Data Selection with Embeddings
 
