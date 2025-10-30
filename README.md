@@ -82,25 +82,24 @@ Natural Language Configuration: Configure complex workflows through conversation
 
 Core Components:
 
-- User Interface : A unified entry point for interaction—users can chat via a natural-language web UI or send direct HTTP API requests from the terminal.
+**- User Interface :** A unified entry point for interaction—users can chat via a natural-language web UI or send direct HTTP API requests from the terminal.
 
-- Chat Server:  A FastAPI service (port 8001) acting as the bridge between the user, LLM, and backend MCP services.
+**- Chat Server:**  A FastAPI service (port 8001) acting as the bridge between the user, LLM, and backend MCP services.
 It maintains multi-turn chat history, handles tool invocations, streams Server-Sent Event (SSE) logs, and supports both web-UI and programmatic clients.
 
-- LLM Layer (Model-Agnostic): Connects to OpenAI GPT-4o, Google Gemini, or Groq Llama models.
+**- LLM Layer (Model-Agnostic):** Connects to OpenAI GPT-4o, Google Gemini, or Groq Llama models.
 The LLM interprets user instructions, determines the appropriate workflow tool call, and sends structured requests back to the chat server for execution.
 
-- MCP Server: A FastAPI-based backend (port 8000) exposing 40 + tools that represent the core Mcity Data Engine workflows.
+**- MCP Server:** A FastAPI-based backend (port 8000) exposing 40 + tools that represent the core Mcity Data Engine workflows.
 
-- Data Ingestion Server: A dedicated service (port 8002) for uploading and preprocessing datasets.
+**- Data Ingestion Server:** A dedicated service (port 8002) for uploading and preprocessing datasets.
 It supports drag-and-drop ingestion of images, videos, and annotations in COCO, YOLO, or CVAT-XML formats, automatically converting them into FiftyOne-compatible datasets.
 This server streams conversion logs and progress via SSE and updates datasets.yaml dynamically to register new datasets for use across workflows.
 
-- Data Engine Core: The underlying Mcity Data Engine handling data selection, labeling, training, validation, and visualization.
+**- Data Engine Core:** The underlying Mcity Data Engine handling data selection, labeling, training, validation, and visualization.
 The agentic layer orchestrates these modules programmatically via MCP instead of relying on static configuration editing.
 
-Tools like configure_auto_labeling, run_auto_labeling, launch_voxel51_session, and set_class_mapping_labels translate conversational intent into Python-level workflow operations.
-6 Supported Workflows: 
+
 
 
 ## Online Demo: Data Selection with Embeddings
@@ -131,11 +130,37 @@ wandb login
 huggingface-cli login
 ```
 
-Launch a **Voxel51** session in one terminal:
-```python session_v51.py```
+### Agentic Implementation Guide:
 
-Configure your run in the [config/config.py](https://github.com/mcity/mcity_data_engine/blob/main/config/config.py) and launch the **Mcity Data Engine** in a second terminal:
-```python main.py```
+**Configuration**: Create a .env file with your LLM API key.
+```
+# Choose your LLM provider (openai, gemini, or groq)
+LLM_PROVIDER=openai
+
+# Add your API key
+OPENAI_API_KEY=sk-...
+# OR
+GEMINI_API_KEY=...
+# OR
+GROQ_API_KEY=...
+```
+
+**Launch the Agentic Interface:**
+Start all four components one after the other in separate terminals:
+```
+# Terminal 1: MCP Tool Server (port 8000)
+python mcp_layer/mcp_server.py
+
+# Terminal 2: Chat Server (port 8001)
+uvicorn mcp_layer.chat_server:app --port 8001 --reload
+
+# Terminal 3: Data Ingestion Server (port 8002)
+uvicorn mcp_layer.ingest_server:app --host 0.0.0.0 --port 8002 --reload
+
+# Terminal 4: Launch Web UI (port 5225)
+python mcp_layer/client_chat.py --ui
+```
+
 
 ### Notebooks and Submodules
 
