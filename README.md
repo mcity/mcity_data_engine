@@ -54,13 +54,16 @@ width="15%">
 </a>
 </p>
 
-The Agentic MCity Data Engine introduces a conversational AI layer that sits seamlessly on top of the core data engine, enabling natural language interaction with complex computer vision workflows. Built using the Model Context Protocol (MCP), the agent acts as an intelligent orchestrator that guides users through workflow configuration and execution without requiring deep technical knowledge:
+The Agentic MCity Data Engine introduces a conversational AI layer that sits seamlessly on top of the core data engine, enabling natural language interaction with complex computer vision workflows. Built using the Model Context Protocol (MCP), the agent acts as an intelligent orchestrator that guides users through workflow configuration and execution without requiring deep technical knowledge.
 
 <div align="center">
-      <picture>
-  <source srcset="https://github.com/user-attachments/assets/f775ee92-9f59-43be-a9ac-1d313d2862e1" width="60%">
-  <img alt="Mcity Data Engine Overview" src="">
-</picture></div>
+  <picture>
+    <source srcset="https://github.com/user-attachments/assets/19f326be-6588-457a-92d4-b7ec08f7491b" width="75%">
+    <img alt="Agentic Mcity Data Engine Architecture" src="">
+  </picture>
+  <p><em>Figure 1. The Agentic Mcity Data Engine bridges programmatic and natural-language workflows through an LLM-agnostic MCP layer.</em></p>
+</div>
+
 
 On February 24, 2025, Daniel Bogdoll, a research scholar at Mcity, gave a presentation on the first release of the Mcity Data Engine in Ann Arbor, Michigan. The recording provides insight into the general architecture, its features and ecosystem integrations, and demonstrates successful data curation and model training for improved Vulnerable Road User (VRU) detection:
 <div align="center">
