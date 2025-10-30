@@ -80,7 +80,7 @@ This layer transforms each workflow—such as auto-labeling, class mapping, or e
 
 Natural Language Configuration: Configure complex workflows through conversational commands instead of manually editing Python config files. The agent translates natural language requests into correct configuration settings, validates parameters, maintains context across conversation turns, and guides users through multi-step workflow setup with intelligent prompts and error prevention.
 
-Core Components:
+### Core Components:
 
 **- User Interface :** A unified entry point for interaction—users can chat via a natural-language web UI or send direct HTTP API requests from the terminal.
 
@@ -154,13 +154,69 @@ python mcp_layer/mcp_server.py
 # Terminal 2: Chat Server (port 8001)
 uvicorn mcp_layer.chat_server:app --port 8001 --reload
 
-# Terminal 3: Data Ingestion Server (port 8002)
+# Terminal 3: Data Ingestion Server (port 8002)The web interface will open automatically at http://localhost:5225.
 uvicorn mcp_layer.ingest_server:app --host 0.0.0.0 --port 8002 --reload
 
 # Terminal 4: Launch Web UI (port 5225)
 python mcp_layer/client_chat.py --ui
 ```
 
+The web interface will open automatically at http://localhost:5225.
+
+**Talk to Task: Example Run**
+```
+User: Hi, I would like to explore the data engine for processing my data.
+
+Agent: Great! We have several workflows you can choose from to process your data:
+        1. Auto Labeling
+        2. Class Mapping
+        3. Anomaly Detection
+        4. Embedding Selection
+        5. Zero-Shot Auto Labeling
+        6. Ensemble Selection
+
+        Which workflow would you like to start with?
+
+User: I would like to generate labels for my dataset. It’s completely unlabeled right now.
+
+Agent: Since your dataset has no labels, the best fit is the Zero-Shot Auto Labeling workflow.
+       This workflow lets you generate labels automatically without any prior annotations.
+       You can choose from the following state-of-the-art zero-shot models:
+          1. omlab/omdet-turbo-swin-tiny-hf
+          2. IDEA-Research/grounding-dino-tiny
+          3. google/owlvit-large-patch14
+          4. google/owlv2-base-patch16-finetuned
+          5. google/owlv2-large-patch14-ensemble
+
+User: I would like to use the first 3 models.
+
+Agent: The models have been successfully updated.
+       Would you like to modify the detection threshold value (default is 0.2) for the zero-shot models?
+
+User: Can you explain what the detection threshold means?
+
+Agent: The detection threshold is a confidence score that decides whether a detected object is valid.
+       If the model’s confidence is above this value, the detection is accepted; if below, it’s rejected.
+       Lower thresholds yield more detections but may include false positives, while higher thresholds are more selective.
+       The default is 0.2, meaning detections above 20% confidence are accepted.
+
+User: Set threshold to 0.3.
+
+Agent: Threshold set. Next, provide the object classes to detect from the data.
+
+User: Car, bike, pedestrian, and truck.
+
+Agent: Classes set to car, bike, pedestrian, truck. The workflow is ready to run.
+       Let me know when to start.
+
+User: We can begin execution of the workflow.
+
+[Data Engine Server]: Executing Zero-Shot Auto Labeling… live logs are streamed to Weights and Biases.
+
+Agent: Zero-Shot Auto Labeling completed successfully.
+       You can now use Ensemble Selection to find detections where models agree.
+       I can also assist you with visualizing detections using Voxel51.
+```
 
 ### Notebooks and Submodules
 
@@ -201,6 +257,26 @@ git add .gitmodules $(git submodule foreach --quiet 'echo $name')
 ├── docs/                       # Documentation generated with `pdoc`
 ├── tests/                      # Tests using Pytest
 ├── custom_models/              # External models with containerized environments
+├── mcp_layer/  # Experiment scripts and one-time operations (Mcity internal)
+│  ├── mcp_server.py           # MCP tool registry (port 8000)
+│  ├── chat_server.py          # FastAPI chat endpoint (port 8001)
+│  ├── ingest_server.py        # File upload & processing (port 8002)
+│  ├── client_chat.py          # Web/terminal client (port 5225)
+│  ├── mcptools/               # Tool implementations
+│  │   ├── __init__.py
+│  │   ├── workflow_selector.py
+│  │   ├── auto_labeling.py
+│  │   ├── class_mapping.py
+│  │   ├── anomaly_detection.py
+│  │   ├── embedding_selection.py
+│  │   ├── zsal.py             # Zero-shot auto-labeling
+│  │   ├── ensemble_selection.py
+│  │   ├── data_ingest.py
+│  │   └── v51.py              # Voxel51 integration
+│  ├── llm_clients.py          # Multi-LLM support
+│  ├── tool_schema.py          # OpenAI tool definitions
+│  └── ui/                     # Web interface assets
+│      └── index.html
 ├── mcity_data_engine_scripts/  # Experiment scripts and one-time operations (Mcity internal)
 ├── .vscode                     # Settings for VS Code IDE
 ├── .github/workflows/          # GitHub Action workflows
