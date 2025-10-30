@@ -73,8 +73,33 @@ On February 24, 2025, Daniel Bogdoll, a research scholar at Mcity, gave a presen
 </div>
 
 ## Key Features of the Agentic Implementation:
+The Agentic Mcity Data Engine extends the Mcity Data Engine with an LLM-agnostic orchestration layer powered by the Model Context Protocol (MCP).
+This layer transforms each workflow—such as auto-labeling, class mapping, or embedding selection—into structured, callable tools that can be accessed either through natural-language interaction or programmatic APIs.
+
+<div align="center"> <picture> <source srcset="https://github.com/user-attachments/assets/3a5c751d-a386-4170-bd44-a29783fc92d6" width="80%"> <img alt="Agentic Mcity Data Engine Detailed Architecture" src=""> </picture> <p><em>Figure 2. Agentic Mcity Data Engine architecture – detailed interaction between user, LLM, chat server, MCP tool server.</em></p> </div>
+
 Natural Language Configuration: Configure complex workflows through conversational commands instead of manually editing Python config files. The agent translates natural language requests into correct configuration settings, validates parameters, maintains context across conversation turns, and guides users through multi-step workflow setup with intelligent prompts and error prevention.
 
+Core Components:
+
+- User Interface : A unified entry point for interaction—users can chat via a natural-language web UI or send direct HTTP API requests from the terminal.
+
+- Chat Server:  A FastAPI service (port 8001) acting as the bridge between the user, LLM, and backend MCP services.
+It maintains multi-turn chat history, handles tool invocations, streams Server-Sent Event (SSE) logs, and supports both web-UI and programmatic clients.
+
+- LLM Layer (Model-Agnostic): Connects to OpenAI GPT-4o, Google Gemini, or Groq Llama models.
+The LLM interprets user instructions, determines the appropriate workflow tool call, and sends structured requests back to the chat server for execution.
+
+- MCP Server: A FastAPI-based backend (port 8000) exposing 40 + tools that represent the core Mcity Data Engine workflows.
+
+- Data Ingestion Server: A dedicated service (port 8002) for uploading and preprocessing datasets.
+It supports drag-and-drop ingestion of images, videos, and annotations in COCO, YOLO, or CVAT-XML formats, automatically converting them into FiftyOne-compatible datasets.
+This server streams conversion logs and progress via SSE and updates datasets.yaml dynamically to register new datasets for use across workflows.
+
+- Data Engine Core: The underlying Mcity Data Engine handling data selection, labeling, training, validation, and visualization.
+The agentic layer orchestrates these modules programmatically via MCP instead of relying on static configuration editing.
+
+Tools like configure_auto_labeling, run_auto_labeling, launch_voxel51_session, and set_class_mapping_labels translate conversational intent into Python-level workflow operations.
 6 Supported Workflows: 
 
 
