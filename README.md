@@ -154,7 +154,7 @@ python mcp_layer/mcp_server.py
 # Terminal 2: Chat Server (port 8001)
 uvicorn mcp_layer.chat_server:app --port 8001 --reload
 
-# Terminal 3: Data Ingestion Server (port 8002)The web interface will open automatically at http://localhost:5225.
+# Terminal 3: Data Ingestion Server (port 8002)
 uvicorn mcp_layer.ingest_server:app --host 0.0.0.0 --port 8002 --reload
 
 # Terminal 4: Launch Web UI (port 5225)
