@@ -38,8 +38,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-MCP_TRANSPORT = SSETransport(url="http://localhost:8000/sse")
+host = os.getenv("PUBLIC_IP", "localhost")
+url=f"http://{host}:8000/sse"
+MCP_TRANSPORT = SSETransport(url=url)
 
 
 SYSTEM_PROMPT =  """
