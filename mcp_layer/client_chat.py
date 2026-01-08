@@ -12,8 +12,14 @@ from http.server import SimpleHTTPRequestHandler
 from socketserver import TCPServer
 
 import requests
+from dotenv import load_dotenv
 
-API_URL = "http://localhost:8001/chat"
+
+load_dotenv()
+host = os.getenv("PUBLIC_IP", "localhost")
+
+
+API_URL = f"http://{host}:8001/chat"
 history = []
 
 # -------- Terminal mode (optional) --------
