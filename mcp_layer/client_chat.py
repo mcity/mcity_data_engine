@@ -24,7 +24,7 @@ def get_public_ip():
         response.raise_for_status()
         return response.text
     except requests.RequestException:
-        return None
+        return "localhost"
 
 host = get_public_ip()
 
