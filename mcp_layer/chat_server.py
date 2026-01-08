@@ -38,7 +38,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-host = os.getenv("PUBLIC_IP", "localhost")
+#host = os.getenv("PUBLIC_IP", "localhost")
+def get_public_ip():
+    url = 'http://169.254.169.254/latest/meta-data/public-ipv4'
+    try:
+        response = requests.get(url, timeout=2)
+        response.raise_for_status()
+        return response.text
+    except requests.RequestException:
+        return "localhost"
+
+host = get_public_ip()
 url=f"http://{host}:8000/sse"
 MCP_TRANSPORT = SSETransport(url=url)
 
