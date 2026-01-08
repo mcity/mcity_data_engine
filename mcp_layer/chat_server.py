@@ -12,7 +12,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(__file__))
 from llm_clients import OpenAIClient, GroqClient, GeminiClient
-from mcp_layer.tool_schema import tools
+from tool_schema import tools
 import uuid, shutil, tempfile, logging, asyncio, json
 from pathlib import Path
 from fastapi import UploadFile, File, Form, HTTPException, BackgroundTasks
