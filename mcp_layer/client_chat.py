@@ -17,16 +17,44 @@ from dotenv import load_dotenv
 
 load_dotenv()
 #host = os.getenv("PUBLIC_IP", "localhost")
-def get_public_ip():
-    url = 'http://169.254.169.254/latest/meta-data/public-ipv4'
+import os
+from dotenv import load_dotenv
+
+
+load_dotenv()
+host = os.getenv("PUBLIC_IP", "localhost")
+
+
+def get_imds_token():
+    token_url = "http://169.254.169.254/latest/api/token"
+    headers = {"X-aws-ec2-metadata-token-ttl-seconds": "21600"}  # 6 hours
     try:
-        response = requests.get(url, timeout=2)
+        response = requests.put(token_url, headers=headers, timeout=2)
         response.raise_for_status()
         return response.text
-    except requests.RequestException:
-        return "localhost"
+    except Exception as e:
+        print(f"Error getting token: {e}")
+        return None
 
-host = get_public_ip()
+
+def get_metadata_with_token(path, token):
+    url = f"http://169.254.169.254/latest/meta-data/{path}"
+    headers = {"X-aws-ec2-metadata-token": token}
+    try:
+        response = requests.get(url, headers=headers, timeout=2)
+        response.raise_for_status()
+        return response.text
+    except Exception as e:
+        print(f"Error fetching metadata for {path}: {e}")
+        return None
+
+token = get_imds_token()
+if token:
+    host = get_metadata_with_token("public-ipv4", token)
+    print(f"Public IP: {public_ip}")
+else:
+    host="localhost"
+    print("Could not obtain IMDSv2 token.")
 
 API_URL = f"http://{host}:8001/chat"
 history = []
