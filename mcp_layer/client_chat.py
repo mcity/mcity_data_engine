@@ -16,8 +16,17 @@ from dotenv import load_dotenv
 
 
 load_dotenv()
-host = os.getenv("PUBLIC_IP", "localhost")
+#host = os.getenv("PUBLIC_IP", "localhost")
+def get_public_ip():
+    url = 'http://169.254.169.254/latest/meta-data/public-ipv4'
+    try:
+        response = requests.get(url, timeout=2)
+        response.raise_for_status()
+        return response.text
+    except requests.RequestException:
+        return None
 
+host = get_public_ip()
 
 API_URL = f"http://{host}:8001/chat"
 history = []
