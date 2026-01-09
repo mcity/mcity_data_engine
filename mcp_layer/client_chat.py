@@ -51,7 +51,6 @@ def get_metadata_with_token(path, token):
 token = get_imds_token()
 if token:
     host = get_metadata_with_token("public-ipv4", token)
-    print(f"Public IP: {public_ip}")
 else:
     host="localhost"
     print("Could not obtain IMDSv2 token.")
