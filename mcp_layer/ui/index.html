@@ -223,8 +223,8 @@ min-width:auto;
 </div>
 <script>
 // Chat + Ingestion functionality
-const CHAT_BASE = "http://localhost:8001";  // Chat server
-const INGEST_BASE = "http://localhost:8002"; // Ingestion server
+const CHAT_BASE = `http://${window.location.hostname}:8001`;  // Chat server
+const INGEST_BASE = `http://${window.location.hostname}:8002`; // Ingestion server
 
 // Chat functionality
 const chatEl = document.getElementById("chat");

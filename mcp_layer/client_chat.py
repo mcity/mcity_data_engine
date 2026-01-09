@@ -93,7 +93,7 @@ class _UIHandler(SimpleHTTPRequestHandler):
 
 def _serve_ui():
     with TCPServer(("", UI_PORT), _UIHandler) as httpd:
-        print(f"[UI] Serving {UI_DIR} at http://localhost:{UI_PORT}/")
+        print(f"[UI] Serving {UI_DIR} at http://{host}:{UI_PORT}/")
         httpd.serve_forever()
 
 def run_ui():
@@ -102,7 +102,7 @@ def run_ui():
     t = threading.Thread(target=_serve_ui, daemon=True)
     t.start()
     time.sleep(0.4)
-    url = f"http://localhost:{UI_PORT}/index.html"
+    url = f"http://{host}:{UI_PORT}/index.html"
     webbrowser.open(url)
     print(f"[UI] Opened {url}. Press Ctrl+C to stop.")
     t.join()
