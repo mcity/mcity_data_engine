@@ -67,25 +67,21 @@ Werkzeug==3.0.4
 
 
 
-# Core agent framework
 fastapi==0.115.12
 fastmcp==2.3.3
 uvicorn==0.34.2
 
-# LLM Providers
-openai==1.72.0
+openai==2.15.0
 google-generativeai==0.8.5
 google-ai-generativelanguage==0.6.15
 google-api-python-client==2.170.0
 google-auth-httplib2==0.2.0
 groq==0.24.0
 
-# UI/Gradio
 gradio==5.29.0
 gradio_client==1.10.0
 ffmpy==0.5.0
 
-# Additional utilities
 httpx==0.28.1
 httpx-sse==0.4.0
 python-multipart==0.0.20
@@ -93,7 +89,6 @@ pydantic-settings==2.9.1
 openapi-pydantic==0.5.1
 python-dotenv==1.1.0
 
-# Additional development tools
 asyncio==3.4.3
 exceptiongroup==1.2.2
 httplib2==0.22.0
@@ -107,7 +102,6 @@ typer==0.15.3
 typing-inspection==0.4.0
 websockets==15.0.1
 
-# Updated versions from base engine
 anyio==4.9.0
 rich==14.0.0
 ruamel.yaml==0.18.14
@@ -116,7 +110,6 @@ ruff==0.11.9
 starlette==0.46.2
 ultralytics==8.3.140
 
-# Additional development/testing
 groovy==0.1.2
 
 datasets==3.5.0
