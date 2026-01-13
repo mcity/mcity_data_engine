@@ -52,7 +52,7 @@ class BaseLLMClient:
 class OpenAIClient(BaseLLMClient):
     def __init__(self):
         self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        self.model = os.getenv("OPENAI_MODEL", "gpt-5.2")
 
     async def chat(self, messages, tools=None):
         response = await self.client.chat.completions.create(
