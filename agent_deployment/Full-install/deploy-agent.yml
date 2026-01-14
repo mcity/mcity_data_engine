@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Mcity data engine deployment'
+
+Parameters:
+  UbuntuAMI:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/canonical/ubuntu/server/noble/stable/current/amd64/hvm/ebs-gp3/ami-id'
+  OPENAIAPIKEY:
+    Type: String
+    Default: sk-123456789123456789123456789 # Replace this key
+  KeyPairName:
+    Type: String
+    Default: mcity-data-engine-key
+    Description: The name of the new Key Pair to be created
+  RepoURL:
+    Type: String
+    Default: 'https://github.com/mcity/mcity_data_engine.git'
+    Description: URL of the public git repository
+  InstanceType:
+    Type: String
+    Default: r5.large
+  HFTOKEN:
+    Type: String
+    Default: hf_asdasdasduasdasdasTSDSDasfadfasdasd
+    
+Resources:
+  MyKeyPair:
+    Type: 'AWS::EC2::KeyPair'
+    Properties:
+      KeyName: !Ref KeyPairName
+
+  InstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable HTTP and SSH access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5225
+          ToPort: 5225
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8002
+          CidrIp: 0.0.0.0/0          
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 5151
+          ToPort: 5151
+          CidrIp: 0.0.0.0/0          
+
+  # EC2 Instance using Amazon Linux 2023
+  WebServerInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref MyKeyPair
+      SecurityGroups:
+        - !Ref InstanceSecurityGroup
+      ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/noble/stable/current/amd64/hvm/ebs-gp3/ami-id}}' # Amazon Linux 2023 (AMI varies by region)
+      BlockDeviceMappings:
+       - DeviceName: /dev/sda1  # Root device name for Amazon Linux 2023
+         Ebs:
+           VolumeSize: 100      # Size in GiB
+           VolumeType: gp3      # Latest generation SSD for better performance
+           DeleteOnTermination: true      
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update Ubuntu and install Git/Python
+          #export DEBIAN_FRONTEND=noninteractive
+          sudo -s
+          apt-get update -y
+          apt-get install -y git python3-pip python3-venv curl ffmpeg
+          # Move to the ubuntu home directory
+          cd /home/ubuntu
+          git clone --branch agentic-data-engine ${RepoURL}  myapp
+          cd myapp
+          
+
+          python3 -m venv venv
+          source venv/bin/activate
+
+          # Install dependencies
+          #if [ -f requirements.txt ]; then
+          #  while read p; do pip3 install "$p" || continue; done < requirements.txt
+          #fi
+          if [ -f requirements.txt ]; then
+           while read p; do pip3 install "$p" || continue; done < requirements_prod.txt 
+          fi
+          # if [ -f agent_requirements.txt ]; then
+          #   while read p; do pip3 install "$p" || continue; done <  agent_requirements.txt
+          # fi
+
+          cat <<EOF > .env
+          LLM_PROVIDER=openai          
+          OPENAI_MODEL=gpt-5-mini
+          OPENAI_API_KEY=${OPENAIAPIKEY}
+          HF_TOKEN=${HFTOKEN}
+          EOF
+
+          #chown -R ubuntu:ubuntu /home/ubuntu/myapp
+          #chown ubuntu:ubuntu .env
+          chmod 600 .env
+          nohup python3 session_v51.py > session_v51.log 2>&1 &
+
+          cd mcp_layer
+          # Run multiple python files in background
+          # Redirect output to logs for troubleshooting
+          nohup python3 client_chat.py --ui > client_chat.log 2>&1 &
+          nohup python3 mcp_server.py > mcp_server.log 2>&1  &
+          nohup python3 llm_clients.py > llm_clients.log 2>&1  &
+          nohup python3 chat_server.py > chat_server.log 2>&1   &      
+          nohup uvicorn ingest_server:app --host 0.0.0.0 --port 8002 --reload > ingest_server.log 2>&1
+
+
+
+          
+
+Outputs:
+  PublicIP:
+    Description: Instance Public IP
+    Value: !GetAtt WebServerInstance.PublicIp
+  KeyPairID:
+    Description: ID of the key pair for retrieving the private key
+    Value: !GetAtt MyKeyPair.KeyPairId
