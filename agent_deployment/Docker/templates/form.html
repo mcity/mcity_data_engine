@@ -5,6 +5,17 @@
     <title>Mcity Data Engine Form</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
+        :root {
+            --bg: #0b1020;
+            --text: #e5e7eb;
+            --accent: #2563eb;
+            --agent: #1f2937;
+            --border: #263248;
+            --radius: 12px;
+            --shadow: 0 6px 20px rgba(0,0,0,.25);
+            --um-blue: #00274C;
+            --um-maize: #FFCB05;
+        }
         body {
             background: #f7f7f7;
             min-height: 100vh;
@@ -15,7 +26,7 @@
             max-width: 420px;
             margin: 60px auto;
             background: #fff;
-            box-shadow: 0 4px 24px rgba(29, 29, 29, 0.09);
+            box-shadow: var(--shadow);
             border-radius: 16px;
             padding: 36px 28px 18px 28px;
             position: relative;
@@ -26,22 +37,22 @@
             margin-bottom: 16px;
         }
         .um-logo {
-            background: #00274C;
-            color: #FFCB05;
+            background: var(--um-blue);
+            color: var(--um-maize);
             font-weight: bold;
             font-size: 1.2em;
             border-radius: 5px;
             padding: 6px 12px;
         }
         h2 {
-            color: #00274C;
+            color: var(--um-blue);
             margin-bottom: 7px;
             font-size: 1.45em;
         }
         .form-label {
             display: block;
             margin-bottom: 4px;
-            color: #00274C;
+            color: var(--um-blue);
             font-weight: 500;
         }
         .form-input {
@@ -56,12 +67,12 @@
         }
         .form-input:focus {
             outline: none;
-            border-color: #00274C;
+            border-color: var(--um-blue);
             background: #e6f1fc;
         }
         .form-btn {
             width: 100%;
-            background: linear-gradient(90deg,#00274C 67%,#FFCB05 100%);
+            background: linear-gradient(90deg, var(--um-blue) 67%, var(--um-maize) 100%);
             border: none;
             color: #fff;
             padding: 11px 0;
@@ -73,8 +84,8 @@
             box-shadow: 0 2px 9px rgba(0,39,76,0.08);
         }
         .form-btn:hover {
-            background: linear-gradient(90deg,#FFCB05 20%,#00274C 100%);
-            color: #00274C;
+            background: linear-gradient(90deg, var(--um-maize) 20%, var(--um-blue) 100%);
+            color: var(--um-blue);
         }
         .message {
             padding: 13px 15px;
@@ -103,15 +114,58 @@
             text-align: center;
         }
         .footer-link {
-            color: #00274C;
+            color: var(--um-blue);
             font-weight: bold;
             text-decoration: none;
             margin-left: 8px;
             transition: color 0.2s;
         }
         .footer-link:hover {
-            color: #FFCB05;
+            color: var(--um-maize);
             text-decoration: underline;
+        }
+        .chat-helper {
+            color: #555e7b;
+            font-size: 13px;
+            margin-bottom: 9px;
+            background: #f9fafe;
+            padding: 7px 10px;
+            border-radius: 7px;
+        }
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: rgba(10,20,40,0.87);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 99;
+            color: var(--um-maize);
+            font-size: 1.18em;
+            letter-spacing: .4px;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity .3s, visibility .3s;
+        }
+        .loading-overlay.active {
+            visibility: visible;
+            opacity: 1;
+        }
+        .spinner {
+            margin-bottom: 18px;
+            width: 62px;
+            height: 62px;
+            border: 7px solid #ffcb055a;
+            border-top: 7px solid var(--um-blue);
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg);}
+            100% {transform: rotate(360deg);}
         }
         @media (max-width: 480px) {
             .container {
@@ -125,7 +179,7 @@
 <body>
     <div class="container">
         <div class="um-header">
-            <div class="um-logo">Mcity@AI</div>
+            <div class="um-logo">Mcity@AgenticAI</div>
         </div>
         <h2>Mcity Data Engine Request Form</h2>
 
@@ -136,6 +190,7 @@
         {% endif %}
 
         <form action="/submit" method="post" autocomplete="on">
+
             <label class="form-label" for="first_name">First Name</label>
             <input class="form-input" type="text" id="first_name" name="first_name" required placeholder="Enter your first name">
 
@@ -143,7 +198,7 @@
             <input class="form-input" type="text" id="last_name" name="last_name" required placeholder="Enter your last name">
 
             <label class="form-label" for="email">Email ID</label>
-            <input class="form-input"  type="email" id="email" name="email" required placeholder="e.g. you@umich.edu">
+            <input class="form-input" type="email" id="email" name="email" required placeholder="e.g. you@umich.edu">
 
             <label class="form-label" for="organization">Organization</label>
             <input class="form-input" type="text" id="organization" name="organization" required placeholder="Department or company">
@@ -151,9 +206,24 @@
             <button type="submit" class="form-btn">Submit</button>
         </form>
         <div class="form-footer">
-            &copy; {{ now.year if now else 2026 }} The Regents of the University of Michigan. All rights reserved.<br>
-            Need help? <a class="footer-link" href="mailto:mcity-engineering@umich.edu" title="Contact us">Contact Us</a>
+            &copy; {{ now.year if now else 2026 }}  The Regents of the University of Michigan. All rights reserved.<br>
+            Need help?
+            <a class="footer-link" href="mailto:mcity-engineering@umich.edu" title="Contact us">Contact Us</a>
+        </div>
+        <!-- Loading overlay shown during form submit -->
+        <div class="loading-overlay" id="loadingMsg">
+            <div class="spinner"></div>
+            <div>
+                Processing your request…<br>
+                Deployment can take up to 5 minutes.<br>
+                Thank you for your patience!
+            </div>
         </div>
     </div>
+    <script>
+    document.querySelector('form').addEventListener('submit', function() {
+        document.getElementById('loadingMsg').classList.add('active');
+    });
+    </script>
 </body>
 </html>
