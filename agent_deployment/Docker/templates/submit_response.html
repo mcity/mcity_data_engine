@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Submission Successful - Mcity Data Engine</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { background: #f8fafc; margin:0; font-family: 'Segoe UI', Arial, sans-serif; }
+        .container {
+            max-width: 440px;
+            margin: 70px auto 0 auto;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(29, 29, 29, 0.12);
+            padding: 40px 34px 32px 34px;
+            text-align: center;
+        }
+        .um-logo {
+            display: inline-block;
+            background: #00274C;
+            color: #FFCB05;
+            font-weight: 700;
+            font-size: 1.1em;
+            border-radius: 5px;
+            padding: 5px 11px;
+            margin-bottom: 10px;
+        }
+        h2 {
+            color: #00274C;
+            margin-bottom: 8px;
+            font-size: 1.5em;
+        }
+        .success-msg {
+            background: #eafaf1;
+            color: #167a29;
+            border: 1px solid #167a297c;
+            border-radius: 8px;
+            padding: 18px 15px;
+            margin-bottom: 22px;
+            font-size: 1.07em;
+        }
+        .public-url {
+            color: #00274C;
+            background: #ffecb3;
+            border-radius: 7px;
+            display: block;
+            margin: 0 auto 16px auto;
+            padding: 11px 4px;
+            font-weight: 500;
+            font-size: 1.05em;
+        }
+        .contact-block {
+            margin-top: 38px;
+            font-size: 1em;
+        }
+        .contact-link {
+            color: #00274C;
+            font-weight: 600;
+            text-decoration: none;
+            margin-left: 6px;
+            transition: color 0.18s;
+        }
+        .contact-link:hover {
+            color: #FFCB05;
+            text-decoration: underline;
+        }
+        .copyright-footer {
+            margin-top: 29px;
+            font-size: 0.96em;
+            color: #636e90;
+            padding-top: 7px;
+            border-top: 1px solid #e4eafd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="um-logo">Go Blue!</div>
+        <h2>Submission Successful</h2>
+        <div class="success-msg">
+            <strong>Your request has been processed!</strong><br>
+            Your deployment is now live at:
+            <div class="public-url">
+                <a href="{{ public_url }}" target="_blank" rel="noopener">{{ public_url }}</a>
+            </div>
+            Please save your URL. This instance will be deleted automatically in 1 hour.<br>
+        </div>
+        <div class="contact-block">
+            Need assistance? <a class="contact-link" href="mailto:mcity-engineering@umich.edu">Contact Us</a>
+        </div>
+        <div class="copyright-footer">
+            &copy; {{ now.year if now else 2026 }} The Regents of the University of Michigan. All rights reserved.
+        </div>
+    </div>
+</body>
+</html>

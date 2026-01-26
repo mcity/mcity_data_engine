@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Mcity Data Engine Form</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            background: #f7f7f7;
+            min-height: 100vh;
+            margin: 0;
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }
+        .container {
+            max-width: 420px;
+            margin: 60px auto;
+            background: #fff;
+            box-shadow: 0 4px 24px rgba(29, 29, 29, 0.09);
+            border-radius: 16px;
+            padding: 36px 28px 18px 28px;
+            position: relative;
+        }
+        .um-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .um-logo {
+            background: #00274C;
+            color: #FFCB05;
+            font-weight: bold;
+            font-size: 1.2em;
+            border-radius: 5px;
+            padding: 6px 12px;
+        }
+        h2 {
+            color: #00274C;
+            margin-bottom: 7px;
+            font-size: 1.45em;
+        }
+        .form-label {
+            display: block;
+            margin-bottom: 4px;
+            color: #00274C;
+            font-weight: 500;
+        }
+        .form-input {
+            width: 100%;
+            padding: 9px 12px;
+            margin-bottom: 16px;
+            border: 1.5px solid #ccc;
+            border-radius: 7px;
+            font-size: 1em;
+            transition: border .18s;
+            background: #f9f9f9;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: #00274C;
+            background: #e6f1fc;
+        }
+        .form-btn {
+            width: 100%;
+            background: linear-gradient(90deg,#00274C 67%,#FFCB05 100%);
+            border: none;
+            color: #fff;
+            padding: 11px 0;
+            border-radius: 7px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background .2s, box-shadow .15s;
+            box-shadow: 0 2px 9px rgba(0,39,76,0.08);
+        }
+        .form-btn:hover {
+            background: linear-gradient(90deg,#FFCB05 20%,#00274C 100%);
+            color: #00274C;
+        }
+        .message {
+            padding: 13px 15px;
+            border-radius: 7px;
+            margin-bottom: 18px;
+            font-size: 1.05em;
+            text-align: left;
+            box-sizing: border-box;
+        }
+        .message-success {
+            background: #eafaf1;
+            color: #167a29;
+            border: 1px solid #167a297c;
+        }
+        .message-warning {
+            background: #fffbe7;
+            color: #b36b00;
+            border: 1px solid #b36b0054;
+        }
+        .form-footer {
+            margin-top: 25px;
+            padding-top: 14px;
+            font-size: 0.97em;
+            color: #444b5a;
+            border-top: 1px solid #e5e5e5;
+            text-align: center;
+        }
+        .footer-link {
+            color: #00274C;
+            font-weight: bold;
+            text-decoration: none;
+            margin-left: 8px;
+            transition: color 0.2s;
+        }
+        .footer-link:hover {
+            color: #FFCB05;
+            text-decoration: underline;
+        }
+        @media (max-width: 480px) {
+            .container {
+                margin: 28px 8px;
+                padding: 18px 7px 8px 7px;
+                box-shadow: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="um-header">
+            <div class="um-logo">Mcity@AI</div>
+        </div>
+        <h2>Mcity Data Engine Request Form</h2>
+
+        {% if message %}
+        <div class="message {% if message_type == 'success' %}message-success{% else %}message-warning{% endif %}">
+            {{ message }}
+        </div>
+        {% endif %}
+
+        <form action="/submit" method="post" autocomplete="on">
+            <label class="form-label" for="first_name">First Name</label>
+            <input class="form-input" type="text" id="first_name" name="first_name" required placeholder="Enter your first name">
+
+            <label class="form-label" for="last_name">Last Name</label>
+            <input class="form-input" type="text" id="last_name" name="last_name" required placeholder="Enter your last name">
+
+            <label class="form-label" for="email">Email ID</label>
+            <input class="form-input"  type="email" id="email" name="email" required placeholder="e.g. you@umich.edu">
+
+            <label class="form-label" for="organization">Organization</label>
+            <input class="form-input" type="text" id="organization" name="organization" required placeholder="Department or company">
+
+            <button type="submit" class="form-btn">Submit</button>
+        </form>
+        <div class="form-footer">
+            &copy; {{ now.year if now else 2026 }} The Regents of the University of Michigan. All rights reserved.<br>
+            Need help? <a class="footer-link" href="mailto:mcity-engineering@umich.edu" title="Contact us">Contact Us</a>
+        </div>
+    </div>
+</body>
+</html>

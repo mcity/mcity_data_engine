@@ -1,0 +1,11 @@
+AWS_ACCESS_KEY=your_access_key
+AWS_SECRET_KEY=your_secret_key
+REGION=us-east-1
+OPENAIAPIKEY=your_openai_api_key
+HFTOKEN=your_hf_token
+ROLE_ARN=arn:aws:iam::1234567800000:role/mcity-data-engine-agent-cf-role
+KEY_PAIR_NAME=mcity-data-engine-key
+INSTANCE_TYPE=r5.large
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_DB=0
