@@ -580,3 +580,20 @@ def load_sunrgbd(dataset_info):
         dataset = _post_process_dataset(dataset)
 
     return dataset
+
+
+def load_mcity_31k(dataset_info):
+    """Loads a mcity 31k dataset from FiftyOne, creating it from HuggingFace if it doesn't exist locally."""
+
+    # dataset_name = "gameday_inf2"
+    dataset_name = dataset_info["name"]
+    hf_dataset_name = dataset_info["hf_dataset_name"]
+
+    if dataset_name in fo.list_datasets():
+        dataset = fo.load_dataset(dataset_name)
+        logging.info("Existing dataset " + dataset_name + " was loaded.")
+    else:
+       dataset = load_from_hub(hf_dataset_name, name=dataset_name)
+       _post_process_dataset(dataset)
+
+    return dataset

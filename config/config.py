@@ -2,11 +2,11 @@ import os
 import psutil
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["auto_labeling_zero_shot"]
+SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "mcity_fisheye_2000",
+    "name": "mcity_31k",
     "n_samples": None,
     "custom_view": None,
 }
@@ -76,7 +76,7 @@ WORKFLOWS = {
         "roboflow",
         ],
         "n_worker_dataloader": 8,
-        "epochs": 1,
+        "epochs": 8,
         "early_stop_patience": 2,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -117,13 +117,13 @@ WORKFLOWS = {
         "roboflow": {  # Roboflow RF-DETR configuration
             "export_dataset_root": "output/datasets/roboflow_data/",
             "configs": [
-                "rfdetr_nano",
+                # "rfdetr_nano",
                 # "rfdetr_small",
                 # "rfdetr_medium",
-                # "rfdetr_large",
+                "rfdetr_large",
             ],
             # RF-DETR specific parameters only
-            "batch_size": 4,                     # Override default batch size
+            "batch_size": 100,                     # Override default batch size
             "grad_accum_steps": 4,                # Gradient accumulation steps
             "lr_encoder": None,                   # Encoder-specific learning rate (optional)
             "resolution": None,                   # Image resolution, must be divisible by 56 (optional)
@@ -312,7 +312,7 @@ GLOBAL_SEED = 0
 #: Hugging Face name or Organization
 HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
 #: Determins if model weights should be uploaded to Hugging Face
-HF_DO_UPLOAD = False
+HF_DO_UPLOAD = True
 
 """Weights and Biases Config"""
 #: Determines if tracking with Weights and Biases is activated
