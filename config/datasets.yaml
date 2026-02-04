@@ -62,3 +62,9 @@ datasets:
   - name: mcity_35k
     loader_fct: load_mcity_31k
     hf_dataset_name: mcity-engineering/mcity_abey_daniel_35k
+  - name: ashley-huron-jan-2026
+    loader_fct: load_mcity_31k
+    hf_dataset_name: mcity-engineering/ashley-huron-jan-2026
+  - name: gs_catherine_glen1-sample-1
+    loader_fct: load_mcity_31k
+    hf_dataset_name: mcity-engineering/gs_catherine_glen1-sample-1

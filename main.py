@@ -57,7 +57,7 @@ def signal_handler(sig, frame):
     logging.error("You pressed Ctrl+C!")
     try:
         wandb_close(exit_code=1)
-        cleanup_memory()
+        #cleanup_memory()
     except:
         pass
     sys.exit(0)
@@ -960,13 +960,13 @@ class WorkflowExecutor:
                     )
                     return False
 
-                cleanup_memory()  # Clean after each workflow
+                #cleanup_memory()  # Clean after each workflow
                 logging.info(f"Completed workflow {workflow} and cleaned up memory")
 
             except Exception as e:
                 logging.error(f"Workflow {workflow}: An error occurred: {e}")
                 wandb_close(exit_code=1)
-                cleanup_memory()  # Clean up even after failure
+                #cleanup_memory()  # Clean up even after failure
 
         return True
 

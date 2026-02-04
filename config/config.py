@@ -6,7 +6,7 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "mcity_31k",
+    "name": "gs_catherine_glen1-sample-1",
     "n_samples": None,
     "custom_view": None,
 }
@@ -68,15 +68,15 @@ WORKFLOWS = {
         },
     },
     "auto_labeling": {
-        "mode": ['train', 'inference'],
+        "mode": [ 'inference'], #['train','inference']
         "model_source": [
         # "hf_models_objectdetection",
-        # "ultralytics",
+         #"ultralytics",
         # "custom_codetr",
         "roboflow",
         ],
         "n_worker_dataloader": 8,
-        "epochs": 8,
+        "epochs": 12,
         "early_stop_patience": 2,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
@@ -120,10 +120,12 @@ WORKFLOWS = {
                 # "rfdetr_nano",
                 # "rfdetr_small",
                 # "rfdetr_medium",
-                "rfdetr_large",
+                #"rfdetr_large",
+		#"rfdetr_xlarge",
+		"rfdetr_2xlarge",
             ],
             # RF-DETR specific parameters only
-            "batch_size": 100,                     # Override default batch size
+            "batch_size": 10,                     # Override default batch size
             "grad_accum_steps": 4,                # Gradient accumulation steps
             "lr_encoder": None,                   # Encoder-specific learning rate (optional)
             "resolution": None,                   # Image resolution, must be divisible by 56 (optional)
@@ -137,10 +139,13 @@ WORKFLOWS = {
             "multi_scale": False,
             "cos_lr": True,
             "models": {  # Pick from https://docs.ultralytics.com/models/
-                "yolo11n": {"batch_size": 8, "img_size": 1280},
-                "yolo11x": {"batch_size": 1, "img_size": 960},
-                "yolo12n": {"batch_size": 8, "img_size": 1280},
-                "yolo12x": {"batch_size": 1, "img_size": 960},
+                #"yolo11n": {"batch_size": 8, "img_size": 1280},
+                #"yolo11x": {"batch_size": 1, "img_size": 960},
+                #"yolo12n": {"batch_size": 8, "img_size": 1280},
+                #"yolo12x": {"batch_size": 1, "img_size": 960},
+		"yolo26x": {"batch_size": 1, "img_size": 960},
+		"yolo26l": {"batch_size": 1, "img_size": 960},
+		"yolo26m": {"batch_size": 1, "img_size": 960},
             },
         },
     },
@@ -310,7 +315,7 @@ GLOBAL_SEED = 0
 
 """Hugging Face Config"""
 #: Hugging Face name or Organization
-HF_ROOT = "mcity-data-engine"  # https://huggingface.co/mcity-data-engine
+HF_ROOT = "mcity-engineering"  # https://huggingface.co/mcity-data-engine
 #: Determins if model weights should be uploaded to Hugging Face
 HF_DO_UPLOAD = True
 

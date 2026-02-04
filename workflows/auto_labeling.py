@@ -40,7 +40,7 @@ from transformers import (
     TrainingArguments,
 )
 from ultralytics import YOLO
-from rfdetr import RFDETRNano, RFDETRSmall, RFDETRMedium, RFDETRLarge
+from rfdetr import RFDETRNano, RFDETRSmall, RFDETRMedium, RFDETRLarge, RFDETRXLarge, RFDETR2XLarge
 import wandb
 from config.config import (
     ACCEPTED_SPLITS,
@@ -2049,6 +2049,8 @@ class CustomRFDETRObjectDetection:
             "rfdetr_small": RFDETRSmall,
             "rfdetr_medium": RFDETRMedium,
             "rfdetr_large": RFDETRLarge,
+	    "rfdetr_xlarge": RFDETRXLarge,
+            "rfdetr_2xlarge": RFDETR2XLarge
         }
 
         model_name = self.config_key.lower()
@@ -2063,7 +2065,7 @@ class CustomRFDETRObjectDetection:
         # Initialize model
         logging.info(f"Initializing {model_name}...")
         ModelClass = MODEL_REGISTRY[model_name]
-        model = ModelClass()
+        model = ModelClass(accept_platform_model_license=True)
 
         # Prepare dataset directory
         dataset_dir = os.path.join(self.export_dir_root, self.dataset_name, "rfdetr")
@@ -2226,6 +2228,8 @@ class CustomRFDETRObjectDetection:
             "rfdetr_small": RFDETRSmall,
             "rfdetr_medium": RFDETRMedium,
             "rfdetr_large": RFDETRLarge,
+	    "rfdetr_xlarge": RFDETRXLarge,
+            "rfdetr_2xlarge": RFDETR2XLarge
         }
 
         # Determine model and dataset names
@@ -2323,7 +2327,8 @@ class CustomRFDETRObjectDetection:
             logging.info("Loading RF-DETR model...")
             model = ModelClass(
                 pretrain_weights=model_path,
-                num_classes=num_classes
+                num_classes=num_classes,
+		accept_platform_model_license=True
             )
 
             logging.info("RF-DETR model loaded successfully")
