@@ -40,7 +40,7 @@ job:
   # │                Use this for: Complete training and evaluation            │
   # └──────────────────────────────────────────────────────────────────────────┘
 
-  type: "inference"  # ← CHANGE THIS: "train", "inference", or "both"
+  type: "both"  # ← CHANGE THIS: "train", "inference", or "both"
 
   # Skip data export (useful if data already exported)
   # Set to true to reuse existing exported data
@@ -86,13 +86,13 @@ training:
     height: 256
 
   # Training hyperparameters
-  batch_size: 16          # Adjust based on GPU memory (8, 16, 32)
-  max_epochs: 50          # Total training epochs (30-100 typical)
-  learning_rate: 0.0005   # 5e-4 is a good default
-  num_workers: 4          # Data loading workers (adjust for CPU cores)
+  batch_size: 32          # Doubled from 16 → 2x faster
+  max_epochs: 10          # Reduced from 50 → 5x faster
+  learning_rate: 0.001    # Increased for faster convergence
+  num_workers: 8          # Doubled for faster data loading
 
   # Learning rate schedule
-  warmup_steps: 500       # Linear warmup steps
+  warmup_steps: 100       # Reduced from 500
   cosine_annealing: true  # Use cosine annealing schedule
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -141,11 +141,11 @@ advanced:
   distributed: false
 
   # Mixed precision training (fp16) - faster but may affect accuracy
-  use_amp: false
+  use_amp: true  # ENABLED for 2-3x speed boost
 
   # Checkpoint saving
-  save_interval: 1         # Save checkpoint every N epochs
-  max_keep_checkpoints: 3  # Keep only N best checkpoints to save disk space
+  save_interval: 5         # Save every 5 epochs instead of every epoch
+  max_keep_checkpoints: 2  # Keep fewer checkpoints
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Quick Configuration Presets
