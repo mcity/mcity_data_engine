@@ -91,20 +91,39 @@ def load_config(config_path: str) -> Dict:
 def find_best_checkpoint(work_dir: str) -> Optional[str]:
     """
     Find the best checkpoint in work_dir.
-    Priority: best_coco_AP_epoch_*.pth > last.pth > None
+    Priority: best_coco_AP_epoch_*.pth > epoch_*.pth (latest) > last.pth > None
     """
     work_path = Path(work_dir)
 
-    # Look for best checkpoint
+    if not work_path.exists():
+        log.warning("  Work directory does not exist: %s", work_dir)
+        return None
+
+    # List all .pth files for debugging
+    all_checkpoints = list(work_path.glob("*.pth"))
+    log.info("  Found %d .pth files in %s", len(all_checkpoints), work_dir)
+    for ckpt in all_checkpoints[:5]:  # Show first 5
+        log.info("    - %s", ckpt.name)
+
+    # Look for best checkpoint with metrics
     best_checkpoints = sorted(work_path.glob("best_coco_AP_epoch_*.pth"))
     if best_checkpoints:
+        log.info("  Using best checkpoint: %s", best_checkpoints[-1].name)
         return str(best_checkpoints[-1])
+
+    # Look for epoch checkpoints (when validation is disabled)
+    epoch_checkpoints = sorted(work_path.glob("epoch_*.pth"))
+    if epoch_checkpoints:
+        log.info("  Using latest epoch checkpoint: %s", epoch_checkpoints[-1].name)
+        return str(epoch_checkpoints[-1])
 
     # Look for last checkpoint
     last_checkpoint = work_path / "last.pth"
     if last_checkpoint.exists():
+        log.info("  Using last checkpoint: last.pth")
         return str(last_checkpoint)
 
+    log.warning("  No checkpoints found (looked for: best_coco_AP_epoch_*.pth, epoch_*.pth, last.pth)")
     return None
 
 
@@ -737,6 +756,11 @@ class OKSValidator:
             if not bboxes:
                 continue
 
+            # Check if image file exists
+            if not os.path.exists(img_path):
+                log.warning(f"  Image file not found: {img_path}")
+                continue
+
             # Run inference
             try:
                 results = inference_topdown(
@@ -812,6 +836,48 @@ class OKSValidator:
 
         oks_scores = results['oks_scores']
 
+        # Check if we have any predictions
+        if len(oks_scores) == 0:
+            log.error("No predictions generated! Cannot compute metrics.")
+            log.error("This could mean:")
+            log.error("  1. The model hasn't been trained yet")
+            log.error("  2. No valid detections in the validation set")
+            log.error("  3. Issue with the checkpoint file")
+
+            # Return dict with all expected keys (zeros)
+            metrics = {
+                'error': 'No predictions generated',
+                'mean_oks': 0.0,
+                'median_oks': 0.0,
+                'std_oks': 0.0,
+                'min_oks': 0.0,
+                'max_oks': 0.0,
+                'mAP': 0.0,
+                # Performance breakdown counts
+                'excellent_count': 0,
+                'good_count': 0,
+                'fair_count': 0,
+                'poor_count': 0,
+                'total_count': 0,
+                # Performance breakdown percentages
+                'excellent_pct': 0.0,
+                'good_pct': 0.0,
+                'fair_pct': 0.0,
+                'poor_pct': 0.0,
+            }
+            # Add AP thresholds
+            thresholds = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+            for thresh in thresholds:
+                metrics[f'AP@{thresh:.2f}'] = 0.0
+
+            # Add per-keypoint errors (all zeros)
+            for i, kp_name in enumerate(KEYPOINT_NAMES):
+                metrics[f'{kp_name}_error'] = 0.0
+
+            return metrics
+
+        log.info("Computing metrics for %d predictions...", len(oks_scores))
+
         metrics = {
             'mean_oks': float(np.mean(oks_scores)),
             'median_oks': float(np.median(oks_scores)),
@@ -870,6 +936,17 @@ class OKSValidator:
 
         oks_scores = results['oks_scores']
         per_kp_errors = results['per_keypoint_errors']
+
+        # Check if we have any valid data to visualize
+        if len(oks_scores) == 0 or metrics.get('error'):
+            log.warning("No valid predictions to visualize - skipping visualization generation")
+            log.info("Metrics summary: mean_oks={:.3f}, mAP={:.3f}".format(
+                metrics.get('mean_oks', 0.0),
+                metrics.get('mAP', 0.0)
+            ))
+            return
+
+        log.info("Generating visualizations for %d predictions...", len(oks_scores))
 
         # Set style
         sns.set_style("whitegrid")
@@ -1209,15 +1286,24 @@ def main(config_path: str = "config.yaml") -> None:
             log.info("STARTING INFERENCE AND VALIDATION")
             log.info("=" * 70 + "\n")
 
-            # Save/find config file
+            # Get or create config file
             config_file = os.path.join(work_dir, "config.py")
-            if not os.path.exists(config_file) and should_train:
-                cfg.dump(config_file)
-            elif not os.path.exists(config_file):
-                raise FileNotFoundError(
-                    f"Config file not found at {config_file}. "
-                    "Cannot run inference without config."
+
+            if not os.path.exists(config_file):
+                # Config doesn't exist - need to rebuild it
+                log.info("Config file not found, rebuilding MMPose config...")
+                cfg = build_config(
+                    train_ann=train_ann,
+                    val_ann=val_ann,
+                    work_dir=work_dir,
+                    img_size=(img_w, img_h),
+                    batch_size=batch_size,
+                    max_epochs=max_epochs,
+                    lr=lr,
+                    num_workers=num_workers,
                 )
+                cfg.dump(config_file)
+                log.info("Config saved to: %s", config_file)
 
             metrics = validate_checkpoint(
                 checkpoint_path=checkpoint_path,

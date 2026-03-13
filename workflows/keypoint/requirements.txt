@@ -1,0 +1,39 @@
+# Requirements for Lower Body Pose Estimation Training
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Core Deep Learning
+torch>=2.0.0
+torchvision>=0.15.0
+
+# MMPose and Dependencies (install via mim)
+# Note: mmengine, mmcv, mmdet, mmpose should be installed via OpenMMLab's mim
+# See installation instructions below
+
+# Dataset Management
+fiftyone>=0.23.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Configuration
+pyyaml>=6.0
+
+# Data Processing
+numpy>=1.24.0
+pandas>=2.0.0
+opencv-python>=4.8.0
+pillow>=10.0.0
+
+# Image Augmentation (used by MMPose)
+albumentations>=1.3.0
+
+# Progress Bars
+tqdm>=4.65.0
+
+# Logging
+tensorboard>=2.13.0
+
+# Optional but Recommended
+scikit-learn>=1.3.0
+scipy>=1.11.0

@@ -40,7 +40,7 @@ job:
   # │                Use this for: Complete training and evaluation            │
   # └──────────────────────────────────────────────────────────────────────────┘
 
-  type: "both"  # ← CHANGE THIS: "train", "inference", or "both"
+  type: "inference"  # ← CHANGE THIS: "train", "inference", or "both"
 
   # Skip data export (useful if data already exported)
   # Set to true to reuse existing exported data
@@ -100,11 +100,11 @@ training:
 # ──────────────────────────────────────────────────────────────────────────────
 paths:
   # Root directory for exported COCO data
-  export_root: "./data/fo_coco_export"
+  export_root: "./output/data/fo_coco_export"
 
   # Working directory for training outputs
   # Contains: checkpoints, logs, config, validation results
-  work_dir: "./work_dirs/rtmpose_lower_body"
+  work_dir: "./output/models/fo_coco_export"
 
   # Validation results subdirectory (relative to work_dir)
   validation_dir: "oks_validation"
