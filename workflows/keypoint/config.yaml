@@ -1,237 +1,164 @@
-# Unified Configuration for Lower Body Pose Estimation
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# This single config file supports all job types: train, inference, or both
-# Simply change job.type to switch between modes
+# Configuration for Lower Body Pose Estimation (keypoint_mmpose.py)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Dataset Configuration
 # ──────────────────────────────────────────────────────────────────────────────
 dataset:
-  # FiftyOne dataset name (must be already loaded in FiftyOne)
-  # Change this to your dataset name
   name: "mcity-coco-person-2017"
-
-  # Field names in the FiftyOne dataset
-  detection_field: "detections"  # fo.Detections field with bounding boxes
-  keypoint_field: "keypoints"      # fo.Keypoints field with pose annotations
-
-  # Tags used to split train/validation sets
+  detection_field: "detections"
+  keypoint_field: "keypoints"
   train_tag: "train"
   validation_tag: "val"
-
-  # If no validation tag exists, use this fraction of training data
-  validation_split: 0.1  # 10% of train → validation
+  validation_split: 0.1
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Job Configuration - CHANGE THIS TO SWITCH MODES
+# Job Configuration
 # ──────────────────────────────────────────────────────────────────────────────
 job:
-  # ┌──────────────────────────────────────────────────────────────────────────┐
-  # │ Job Type: Choose one of the following                                   │
-  # │                                                                          │
-  # │  "train"     - Export data + train model + validate                     │
-  # │                Use this for: Initial training, new experiments           │
-  # │                                                                          │
-  # │  "inference" - Only run inference and validation on existing checkpoint │
-  # │                Use this for: Evaluating trained models                   │
-  # │                                                                          │
-  # │  "both"      - Full pipeline (export + train + inference + validate)    │
-  # │                Use this for: Complete training and evaluation            │
-  # └──────────────────────────────────────────────────────────────────────────┘
-
-  type: "inference"  # ← CHANGE THIS: "train", "inference", or "both"
-
-  # Skip data export (useful if data already exported)
-  # Set to true to reuse existing exported data
-  skip_export: true
-
-  # Limit validation samples for quick testing
-  # Set to integer (e.g., 100) for testing, or null to use all samples
+  type: "both"              # Options: "train", "inference", "both"
+  skip_export: true         # Set true if data already exported
   max_validation_samples: null
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Finetune Configuration
+# ──────────────────────────────────────────────────────────────────────────────
+finetune:
+  enabled: false             # Set true to enable finetuning
+  source: "local"            # Options: "local" or "huggingface"
+
+  # HuggingFace configuration (used when source="huggingface")
+  huggingface:
+    repo_id: "username/model-repo"
+    filename: "best.pt"
+    revision: "main"
+    cache_dir: null
+
+  # Local configuration (used when source="local")
+  local:
+    checkpoint_path: "./output/previous-dataset/models/best.pt"
+
+  # Finetuning options
+  learning_rate_scale: 0.1   # Multiply LR by this (0.1 = 10x lower)
+  freeze_backbone: false     # Freeze backbone layers (not yet implemented)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Model Configuration
 # ──────────────────────────────────────────────────────────────────────────────
 model:
-  # ┌──────────────────────────────────────────────────────────────────────────┐
-  # │ Checkpoint Path Configuration                                            │
-  # │                                                                          │
-  # │ Option 1: Auto-detect (Recommended)                                     │
-  # │   checkpoint_path: null                                                 │
-  # │   auto_checkpoint: true                                                 │
-  # │   → Automatically finds best_coco_AP_epoch_*.pth or last.pth            │
-  # │                                                                          │
-  # │ Option 2: Specify exact path                                            │
-  # │   checkpoint_path: "./work_dirs/exp1/best_coco_AP_epoch_50.pth"        │
-  # │   auto_checkpoint: false  (not used when path specified)               │
-  # │                                                                          │
-  # │ Option 3: Train from scratch                                            │
-  # │   checkpoint_path: null                                                 │
-  # │   auto_checkpoint: false                                                │
-  # │   job.type: "train"                                                     │
-  # └──────────────────────────────────────────────────────────────────────────┘
-
-  checkpoint_path: null  # Path to checkpoint, or null for auto-detect
-  auto_checkpoint: true  # Auto-find best checkpoint when path is null
+  checkpoint_path: null      # Specific checkpoint for inference (null = auto-detect)
+  auto_checkpoint: true      # Auto-find best checkpoint
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Training Configuration
 # ──────────────────────────────────────────────────────────────────────────────
 training:
-  # Image input size (width, height)
-  # Common sizes: 192x256, 256x192, 384x288
   image_size:
     width: 192
     height: 256
-
-  # Training hyperparameters
-  batch_size: 32          # Doubled from 16 → 2x faster
-  max_epochs: 10          # Reduced from 50 → 5x faster
-  learning_rate: 0.001    # Increased for faster convergence
-  num_workers: 8          # Doubled for faster data loading
-
-  # Learning rate schedule
-  warmup_steps: 100       # Reduced from 500
-  cosine_annealing: true  # Use cosine annealing schedule
+  batch_size: 16
+  max_epochs: 1
+  learning_rate: 0.0005
+  num_workers: 8
+  warmup_steps: 500
+  cosine_annealing: true
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Output Paths
+# Output Paths (Dataset-specific structure)
 # ──────────────────────────────────────────────────────────────────────────────
 paths:
-  # Root directory for exported COCO data
-  export_root: "./output/data/fo_coco_export"
+  # Output root directory
+  output_root: "./output"
 
-  # Working directory for training outputs
-  # Contains: checkpoints, logs, config, validation results
-  work_dir: "./output/models/fo_coco_export"
+  # Dataset-specific paths are automatically constructed as:
+  #   Data:   {output_root}/{dataset.name}/data/
+  #   Models: {output_root}/{dataset.name}/models/
+  #
+  # Example with dataset.name = "mcity-coco-person-2017":
+  #   Data:   ./output/mcity-coco-person-2017/data/
+  #   Models: ./output/mcity-coco-person-2017/models/
 
-  # Validation results subdirectory (relative to work_dir)
-  validation_dir: "oks_validation"
+  # Validation results subdirectory (relative to models directory)
+  validation_dir: "validation_results"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Validation Configuration
 # ──────────────────────────────────────────────────────────────────────────────
 validation:
-  # Run validation after training
   run_after_training: true
-
-  # Generate visualization plots
   generate_plots: true
-
-  # Save detailed metrics report (JSON + TXT)
   save_report: true
-
-  # OKS thresholds for AP calculation
-  # Standard COCO: 0.5, 0.55, ..., 0.95
   oks_thresholds: [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Advanced Configuration
 # ──────────────────────────────────────────────────────────────────────────────
 advanced:
-  # Random seed for reproducibility
-  # Set to integer for reproducible results, or null for random
   seed: 42
-
-  # CUDA device (e.g., "cuda:0", "cuda:1", "cpu")
   device: "cuda:0"
-
-  # Enable distributed training (multi-GPU)
   distributed: false
+  use_amp: true
+  save_interval: 5
+  max_keep_checkpoints: 3
 
-  # Mixed precision training (fp16) - faster but may affect accuracy
-  use_amp: true  # ENABLED for 2-3x speed boost
+# ══════════════════════════════════════════════════════════════════════════════
+# QUICK START EXAMPLES
+# ══════════════════════════════════════════════════════════════════════════════
 
-  # Checkpoint saving
-  save_interval: 5         # Save every 5 epochs instead of every epoch
-  max_keep_checkpoints: 2  # Keep fewer checkpoints
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Quick Configuration Presets
-# ──────────────────────────────────────────────────────────────────────────────
-# Uncomment one of these sections to quickly switch modes:
-
-# ┌─ PRESET 1: Initial Training ─────────────────────────────────────────────┐
-# │ Trains a new model from scratch with full validation                     │
-# └───────────────────────────────────────────────────────────────────────────┘
+# ─────────────────────────────────────────────────────────────────────────────
+# Example 1: Train from Scratch
+# ─────────────────────────────────────────────────────────────────────────────
 # job:
 #   type: "train"
-#   skip_export: false
-# model:
-#   checkpoint_path: null
-#   auto_checkpoint: false
+# finetune:
+#   enabled: false
+#
+# Result: Trains new model, saves to ./output/{dataset-name}/models/best.pt
 
-# ┌─ PRESET 2: Evaluate Existing Model ──────────────────────────────────────┐
-# │ Runs inference and validation on a trained checkpoint                    │
-# └───────────────────────────────────────────────────────────────────────────┘
-# job:
-#   type: "inference"
-#   skip_export: false  # May need to export val data if not cached
-# model:
-#   checkpoint_path: null  # Auto-finds best checkpoint
-#   auto_checkpoint: true
-
-# ┌─ PRESET 3: Quick Testing (100 samples) ──────────────────────────────────┐
-# │ Fast validation on small subset for testing                              │
-# └───────────────────────────────────────────────────────────────────────────┘
-# job:
-#   type: "inference"
-#   skip_export: true  # Reuse existing data
-#   max_validation_samples: 100
-# model:
-#   checkpoint_path: null
-#   auto_checkpoint: true
-
-# ┌─ PRESET 4: Resume/Continue Training ─────────────────────────────────────┐
-# │ Continue training from a checkpoint                                       │
-# └───────────────────────────────────────────────────────────────────────────┘
+# ─────────────────────────────────────────────────────────────────────────────
+# Example 2: Finetune from Local Checkpoint
+# ─────────────────────────────────────────────────────────────────────────────
 # job:
 #   type: "train"
-#   skip_export: true  # Reuse exported data
-# model:
-#   checkpoint_path: "./work_dirs/rtmpose_lower_body/best_coco_AP_epoch_30.pth"
-#   auto_checkpoint: false
-# training:
-#   max_epochs: 80  # Train 50 more epochs (30 + 50)
+# finetune:
+#   enabled: true
+#   source: "local"
+#   local:
+#     checkpoint_path: "./output/previous-dataset/models/best.pt"
+#   learning_rate_scale: 0.1
+#
+# Result: Loads best.pt, finetunes with 10x lower LR
 
-# ┌─ PRESET 5: Cross-Dataset Evaluation ─────────────────────────────────────┐
-# │ Evaluate model trained on Dataset A using Dataset B                      │
-# └───────────────────────────────────────────────────────────────────────────┘
-# dataset:
-#   name: "my-dataset-B"  # Different dataset
+# ─────────────────────────────────────────────────────────────────────────────
+# Example 3: Finetune from HuggingFace
+# ─────────────────────────────────────────────────────────────────────────────
+# job:
+#   type: "train"
+# finetune:
+#   enabled: true
+#   source: "huggingface"
+#   huggingface:
+#     repo_id: "username/pretrained-pose-model"
+#     filename: "best.pt"
+#
+# Result: Downloads from HF, finetunes, saves to ./output/{dataset-name}/models/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Example 4: Inference Only
+# ─────────────────────────────────────────────────────────────────────────────
 # job:
 #   type: "inference"
-#   skip_export: false
 # model:
-#   checkpoint_path: "./work_dirs/dataset_A/best_coco_AP_epoch_50.pth"
-#   auto_checkpoint: false
-# paths:
-#   work_dir: "./work_dirs/cross_eval_A_on_B"
+#   auto_checkpoint: true
+#
+# Result: Finds best.pt, runs validation, generates metrics
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Usage Examples
-# ──────────────────────────────────────────────────────────────────────────────
-
-# Example 1: Train new model
-#   1. Set job.type = "train"
-#   2. Run: python train_mmpose_with_oks_validation.py
-
-# Example 2: Evaluate trained model
-#   1. Set job.type = "inference"
-#   2. Run: python train_mmpose_with_oks_validation.py
-
-# Example 3: Full pipeline
-#   1. Set job.type = "both"
-#   2. Run: python train_mmpose_with_oks_validation.py
-
-# Example 4: Override from command line
-#   python train_mmpose_with_oks_validation.py --job-type inference
-
-# Example 5: Use different dataset
-#   python train_mmpose_with_oks_validation.py --dataset my-custom-dataset
-
-# Example 6: Quick test
-#   python train_mmpose_with_oks_validation.py \
-#       --job-type inference \
-#       --max-val-samples 100
+# ─────────────────────────────────────────────────────────────────────────────
+# Example 5: Full Pipeline (Train + Validate)
+# ─────────────────────────────────────────────────────────────────────────────
+# job:
+#   type: "both"
+# finetune:
+#   enabled: false
+#
+# Result: Trains model, then runs validation, generates all reports

@@ -91,13 +91,127 @@ def load_config(config_path: str) -> Dict:
 def find_best_checkpoint(work_dir: str) -> Optional[str]:
     """
     Find the best checkpoint in work_dir.
-    Priority: best_coco_AP_epoch_*.pth > epoch_*.pth (latest) > last.pth > None
+    Priority: best.pt > best_coco_AP_epoch_*.pth > epoch_*.pth (latest) > last.pth > None
     """
     work_path = Path(work_dir)
 
     if not work_path.exists():
         log.warning("  Work directory does not exist: %s", work_dir)
         return None
+
+    log.info("Searching for checkpoints in: %s", work_path.absolute())
+
+    # 1. Check for best.pt (new standard format)
+    best_pt = work_path / "best.pt"
+    if best_pt.exists():
+        log.info("  ✓ Found best.pt")
+        return str(best_pt)
+
+    # 2. Check for best_coco_AP_epoch_*.pth
+    best_checkpoints = sorted(work_path.glob("best_coco_AP_epoch_*.pth"))
+    if best_checkpoints:
+        log.info("  ✓ Using best checkpoint: %s", best_checkpoints[-1].name)
+        return str(best_checkpoints[-1])
+
+    # 3. Check for epoch_*.pth (latest)
+    epoch_checkpoints = sorted(work_path.glob("epoch_*.pth"))
+    if epoch_checkpoints:
+        log.info("  ✓ Using latest epoch checkpoint: %s", epoch_checkpoints[-1].name)
+        return str(epoch_checkpoints[-1])
+
+    # 4. Check for last.pth
+    last_checkpoint = work_path / "last.pth"
+    if last_checkpoint.exists():
+        log.info("  ✓ Using last checkpoint: last.pth")
+        return str(last_checkpoint)
+
+    log.warning("  No checkpoints found")
+    return None
+
+
+def download_from_huggingface(repo_id: str, filename: str, revision: str = "main", cache_dir: Optional[str] = None) -> str:
+    """
+    Download checkpoint from HuggingFace Hub.
+
+    Args:
+        repo_id: HuggingFace repository ID (e.g., "username/model-repo")
+        filename: File to download (e.g., "best.pt")
+        revision: Branch/tag/commit (default: "main")
+        cache_dir: Cache directory (default: HF default cache)
+
+    Returns:
+        Path to downloaded checkpoint
+    """
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError:
+        raise ImportError(
+            "huggingface_hub is required for downloading from HuggingFace.\n"
+            "Install it with: pip install huggingface-hub"
+        )
+
+    log.info("━━━ Downloading from HuggingFace ━━━━━━━━━━━━━━━━━━━━")
+    log.info("  Repository: %s", repo_id)
+    log.info("  File: %s", filename)
+    log.info("  Revision: %s", revision)
+
+    try:
+        checkpoint_path = hf_hub_download(
+            repo_id=repo_id,
+            filename=filename,
+            revision=revision,
+            cache_dir=cache_dir
+        )
+        log.info("  ✓ Downloaded to: %s", checkpoint_path)
+        return checkpoint_path
+    except Exception as e:
+        log.error("Failed to download from HuggingFace: %s", e)
+        raise
+
+
+def resolve_pretrained_checkpoint(config: Dict) -> Optional[str]:
+    """
+    Resolve pretrained checkpoint path based on finetune configuration.
+
+    Args:
+        config: Full configuration dictionary
+
+    Returns:
+        Path to pretrained checkpoint, or None if training from scratch
+    """
+    finetune_config = config.get('finetune', {})
+
+    if not finetune_config.get('enabled', False):
+        log.info("Training from scratch (finetuning disabled)")
+        return None
+
+    source = finetune_config.get('source', 'local')
+
+    if source == 'huggingface':
+        hf_config = finetune_config.get('huggingface', {})
+        return download_from_huggingface(
+            repo_id=hf_config['repo_id'],
+            filename=hf_config.get('filename', 'best.pt'),
+            revision=hf_config.get('revision', 'main'),
+            cache_dir=hf_config.get('cache_dir')
+        )
+
+    elif source == 'local':
+        checkpoint_path = finetune_config.get('local', {}).get('checkpoint_path')
+        if not checkpoint_path:
+            raise ValueError("finetune.local.checkpoint_path is required when source='local'")
+
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(f"Pretrained checkpoint not found: {checkpoint_path}")
+
+        log.info("Using local pretrained checkpoint: %s", checkpoint_path)
+        return checkpoint_path
+
+    else:
+        raise ValueError(
+            f"Invalid finetune source: {source}. Must be 'huggingface' or 'local'"
+        )
+
 
     # List all .pth files for debugging
     all_checkpoints = list(work_path.glob("*.pth"))
@@ -438,6 +552,7 @@ def build_config(
     max_epochs: int = 50,
     lr: float = 5e-4,
     num_workers: int = 4,
+    pretrained_checkpoint: Optional[str] = None,  # NEW: for finetuning
 ) -> Config:
 
     W, H = img_size
@@ -519,7 +634,7 @@ def build_config(
         ),
         log_processor=dict(type="LogProcessor", window_size=50, by_epoch=True),
         log_level="INFO",
-        load_from=None,
+        load_from=pretrained_checkpoint,  # Load pretrained weights if provided
         resume=False,
 
         # ── RTMPose-s model ───────────────────────────────────────────
@@ -1171,8 +1286,20 @@ def main(config_path: str = "config.yaml") -> None:
     skip_export = config['job']['skip_export']
     max_val_samples = config['job']['max_validation_samples']
 
-    export_root = config['paths']['export_root']
-    work_dir = config['paths']['work_dir']
+    # Construct dataset-specific paths
+    output_root = config['paths'].get('output_root', './output')
+    data_dir = os.path.join(output_root, dataset_name, "data")
+    model_dir = os.path.join(output_root, dataset_name, "models")
+    validation_dir = os.path.join(model_dir, config['paths'].get('validation_dir', 'validation_results'))
+
+    # Legacy path support (for backward compatibility)
+    if 'export_root' in config['paths']:
+        export_root = config['paths']['export_root']
+        work_dir = config['paths']['work_dir']
+        log.warning("Using legacy paths (export_root, work_dir). Consider updating to output_root structure.")
+    else:
+        export_root = data_dir
+        work_dir = model_dir
 
     img_w = config['training']['image_size']['width']
     img_h = config['training']['image_size']['height']
@@ -1193,6 +1320,14 @@ def main(config_path: str = "config.yaml") -> None:
     should_train = job_type in ['train', 'both']
     should_infer = job_type in ['inference', 'both']
 
+    log.info("\n" + "=" * 70)
+    log.info("PATH CONFIGURATION")
+    log.info("=" * 70)
+    log.info("  Dataset: %s", dataset_name)
+    log.info("  Data directory:  %s", data_dir)
+    log.info("  Model directory: %s", model_dir)
+    log.info("  Validation dir:  %s", validation_dir)
+    log.info("=" * 70)
     log.info("\n" + "=" * 70)
     log.info("JOB CONFIGURATION")
     log.info("=" * 70)
@@ -1266,6 +1401,30 @@ def main(config_path: str = "config.yaml") -> None:
     checkpoint_path = None
 
     if should_train:
+        # Resolve pretrained checkpoint for finetuning
+        pretrained_checkpoint = resolve_pretrained_checkpoint(config)
+
+        if pretrained_checkpoint:
+            log.info("\n" + "=" * 70)
+            log.info("FINETUNING MODE")
+            log.info("=" * 70)
+            log.info("  Pretrained checkpoint: %s", pretrained_checkpoint)
+
+            # Adjust learning rate if specified
+            lr_scale = config.get('finetune', {}).get('learning_rate_scale', 1.0)
+            if lr_scale != 1.0:
+                lr = lr * lr_scale
+                log.info("  Adjusted learning rate: %.6f (scale=%.2f)", lr, lr_scale)
+
+            freeze_backbone = config.get('finetune', {}).get('freeze_backbone', False)
+            if freeze_backbone:
+                log.info("  Backbone freezing: ENABLED (Note: not yet implemented)")
+            log.info("=" * 70 + "\n")
+        else:
+            log.info("\n" + "=" * 70)
+            log.info("TRAINING FROM SCRATCH")
+            log.info("=" * 70 + "\n")
+
         log.info("Building MMPose config …")
         cfg = build_config(
             train_ann=train_ann,
@@ -1276,6 +1435,7 @@ def main(config_path: str = "config.yaml") -> None:
             max_epochs=max_epochs,
             lr=lr,
             num_workers=num_workers,
+            pretrained_checkpoint=pretrained_checkpoint,  # Pass pretrained checkpoint
         )
 
         # 5. Train ────────────────────────────────────────────────────
@@ -1283,10 +1443,17 @@ def main(config_path: str = "config.yaml") -> None:
         runner = Runner.from_cfg(cfg)
         runner.train()
 
-        # 6. Find best checkpoint ─────────────────────────────────────
+        # 6. Find and save best checkpoint ────────────────────────────
         checkpoint_path = find_best_checkpoint(work_dir)
         if checkpoint_path:
-            log.info("Training complete! Best checkpoint: %s", checkpoint_path)
+            # Save as best.pt
+            best_path = os.path.join(work_dir, "best.pt")
+            if not os.path.exists(best_path) or not checkpoint_path.endswith("best.pt"):
+                import shutil
+                shutil.copy(checkpoint_path, best_path)
+                log.info("✓ Saved best model to: %s", best_path)
+            log.info("Training complete! Best checkpoint: %s", best_path)
+            checkpoint_path = best_path
         else:
             log.warning("No checkpoint found after training")
 
