@@ -763,13 +763,19 @@ class OKSValidator:
 
             # Run inference
             try:
+                # inference_topdown expects bboxes as list of [x1,y1,x2,y2] or numpy arrays
                 results = inference_topdown(
                     self.model,
                     img_path,
-                    bboxes=[{'bbox': b} for b in bboxes]
+                    bboxes=np.array(bboxes)  # Convert to numpy array
                 )
             except Exception as e:
-                log.warning(f"  Inference failed for {img_path}: {e}")
+                import traceback
+                log.warning(f"  Inference failed for {img_path}")
+                log.warning(f"  Error type: {type(e).__name__}")
+                log.warning(f"  Error message: {str(e)}")
+                if idx < 5:  # Show full traceback for first 5 errors
+                    log.warning(f"  Traceback:\n{traceback.format_exc()}")
                 continue
 
             # Process each person annotation
@@ -794,8 +800,17 @@ class OKSValidator:
                     continue
 
                 # Model predicts 6 keypoints (lower body only)
-                pred_kps = pred_instances.keypoints[0].cpu().numpy()  # (6, 2)
-                pred_scores = pred_instances.keypoint_scores[0].cpu().numpy()  # (6,)
+                # Handle both torch tensors and numpy arrays
+                pred_kps_raw = pred_instances.keypoints[0]
+                pred_scores_raw = pred_instances.keypoint_scores[0]
+
+                # Convert to numpy if needed
+                if hasattr(pred_kps_raw, 'cpu'):
+                    pred_kps = pred_kps_raw.cpu().numpy()  # (6, 2)
+                    pred_scores = pred_scores_raw.cpu().numpy()  # (6,)
+                else:
+                    pred_kps = np.array(pred_kps_raw)  # Already numpy
+                    pred_scores = np.array(pred_scores_raw)
 
                 # Verify prediction shape
                 if len(pred_kps) != NUM_KP:

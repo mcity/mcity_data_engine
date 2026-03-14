@@ -18,7 +18,7 @@ dataset:
 
   # Tags used to split train/validation sets
   train_tag: "train"
-  validation_tag: "validation"
+  validation_tag: "val"
 
   # If no validation tag exists, use this fraction of training data
   validation_split: 0.1  # 10% of train → validation
@@ -40,7 +40,7 @@ job:
   # │                Use this for: Complete training and evaluation            │
   # └──────────────────────────────────────────────────────────────────────────┘
 
-  type: "both"  # ← CHANGE THIS: "train", "inference", or "both"
+  type: "inference"  # ← CHANGE THIS: "train", "inference", or "both"
 
   # Skip data export (useful if data already exported)
   # Set to true to reuse existing exported data
