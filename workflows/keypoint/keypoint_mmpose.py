@@ -983,6 +983,17 @@ class OKSValidator:
                 'min_oks': 0.0,
                 'max_oks': 0.0,
                 'mAP': 0.0,
+                # F1 scores
+                'precision@0.50': 0.0,
+                'recall@0.50': 0.0,
+                'F1@0.50': 0.0,
+                'precision@0.75': 0.0,
+                'recall@0.75': 0.0,
+                'F1@0.75': 0.0,
+                'precision@0.90': 0.0,
+                'recall@0.90': 0.0,
+                'F1@0.90': 0.0,
+                'mean_F1': 0.0,
                 # Performance breakdown counts
                 'excellent_count': 0,
                 'good_count': 0,
@@ -1026,6 +1037,36 @@ class OKSValidator:
         aps = [np.mean(oks_scores >= t/100) for t in range(50, 100, 5)]
         metrics['mAP'] = float(np.mean(aps))
 
+        # Compute Precision, Recall, and F1 Score at different thresholds
+        # Standard COCO thresholds for pose estimation
+        f1_thresholds = [0.5, 0.75, 0.9]
+
+        for thresh in f1_thresholds:
+            # True Positives: predictions with OKS >= threshold
+            tp = np.sum(oks_scores >= thresh)
+            # False Positives: predictions with OKS < threshold
+            fp = np.sum(oks_scores < thresh)
+            # False Negatives: ground truth instances without predictions
+            # (approximated as same as total predictions for this implementation)
+            fn = len(oks_scores) - tp
+
+            # Precision: TP / (TP + FP)
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+
+            # Recall: TP / (TP + FN)
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+
+            # F1 Score: 2 * (Precision * Recall) / (Precision + Recall)
+            f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+
+            metrics[f'precision@{thresh:.2f}'] = float(precision)
+            metrics[f'recall@{thresh:.2f}'] = float(recall)
+            metrics[f'F1@{thresh:.2f}'] = float(f1)
+
+        # Compute mean F1 score across thresholds
+        f1_scores = [metrics[f'F1@{t:.2f}'] for t in f1_thresholds]
+        metrics['mean_F1'] = float(np.mean(f1_scores))
+
         # Per-keypoint average errors
         per_kp_errors = results['per_keypoint_errors']
         for kp_idx, errors in per_kp_errors.items():
@@ -1054,6 +1095,9 @@ class OKSValidator:
         log.info(f"  mAP:        {metrics['mAP']:.4f}")
         log.info(f"  AP@0.50:    {metrics['AP@0.50']:.4f}")
         log.info(f"  AP@0.75:    {metrics['AP@0.75']:.4f}")
+        log.info(f"  F1@0.50:    {metrics['F1@0.50']:.4f}")
+        log.info(f"  F1@0.75:    {metrics['F1@0.75']:.4f}")
+        log.info(f"  Mean F1:    {metrics['mean_F1']:.4f}")
 
         return metrics
 
@@ -1167,6 +1211,31 @@ class OKSValidator:
         plt.savefig(viz_dir / "performance_breakdown.png", dpi=150)
         plt.close()
 
+        # 6. F1, Precision, Recall comparison
+        f1_thresholds = [0.5, 0.75, 0.9]
+        f1_scores = [metrics[f'F1@{t:.2f}'] for t in f1_thresholds]
+        precision_scores = [metrics[f'precision@{t:.2f}'] for t in f1_thresholds]
+        recall_scores = [metrics[f'recall@{t:.2f}'] for t in f1_thresholds]
+
+        x = np.arange(len(f1_thresholds))
+        width = 0.25
+
+        plt.figure(figsize=(10, 6))
+        plt.bar(x - width, precision_scores, width, label='Precision', alpha=0.8)
+        plt.bar(x, recall_scores, width, label='Recall', alpha=0.8)
+        plt.bar(x + width, f1_scores, width, label='F1 Score', alpha=0.8)
+
+        plt.xlabel('OKS Threshold')
+        plt.ylabel('Score')
+        plt.title('Precision, Recall, and F1 Score at Different OKS Thresholds')
+        plt.xticks(x, [f'{t:.2f}' for t in f1_thresholds])
+        plt.ylim([0, 1.0])
+        plt.legend()
+        plt.grid(True, alpha=0.3, axis='y')
+        plt.tight_layout()
+        plt.savefig(viz_dir / "f1_precision_recall.png", dpi=150)
+        plt.close()
+
         log.info(f"  Visualizations saved to: {viz_dir}")
 
     def save_report(self, metrics: Dict):
@@ -1193,7 +1262,14 @@ class OKSValidator:
             f.write(f"Std Dev:         {metrics['std_oks']:.4f}\n")
             f.write(f"Min OKS:         {metrics['min_oks']:.4f}\n")
             f.write(f"Max OKS:         {metrics['max_oks']:.4f}\n")
-            f.write(f"mAP (0.5:0.95):  {metrics['mAP']:.4f}\n\n")
+            f.write(f"mAP (0.5:0.95):  {metrics['mAP']:.4f}\n")
+            f.write(f"Mean F1:         {metrics['mean_F1']:.4f}\n\n")
+
+            f.write("F1 SCORES, PRECISION, AND RECALL\n")
+            f.write("-" * 70 + "\n")
+            f.write(f"F1@0.50:         {metrics['F1@0.50']:.4f}  (P={metrics['precision@0.50']:.4f}, R={metrics['recall@0.50']:.4f})\n")
+            f.write(f"F1@0.75:         {metrics['F1@0.75']:.4f}  (P={metrics['precision@0.75']:.4f}, R={metrics['recall@0.75']:.4f})\n")
+            f.write(f"F1@0.90:         {metrics['F1@0.90']:.4f}  (P={metrics['precision@0.90']:.4f}, R={metrics['recall@0.90']:.4f})\n\n")
 
             f.write("AVERAGE PRECISION AT DIFFERENT THRESHOLDS\n")
             f.write("-" * 70 + "\n")
@@ -1504,6 +1580,9 @@ def main(config_path: str = "config.yaml") -> None:
             log.info("mAP:        %.4f", metrics['mAP'])
             log.info("AP@0.50:    %.4f", metrics['AP@0.50'])
             log.info("AP@0.75:    %.4f", metrics['AP@0.75'])
+            log.info("F1@0.50:    %.4f", metrics['F1@0.50'])
+            log.info("F1@0.75:    %.4f", metrics['F1@0.75'])
+            log.info("Mean F1:    %.4f", metrics['mean_F1'])
             log.info("=" * 70 + "\n")
         else:
             log.warning("No checkpoint available for inference")
