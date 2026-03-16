@@ -459,6 +459,9 @@ def export_split_coco(
 
     # ── 2g. Walk samples and inject keypoints ─────────────────────────
     patched = 0
+    nan_count = 0
+    total_keypoints = 0
+
     for sample in view.iter_samples(progress=True):
         base   = os.path.basename(sample.filepath)
         img_id = fname_to_id.get(base)
@@ -498,14 +501,34 @@ def export_split_coco(
             coco_indices = [11, 12, 13, 14, 15, 16]
 
             for coco_idx in coco_indices:
+                total_keypoints += 1
                 if coco_idx < len(raw_pts):
-                    px = float(raw_pts[coco_idx][0]) * W
-                    py = float(raw_pts[coco_idx][1]) * H
-                    # Use confidence for visibility if available
-                    if kp.confidence and coco_idx < len(kp.confidence):
-                        v = 2 if float(kp.confidence[coco_idx]) > 0.0 else 1
+                    # Get raw coordinates
+                    x_norm = raw_pts[coco_idx][0]
+                    y_norm = raw_pts[coco_idx][1]
+
+                    # Check for NaN or invalid values
+                    if x_norm is None or y_norm is None or \
+                       (isinstance(x_norm, float) and (x_norm != x_norm)) or \
+                       (isinstance(y_norm, float) and (y_norm != y_norm)):
+                        # NaN or None detected - mark as invisible
+                        px, py, v = 0.0, 0.0, 0
+                        nan_count += 1
                     else:
-                        v = 2
+                        # Valid coordinates - convert to pixel space
+                        px = float(x_norm) * W
+                        py = float(y_norm) * H
+
+                        # Use confidence for visibility if available
+                        if kp.confidence and coco_idx < len(kp.confidence):
+                            conf = kp.confidence[coco_idx]
+                            # Check for NaN in confidence too
+                            if conf is None or (isinstance(conf, float) and conf != conf):
+                                v = 0
+                            else:
+                                v = 2 if float(conf) > 0.0 else 1
+                        else:
+                            v = 2
                 else:
                     px, py, v = 0.0, 0.0, 0    # pad missing joints
 
@@ -524,6 +547,14 @@ def export_split_coco(
         "  Patched %d / %d annotations with keypoints → %s",
         patched, len(coco["annotations"]), ann_path,
     )
+
+    # Report NaN statistics
+    if nan_count > 0:
+        log.warning("  ⚠️  Found %d NaN keypoints out of %d total (%.1f%%)",
+                   nan_count, total_keypoints, 100 * nan_count / total_keypoints)
+        log.warning("  These keypoints were marked as invisible (v=0)")
+    else:
+        log.info("  ✓ No NaN keypoints found - all data valid")
 
     # Verify image paths are absolute in the saved file
     log.info("  Verifying saved image paths...")
@@ -553,10 +584,65 @@ def build_config(
     lr: float = 5e-4,
     num_workers: int = 4,
     pretrained_checkpoint: Optional[str] = None,  # NEW: for finetuning
+    model_size: str = 's',  # NEW: 's', 'm', 'l', or 'x'
 ) -> Config:
 
     W, H = img_size
     feat_w, feat_h = W // 32, H // 32   # 6 x 8 for 192 x 256
+
+    # ── RTMPose Model Size Configurations ─────────────────────────────
+    # Each model size has different:
+    # - deepen_factor: depth of network
+    # - widen_factor: width of network
+    # - out_channels: output channels from backbone
+    # - checkpoint: pretrained weights
+
+    MODEL_CONFIGS = {
+        's': {  # Small (default)
+            'name': 'RTMPose-s',
+            'deepen_factor': 0.167,
+            'widen_factor': 0.375,
+            'out_channels': 384,  # CSPNeXt-s output
+            'checkpoint': 'https://download.openmmlab.com/mmpose/v1/projects/rtmpose/cspnext-s_udp-aic-coco_210e-256x192-92f5a029_20230130.pth',
+        },
+        'm': {  # Medium
+            'name': 'RTMPose-m',
+            'deepen_factor': 0.33,
+            'widen_factor': 0.75,
+            'out_channels': 768,  # CSPNeXt-m output
+            'checkpoint': 'https://download.openmmlab.com/mmpose/v1/projects/rtmpose/cspnext-m_udp-aic-coco_210e-256x192-f2f7d6f6_20230130.pth',
+        },
+        'l': {  # Large
+            'name': 'RTMPose-l',
+            'deepen_factor': 0.67,
+            'widen_factor': 1.0,
+            'out_channels': 1024,  # CSPNeXt-l output
+            'checkpoint': 'https://download.openmmlab.com/mmpose/v1/projects/rtmpose/cspnext-l_udp-aic-coco_210e-256x192-273b7631_20230130.pth',
+        },
+        'x': {  # Extra Large
+            'name': 'RTMPose-x',
+            'deepen_factor': 1.0,
+            'widen_factor': 1.25,
+            'out_channels': 1280,  # CSPNeXt-x output
+            # RTMPose-x pretrained weights not publicly available
+            # Training will start from random initialization for backbone
+            'checkpoint': None,  # No pretrained weights available
+        },
+    }
+
+    # Validate and get model config
+    if model_size not in MODEL_CONFIGS:
+        raise ValueError(f"Invalid model_size: {model_size}. Must be one of: {list(MODEL_CONFIGS.keys())}")
+
+    model_cfg = MODEL_CONFIGS[model_size]
+    log.info(f"Building config for {model_cfg['name']} (deepen={model_cfg['deepen_factor']}, widen={model_cfg['widen_factor']})")
+
+    # Warn if no pretrained weights available
+    if model_cfg['checkpoint'] is None:
+        log.warning(f"⚠️  No pretrained weights available for {model_cfg['name']}")
+        log.warning("   Backbone will be trained from random initialization")
+        log.warning("   This will require more epochs and may result in lower accuracy")
+        log.warning("   Consider using size 'l' (large) instead for pretrained weights")
 
     simcc_encoder = dict(
         type="SimCCLabel",
@@ -622,7 +708,7 @@ def build_config(
         default_scope="mmpose",
 
         env_cfg=dict(
-            cudnn_benchmark=False,
+            cudnn_benchmark=True,  # Enable for speed (was False)
             mp_cfg=dict(mp_start_method="fork", opencv_num_threads=0),
             dist_cfg=dict(backend="nccl"),
         ),
@@ -650,8 +736,8 @@ def build_config(
                 type="CSPNeXt",
                 arch="P5",
                 expand_ratio=0.5,
-                deepen_factor=0.167,
-                widen_factor=0.375,
+                deepen_factor=model_cfg['deepen_factor'],
+                widen_factor=model_cfg['widen_factor'],
                 out_indices=(4,),
                 channel_attention=True,
                 norm_cfg=dict(type="BN"),
@@ -659,16 +745,12 @@ def build_config(
                 init_cfg=dict(
                     type="Pretrained",
                     prefix="backbone.",
-                    checkpoint=(
-                        "https://download.openmmlab.com/mmpose/v1/projects/"
-                        "rtmpose/cspnext-s_udp-aic-coco_210e-256x192"
-                        "-92f5a029_20230130.pth"
-                    ),
-                ),
+                    checkpoint=model_cfg['checkpoint'],
+                ) if model_cfg['checkpoint'] else None,  # Only load pretrained if available
             ),
             neck=dict(
                 type="ChannelMapper",
-                in_channels=[384],  # CSPNeXt-s outputs 384 channels, not 256
+                in_channels=[model_cfg['out_channels']],  # Use model-specific output channels
                 out_channels=256,
                 kernel_size=1,
             ),
@@ -1384,6 +1466,21 @@ def main(config_path: str = "config.yaml") -> None:
     lr = config['training']['learning_rate']
     num_workers = config['training']['num_workers']
 
+    # Model size configuration
+    model_size = config.get('model', {}).get('size', 's').lower()
+    if model_size not in ['s', 'm', 'l', 'x']:
+        log.warning(f"Invalid model size '{model_size}', defaulting to 's'")
+        model_size = 's'
+
+    # Update model_dir to include size subfolder
+    # Structure: ./output/{dataset-name}/models/{size}/
+    model_dir = os.path.join(model_dir, model_size)
+    validation_dir = os.path.join(model_dir, config['paths'].get('validation_dir', 'validation_results'))
+
+    # Update work_dir for legacy compatibility
+    if 'export_root' not in config['paths']:
+        work_dir = model_dir
+
     run_validation = config['validation']['run_after_training']
 
     # Validate job type
@@ -1400,6 +1497,7 @@ def main(config_path: str = "config.yaml") -> None:
     log.info("PATH CONFIGURATION")
     log.info("=" * 70)
     log.info("  Dataset: %s", dataset_name)
+    log.info("  Model size: %s", model_size.upper())
     log.info("  Data directory:  %s", data_dir)
     log.info("  Model directory: %s", model_dir)
     log.info("  Validation dir:  %s", validation_dir)
@@ -1512,6 +1610,7 @@ def main(config_path: str = "config.yaml") -> None:
             lr=lr,
             num_workers=num_workers,
             pretrained_checkpoint=pretrained_checkpoint,  # Pass pretrained checkpoint
+            model_size=model_size,  # Pass model size
         )
 
         # 5. Train ────────────────────────────────────────────────────
@@ -1559,6 +1658,7 @@ def main(config_path: str = "config.yaml") -> None:
                     max_epochs=max_epochs,
                     lr=lr,
                     num_workers=num_workers,
+                    model_size=model_size,  # Pass model size
                 )
                 cfg.dump(config_file)
                 log.info("Config saved to: %s", config_file)
