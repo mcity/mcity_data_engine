@@ -68,3 +68,6 @@ datasets:
   - name: gs_catherine_glen1-sample-1
     loader_fct: load_mcity_31k
     hf_dataset_name: mcity-engineering/gs_catherine_glen1-sample-1
+  - name: coco-2017-train
+    loader_fct: load_mcity_31k
+    hf_dataset_name: coco-2017-train

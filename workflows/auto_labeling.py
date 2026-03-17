@@ -2228,7 +2228,7 @@ class CustomRFDETRObjectDetection:
             "rfdetr_small": RFDETRSmall,
             "rfdetr_medium": RFDETRMedium,
             "rfdetr_large": RFDETRLarge,
-	    "rfdetr_xlarge": RFDETRXLarge,
+	       "rfdetr_xlarge": RFDETRXLarge,
             "rfdetr_2xlarge": RFDETR2XLarge
         }
 

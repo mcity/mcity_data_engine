@@ -6,7 +6,7 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "gs_catherine_glen1-sample-1",
+    "name": "coco-2017-train",
     "n_samples": None,
     "custom_view": None,
 }
@@ -68,12 +68,13 @@ WORKFLOWS = {
         },
     },
     "auto_labeling": {
-        "mode": [ 'inference'], #['train','inference']
+        "mode": [ 'train','inference'], #['train','inference']
         "model_source": [
         # "hf_models_objectdetection",
-         #"ultralytics",
+        # "ultralytics",
         # "custom_codetr",
-        "roboflow",
+        # "roboflow",
+        "roboflow_keypoint",
         ],
         "n_worker_dataloader": 8,
         "epochs": 12,
@@ -133,6 +134,46 @@ WORKFLOWS = {
             "gradient_checkpointing": False,      # Memory optimization
             "early_stopping_min_delta": 0.001,    # Minimum improvement for early stopping
             "early_stopping_use_ema": True,       # Use EMA model for early stopping
+        },
+        "roboflow_keypoint": {  # RF-DETR with dual bbox + keypoint heads
+            "export_dataset_root": "output/datasets/roboflow_kp_data/",
+            "configs": [
+                # "rfdetr_base",
+                # "rfdetr_large",
+                # "rfdetr_xlarge",
+                "rfdetr_2xlarge",
+            ],
+            # Keypoint configuration
+            "keypoint_field": "keypoints",          # FiftyOne field containing fo.Keypoints
+            "keypoint_names": [                     # Names in annotation order
+                "nose",
+                "left_eye", "right_eye",
+                "left_ear", "right_ear",
+                "left_shoulder", "right_shoulder",
+                "left_elbow", "right_elbow",
+                "left_wrist", "right_wrist",
+                "left_hip", "right_hip",
+                "left_knee", "right_knee",
+                "left_ankle", "right_ankle",
+            ],
+            "kp_xy_coef": 5.0,                      # Weight for xy coordinate loss
+            "kp_vis_coef": 1.0,                     # Weight for visibility loss
+            "freeze_backbone_epochs": 5,            # Epochs to keep backbone frozen
+            # Training parameters
+            "batch_size": 8,
+            "lr_encoder": None,                     # Encoder LR (default: learning_rate * 0.1)
+            "resolution": 880,  # must match model: rfdetr_2xlarge=880, xlarge=700, base/large=560
+            # Pre-trained weights – three options (pick one, comment out the others):
+            #   1. Named shorthand  → downloaded automatically from Roboflow CDN
+            #      "pretrain_weights": "rf-detr-base.pth",   # rfdetr_base
+            #      "pretrain_weights": "rf-detr-large.pth",  # rfdetr_large
+            #      "pretrain_weights": "rf-detr-nano.pth",   # rfdetr_nano
+            #      "pretrain_weights": "rf-detr-small.pth",  # rfdetr_small
+            #      "pretrain_weights": "rf-detr-medium.pth", # rfdetr_medium
+            #   2. Absolute path to a local .pth / .pt file (e.g. your own fine-tuned checkpoint)
+            #      "pretrain_weights": "/path/to/my_checkpoint.pt",
+            #   3. None → backbone initialised from DINOv2 ImageNet weights only (no DETR head pretrain)
+            "pretrain_weights": "/home/dataengine/Mcity/mcity_data_engine/output/models/rfdetr/mcity_31k/rfdetr_2xlarge/best.pth",
         },
         "ultralytics": {
             "export_dataset_root": "output/datasets/ultralytics_data/",

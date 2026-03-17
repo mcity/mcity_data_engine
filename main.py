@@ -42,6 +42,7 @@ from workflows.auto_labeling import (
     UltralyticsObjectDetection,
     ZeroShotObjectDetection,
 )
+from workflows.rfdetr_keypoint import RFDETRKeypointDetection
 from workflows.aws_download import AwsDownloader
 from workflows.class_mapping import ClassMapper
 from workflows.embedding_selection import EmbeddingSelection
@@ -688,6 +689,7 @@ class WorkflowExecutor:
                         "ultralytics",
                         "custom_codetr",
                         "roboflow",
+                        "roboflow_keypoint",
                     ]
 
                     # Common parameters between models
@@ -902,6 +904,78 @@ class WorkflowExecutor:
 
                             except Exception as e:
                                 logging.error(f"Error during RF-DETR workflow with {config}: {e}")
+                                wandb_exit_code = 1
+                            finally:
+                                wandb_close(wandb_exit_code)
+
+                    if SUPPORTED_MODEL_SOURCES[4] in selected_model_source:
+                        # RF-DETR with keypoint head
+                        config_rfdetr_kp = config_autolabel["roboflow_keypoint"]
+
+                        shared_config = {
+                            "epochs": config_autolabel["epochs"],
+                            "learning_rate": config_autolabel["learning_rate"],
+                            "weight_decay": config_autolabel["weight_decay"],
+                            "early_stop_patience": config_autolabel["early_stop_patience"],
+                            "early_stop_threshold": config_autolabel["early_stop_threshold"],
+                        }
+
+                        run_config_kp = {
+                            "export_dataset_root": config_rfdetr_kp["export_dataset_root"],
+                            "mode": config_autolabel["mode"],
+                            "inference_settings": config_autolabel["inference_settings"],
+                            "config": None,
+                            # Keypoint-specific
+                            "keypoint_field": config_rfdetr_kp["keypoint_field"],
+                            "keypoint_names": config_rfdetr_kp["keypoint_names"],
+                            "num_keypoints": len(config_rfdetr_kp["keypoint_names"]),
+                            "kp_xy_coef": config_rfdetr_kp.get("kp_xy_coef", 5.0),
+                            "kp_vis_coef": config_rfdetr_kp.get("kp_vis_coef", 1.0),
+                            "freeze_backbone_epochs": config_rfdetr_kp.get("freeze_backbone_epochs", 5),
+                            # RF-DETR parameters
+                            "batch_size": config_rfdetr_kp.get("batch_size", 8),
+                            "lr_encoder": config_rfdetr_kp.get("lr_encoder", None),
+                            "resolution": config_rfdetr_kp.get("resolution", 560),
+                            "pretrain_weights": config_rfdetr_kp.get("pretrain_weights", None),
+                        }
+
+                        for config in (
+                            pbar := tqdm(
+                                config_rfdetr_kp["configs"],
+                                desc="Processing RF-DETR Keypoint configurations",
+                            )
+                        ):
+                            pbar.set_description(f"RF-DETR Keypoint model {config}")
+                            run_config_kp["config"] = config
+
+                            try:
+                                wandb_exit_code = 0
+                                wandb_run = wandb_init(
+                                    run_name=config,
+                                    project_name="RF-DETR Keypoint Auto Labeling",
+                                    dataset_name=self.dataset_info["name"],
+                                    config=run_config_kp,
+                                    wandb_activate=True,
+                                )
+
+                                detector_kp = RFDETRKeypointDetection(
+                                    self.dataset, self.dataset_info, run_config_kp
+                                )
+
+                                detector_kp.convert_data()
+
+                                if "train" in mode:
+                                    logging.info(f"Training RF-DETR keypoint model: {config}")
+                                    detector_kp.train(run_config_kp, shared_config)
+
+                                if "inference" in mode:
+                                    logging.info(f"Running keypoint inference: {config}")
+                                    detector_kp.inference(
+                                        inference_settings=config_autolabel["inference_settings"]
+                                    )
+
+                            except Exception as e:
+                                logging.error(f"Error during RF-DETR keypoint workflow with {config}: {e}")
                                 wandb_exit_code = 1
                             finally:
                                 wandb_close(wandb_exit_code)
