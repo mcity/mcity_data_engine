@@ -1003,7 +1003,7 @@ class RFDETRKeypointDetection:
         # ── Optimizer (different LR for backbone vs heads) ────────────
         epochs = shared_config.get("epochs", 50)
         base_lr = shared_config.get("learning_rate", 1e-4)
-        lr_encoder = run_config.get("lr_encoder", base_lr * 0.1)
+        lr_encoder = run_config.get("lr_encoder") or (base_lr * 0.1)
         wd = shared_config.get("weight_decay", 1e-4)
 
         backbone_params = list(model.backbone.parameters())
