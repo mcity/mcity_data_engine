@@ -6,8 +6,8 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "coco-2017-train",
-    "n_samples": None,
+    "name": "ashley-huron-jan-2026",
+    "n_samples": None,   # None = full dataset
     "custom_view": None,
 }
 
@@ -68,7 +68,7 @@ WORKFLOWS = {
         },
     },
     "auto_labeling": {
-        "mode": [ 'train','inference'], #['train','inference']
+        "mode": [ 'inference'], #['train','inference']
         "model_source": [
         # "hf_models_objectdetection",
         # "ultralytics",
@@ -77,14 +77,14 @@ WORKFLOWS = {
         "roboflow_keypoint",
         ],
         "n_worker_dataloader": 8,
-        "epochs": 12,
-        "early_stop_patience": 2,
+        "epochs": 50,
+        "early_stop_patience": 10,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
         "weight_decay": 0.0001,
         "max_grad_norm": 0.01,
         "inference_settings": {
-            "do_eval": True,
+            "do_eval": False,
             "inference_on_test": True,
             "model_hf": None,  # None (automatic selection) or overwrite with Hugging Face ID. Assumes same model as selected below.
             "detection_threshold": 0.2,
@@ -143,37 +143,28 @@ WORKFLOWS = {
                 # "rfdetr_xlarge",
                 "rfdetr_2xlarge",
             ],
-            # Keypoint configuration
-            "keypoint_field": "keypoints",          # FiftyOne field containing fo.Keypoints
-            "keypoint_names": [                     # Names in annotation order
-                "nose",
-                "left_eye", "right_eye",
-                "left_ear", "right_ear",
-                "left_shoulder", "right_shoulder",
-                "left_elbow", "right_elbow",
-                "left_wrist", "right_wrist",
-                "left_hip", "right_hip",
-                "left_knee", "right_knee",
-                "left_ankle", "right_ankle",
-            ],
-            "kp_xy_coef": 5.0,                      # Weight for xy coordinate loss
-            "kp_vis_coef": 1.0,                     # Weight for visibility loss
-            "freeze_backbone_epochs": 5,            # Epochs to keep backbone frozen
-            # Training parameters
+            # ── FiftyOne-native mode (no COCO export needed) ──────────
+            "fo_native": True,                      # read directly from FiftyOne
+            "detection_field": "ground_truth",      # fo.Detections field name
+            "keypoint_field":  "pedestrian_points", # fo.Keypoints field name
+            "target_label":    "pedestrian",        # only this label is used
+            "class_names":     ["pedestrian"],
+            "num_classes":     1,
+            # ── Keypoint configuration ────────────────────────────────
+            "keypoint_names": ["ankle_center"],     # midpoint between left+right ankles
+            "kp_xy_coef": 5.0,                      # weight for xy coordinate loss
+            "kp_vis_coef": 1.0,                     # weight for visibility loss
+            "freeze_backbone_epochs": 5,
+            # ── Training parameters ───────────────────────────────────
             "batch_size": 8,
-            "lr_encoder": None,                     # Encoder LR (default: learning_rate * 0.1)
-            "resolution": 880,  # must match model: rfdetr_2xlarge=880, xlarge=700, base/large=560
-            # Pre-trained weights – three options (pick one, comment out the others):
-            #   1. Named shorthand  → downloaded automatically from Roboflow CDN
-            #      "pretrain_weights": "rf-detr-base.pth",   # rfdetr_base
-            #      "pretrain_weights": "rf-detr-large.pth",  # rfdetr_large
-            #      "pretrain_weights": "rf-detr-nano.pth",   # rfdetr_nano
-            #      "pretrain_weights": "rf-detr-small.pth",  # rfdetr_small
-            #      "pretrain_weights": "rf-detr-medium.pth", # rfdetr_medium
-            #   2. Absolute path to a local .pth / .pt file (e.g. your own fine-tuned checkpoint)
-            #      "pretrain_weights": "/path/to/my_checkpoint.pt",
-            #   3. None → backbone initialised from DINOv2 ImageNet weights only (no DETR head pretrain)
-            "pretrain_weights": "/home/dataengine/Mcity/mcity_data_engine/output/models/rfdetr/mcity_31k/rfdetr_2xlarge/best.pth",
+            "lr_encoder": None,
+            "resolution": 880,  # rfdetr_2xlarge=880, xlarge=700, base/large=560
+            # ── Pre-trained weights ───────────────────────────────────
+            # Start from the COCO-pretrained checkpoint to benefit from
+            # the bbox head warm-start; keypoint head is re-initialised.
+            # Path was previously /home/dataengine/... (wrong machine path → silently
+            # skipped, model started randomly → TPs=0 all training). Fixed to NFS path.
+            "pretrain_weights": "/nfs/turbo/coe-mcity/rpatnaik/Mcity/rf-detr-data-engine/mcity_data_engine/output/models/rfdetr_kp/coco-2017-keypoints/rfdetr_2xlarge/best.pt",
         },
         "ultralytics": {
             "export_dataset_root": "output/datasets/ultralytics_data/",
@@ -288,7 +279,7 @@ WORKFLOWS = {
     "ensemble_selection": {
         "field_includes": "pred_zsod_",  # V51 field used for detections, "pred_zsod_" default for zero-shot object detection models
         "agreement_threshold": 3,  # Threshold for n models necessary for agreement between models
-        "iou_threshold": 0.5,  # Threshold for IoU between bboxes to consider them as overlapping
+        "iou_threshold": 0.3,  # Threshold for IoU between bboxes to consider them as overlapping
         "max_bbox_size": 0.01,  # Value between [0,1] for the max size of considered bboxes
         "positive_classes": [  # Classes to consider, must be subset of available classes in the detections. Example for Vulnerable Road Users.
             "skater",

@@ -71,3 +71,9 @@ datasets:
   - name: coco-2017-train
     loader_fct: load_mcity_31k
     hf_dataset_name: coco-2017-train
+  - name: coco-2017-keypoints
+    loader_fct: load_mcity_31k
+    hf_dataset_name: coco-2017-keypoints
+  - name: mcity-engineering/mcity-person-keypoints
+    loader_fct: load_mcity_31k
+    hf_dataset_name: mcity-engineering/mcity-person-keypoints

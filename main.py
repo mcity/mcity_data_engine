@@ -925,6 +925,17 @@ class WorkflowExecutor:
                             "mode": config_autolabel["mode"],
                             "inference_settings": config_autolabel["inference_settings"],
                             "config": None,
+                            # FiftyOne data-path selector — MUST be forwarded so that
+                            # RFDETRKeypointDetection.train() uses the FO-native loader
+                            # (prefetch_fo_split → FiftyOneKeypointDataset) instead of
+                            # the COCO-export path.  Without this flag, fo_native
+                            # defaults to False and all keypoint visibilities are 0
+                            # (COCO fallback), causing OKS=nan for the entire run.
+                            "fo_native": config_rfdetr_kp.get("fo_native", False),
+                            "detection_field": config_rfdetr_kp.get("detection_field", "ground_truth"),
+                            "target_label": config_rfdetr_kp.get("target_label", "pedestrian"),
+                            "class_names": config_rfdetr_kp.get("class_names", ["pedestrian"]),
+                            "num_classes": config_rfdetr_kp.get("num_classes", 1),
                             # Keypoint-specific
                             "keypoint_field": config_rfdetr_kp["keypoint_field"],
                             "keypoint_names": config_rfdetr_kp["keypoint_names"],
@@ -1105,3 +1116,4 @@ def main():
 if __name__ == "__main__":
     cleanup_memory()
     main()
+

@@ -34,11 +34,13 @@ import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-import fiftyone as fo
 import numpy as np
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
 from huggingface_hub import HfApi, hf_hub_download
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
@@ -301,7 +303,192 @@ class KeypointCriterion(nn.Module):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3.  Dataset
+# 3.  Validation metrics helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _box_iou_xyxy(boxes_a: torch.Tensor, boxes_b: torch.Tensor) -> torch.Tensor:
+    """IoU between two sets of boxes in x1y1x2y2 format. Returns [N, M] matrix."""
+    x1 = torch.max(boxes_a[:, None, 0], boxes_b[None, :, 0])
+    y1 = torch.max(boxes_a[:, None, 1], boxes_b[None, :, 1])
+    x2 = torch.min(boxes_a[:, None, 2], boxes_b[None, :, 2])
+    y2 = torch.min(boxes_a[:, None, 3], boxes_b[None, :, 3])
+    inter = (x2 - x1).clamp(0) * (y2 - y1).clamp(0)
+    area_a = (boxes_a[:, 2] - boxes_a[:, 0]) * (boxes_a[:, 3] - boxes_a[:, 1])
+    area_b = (boxes_b[:, 2] - boxes_b[:, 0]) * (boxes_b[:, 3] - boxes_b[:, 1])
+    union = area_a[:, None] + area_b[None, :] - inter
+    return inter / union.clamp(min=1e-6)
+
+
+def _cxcywh_to_xyxy(boxes: torch.Tensor) -> torch.Tensor:
+    x1 = boxes[:, 0] - boxes[:, 2] / 2
+    y1 = boxes[:, 1] - boxes[:, 3] / 2
+    x2 = boxes[:, 0] + boxes[:, 2] / 2
+    y2 = boxes[:, 1] + boxes[:, 3] / 2
+    return torch.stack([x1, y1, x2, y2], dim=1)
+
+
+def _compute_ap(ap_entries: list, n_gt: int) -> float:
+    """
+    Compute Average Precision from a list of (score, is_tp) pairs and total GT count.
+    Uses the 101-point COCO interpolation.
+    """
+    if n_gt == 0 or not ap_entries:
+        return 0.0
+    ap_entries.sort(key=lambda x: -x[0])
+    tp_cum = fp_cum = 0
+    precisions, recalls = [], []
+    for _, is_tp in ap_entries:
+        if is_tp:
+            tp_cum += 1
+        else:
+            fp_cum += 1
+        precisions.append(tp_cum / (tp_cum + fp_cum))
+        recalls.append(tp_cum / n_gt)
+
+    # 101-point interpolation (COCO style)
+    ap = 0.0
+    for t in [r / 100 for r in range(101)]:
+        p_at_t = [p for p, r in zip(precisions, recalls) if r >= t]
+        ap += max(p_at_t) if p_at_t else 0.0
+    return ap / 101
+
+
+def _val_metrics_batch(
+    pred_logits: torch.Tensor,
+    pred_boxes: torch.Tensor,
+    pred_kp: torch.Tensor,
+    targets: list,
+    # Lowered from 0.5 → 0.3: early in training the model's max confidence is
+    # often 0.3–0.4, so conf_thresh=0.5 produced TPs=0 and OKS=N/A for many
+    # epochs even though the model was actively learning.  0.3 lets OKS/PCK
+    # be computed while the model is still warming up.
+    conf_thresh: float = 0.3,
+    iou_thresh: float = 0.5,
+    kp_sigma: float = 0.089,
+    pck_thresh: float = 0.2,
+    scale_min: float = 0.05,
+) -> dict:
+    """
+    Compute all validation metrics for one batch.
+
+    pred_logits : [B, Q, C]
+    pred_boxes  : [B, Q, 4]   cx,cy,w,h normalised
+    pred_kp     : [B, Q, K, 3]  x,y in [0,1], vis logit
+    targets     : list of dicts with 'boxes' [N,4], 'keypoints' [N,K,3]
+
+    Returns a dict of accumulators:
+      Bbox  : tp, fp, fn, n_gt, ap_entries [(score, is_tp)]
+      OKS   : oks_sum, n_oks, oks_per_kp [K], n_oks_per_kp [K]
+      PCK   : pck_correct, pck_total, pck_per_kp [K], pck_total_per_kp [K]
+    """
+    K = pred_kp.shape[2]
+    acc = dict(
+        tp=0, fp=0, fn=0, n_gt=0, ap_entries=[],
+        oks_sum=0.0, n_oks=0,
+        oks_per_kp=[0.0] * K, n_oks_per_kp=[0] * K,
+        pck_correct=0, pck_total=0,
+        pck_per_kp=[0] * K, pck_total_per_kp=[0] * K,
+    )
+
+    scores = pred_logits.sigmoid().max(dim=-1).values  # [B, Q]
+
+    for b in range(pred_logits.shape[0]):
+        sc = scores[b]                      # [Q]
+        pb = pred_boxes[b]                  # [Q, 4]
+        pk = pred_kp[b]                     # [Q, K, 3]
+        gt_boxes = targets[b]["boxes"]      # [N, 4] cx,cy,w,h
+        gt_kp    = targets[b]["keypoints"]  # [N, K, 3]
+
+        N_gt = gt_boxes.shape[0]
+        acc["n_gt"] += N_gt
+
+        keep = sc > conf_thresh
+        pb_f = pb[keep]
+        pk_f = pk[keep]
+        sc_f = sc[keep]
+        N_pred = pb_f.shape[0]
+
+        if N_gt == 0 and N_pred == 0:
+            continue
+        if N_gt == 0:
+            acc["fp"] += N_pred
+            acc["ap_entries"].extend((s.item(), False) for s in sc_f)
+            continue
+        if N_pred == 0:
+            acc["fn"] += N_gt
+            continue
+
+        iou_mat = _box_iou_xyxy(
+            _cxcywh_to_xyxy(pb_f),
+            _cxcywh_to_xyxy(gt_boxes),
+        )  # [N_pred, N_gt]
+
+        matched_gt   = set()
+        matched_pred = set()
+
+        for pi in sc_f.argsort(descending=True).tolist():
+            best_iou = iou_thresh - 1e-9
+            best_gi  = -1
+            for gi in range(N_gt):
+                if gi in matched_gt:
+                    continue
+                if iou_mat[pi, gi].item() > best_iou:
+                    best_iou = iou_mat[pi, gi].item()
+                    best_gi  = gi
+
+            is_tp = best_gi >= 0
+            acc["ap_entries"].append((sc_f[pi].item(), is_tp))
+
+            if is_tp:
+                matched_gt.add(best_gi)
+                matched_pred.add(pi)
+
+                pred_xy = pk_f[pi, :, :2]          # [K, 2]
+                tgt_xy  = gt_kp[best_gi, :, :2]    # [K, 2]
+                tgt_vis = gt_kp[best_gi, :, 2]     # [K]
+                vis_mask = (tgt_vis > 0)
+
+                if vis_mask.sum() > 0:
+                    g = gt_boxes[best_gi]
+                    # Clamp scale to scale_min so tiny far-away pedestrian boxes
+                    # don't collapse the OKS denominator to near-zero.
+                    # scale_min ≈ 0.05 means we never penalise predictions more
+                    # harshly than for a box that is 5 % of the image side.
+                    scale = (g[2] * g[3]).clamp(min=scale_min ** 2).sqrt()
+
+                    d2 = ((pred_xy - tgt_xy) ** 2).sum(dim=-1)  # [K]
+
+                    # ── OKS ───────────────────────────────────────────
+                    oks_per_kp = torch.exp(-d2 / (2 * scale ** 2 * kp_sigma ** 2))
+                    vis_f = vis_mask.float()
+                    oks_val = (oks_per_kp * vis_f).sum() / vis_f.sum()
+                    acc["oks_sum"] += oks_val.item()
+                    acc["n_oks"]   += 1
+                    for k in range(K):
+                        if vis_mask[k]:
+                            acc["oks_per_kp"][k]   += oks_per_kp[k].item()
+                            acc["n_oks_per_kp"][k] += 1
+
+                    # ── PCK@{pck_thresh} ──────────────────────────────
+                    dist = d2.sqrt()                      # [K] normalised distance
+                    threshold = pck_thresh * scale        # bbox-relative threshold
+                    for k in range(K):
+                        if vis_mask[k]:
+                            acc["pck_total"]          += 1
+                            acc["pck_total_per_kp"][k] += 1
+                            if dist[k].item() < threshold.item():
+                                acc["pck_correct"]          += 1
+                                acc["pck_per_kp"][k]         += 1
+
+        acc["tp"] += len(matched_pred)
+        acc["fp"] += N_pred - len(matched_pred)
+        acc["fn"] += N_gt  - len(matched_gt)
+
+    return acc
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4.  Dataset
 # ─────────────────────────────────────────────────────────────────────────────
 
 class CocoKeypointDataset(Dataset):
@@ -396,6 +583,16 @@ class CocoKeypointDataset(Dataset):
         # Build targets
         boxes, labels, keypoints = [], [], []
         for ann in anns:
+            # Validate category before appending anything
+            cat_id = ann["category_id"]
+            if cat_id not in self.cat_id_to_class:
+                logging.warning(f"Unknown category_id {cat_id} in annotation, skipping")
+                continue
+            cls_idx = self.cat_id_to_class[cat_id]
+            if cls_idx >= len(self.class_names):
+                logging.error(f"class idx {cls_idx} >= num_classes {len(self.class_names)}, cat_id={cat_id}")
+                continue
+
             x, y, w, h = ann["bbox"]
             # Convert to normalised cx-cy-w-h
             cx = (x + w / 2) * sx / self.resolution
@@ -403,7 +600,7 @@ class CocoKeypointDataset(Dataset):
             nw = w * sx / self.resolution
             nh = h * sy / self.resolution
             boxes.append([cx, cy, nw, nh])
-            labels.append(self.cat_id_to_class[ann["category_id"]])
+            labels.append(cls_idx)
 
             # Keypoints: [K*3] → [K, 3], normalise xy
             kp_flat = ann.get("keypoints", [0] * (self.num_keypoints * 3))
@@ -415,6 +612,11 @@ class CocoKeypointDataset(Dataset):
             kp[:, 0] = kp[:, 0] * sx / self.resolution
             kp[:, 1] = kp[:, 1] * sy / self.resolution
             keypoints.append(kp)
+
+        if not boxes:
+            boxes = [[0.5, 0.5, 0.1, 0.1]]
+            labels = [0]
+            keypoints = [np.zeros((self.num_keypoints, 3), dtype=np.float32)]
 
         target = {
             "boxes": torch.tensor(boxes, dtype=torch.float32),
@@ -433,7 +635,7 @@ def kp_collate_fn(batch):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4.  Model builder (loads RF-DETR pretrain + adds keypoint head)
+# 5.  Model builder (loads RF-DETR pretrain + adds keypoint head)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_rfdetr_keypoint_model(
@@ -470,7 +672,9 @@ def build_rfdetr_keypoint_model(
         "rfdetr_2xlarge": RFDETR2XLargeConfig,
     }
     config_cls = CONFIG_MAP.get(rfdetr_config_name.lower(), RFDETRBaseConfig)
-    model_cfg = config_cls(num_classes=num_classes, device=device)
+    # Pydantic config only accepts 'cpu'/'cuda'/'mps' — strip rank suffix for DDP
+    config_device = "cuda" if str(device).startswith("cuda") else str(device)
+    model_cfg = config_cls(num_classes=num_classes, device=config_device)
 
     # Download pretrain weights if needed
     if pretrain_weights:
@@ -552,7 +756,408 @@ def build_rfdetr_keypoint_model(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5.  Main workflow class
+# 6.  DDP training worker (module-level so mp.spawn can pickle it)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ddp_train_worker(
+    rank: int,
+    world_size: int,
+    dataset_dir: str,
+    output_dir: str,
+    run_config: dict,
+    shared_config: dict,
+    num_keypoints: int,
+    keypoint_names: list,
+    fo_prefetched: Optional[dict] = None,
+):
+    """Training loop for one GPU rank. Called by mp.spawn or directly."""
+    import torch.optim as optim
+
+    is_distributed = world_size > 1
+    if is_distributed:
+        dist.init_process_group(
+            "nccl", rank=rank, world_size=world_size,
+            timeout=__import__("datetime").timedelta(hours=4),
+        )
+        device = f"cuda:{rank}"
+        torch.cuda.set_device(device)
+        is_main = (rank == 0)
+        logging.info(f"DDP rank {rank}/{world_size} on {device}")
+    elif torch.cuda.is_available():
+        device = "cuda"
+        is_main = True
+        logging.info("Single-GPU training on cuda")
+    else:
+        device = "cpu"
+        is_main = True
+        logging.warning("No GPU – training on CPU")
+
+    model_name = run_config.get("config", "rfdetr_base").lower()
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Derive num_classes — from COCO JSON (COCO-export mode) or run_config (FO-native mode)
+    if fo_prefetched is not None:
+        num_classes = run_config.get("num_classes", 1)
+        class_names = run_config.get("class_names", [run_config.get("target_label", "pedestrian")])
+        if is_main:
+            logging.info(f"FO-native mode | classes: {class_names}")
+    else:
+        train_ann_path = os.path.join(dataset_dir, "train", "_annotations.coco.json")
+        try:
+            with open(train_ann_path) as f:
+                _coco = json.load(f)
+            class_names = [c["name"] for c in sorted(_coco["categories"], key=lambda c: c["id"])]
+            num_classes = len(class_names)
+        except Exception:
+            num_classes = run_config.get("num_classes", 1)
+            class_names = None
+        if is_main:
+            logging.info(f"Classes (from COCO JSON): {num_classes}")
+
+    # Pretrain weights
+    pretrain_weights = run_config.get("pretrain_weights", None)
+    if pretrain_weights is None:
+        DEFAULT_WEIGHTS = {
+            "rfdetr_nano":    "rf-detr-nano.pth",
+            "rfdetr_small":   "rf-detr-small.pth",
+            "rfdetr_medium":  "rf-detr-medium.pth",
+            "rfdetr_base":    "rf-detr-base.pth",
+            "rfdetr_large":   "rf-detr-large.pth",
+            "rfdetr_xlarge":  "rf-detr-xlarge.pth",
+            "rfdetr_2xlarge": "rf-detr-xxlarge.pth",
+        }
+        pretrain_weights = DEFAULT_WEIGHTS.get(model_name, "rf-detr-base.pth")
+
+    if is_main:
+        logging.info(f"Building {model_name} with {num_keypoints} keypoints …")
+    model = build_rfdetr_keypoint_model(
+        pretrain_weights=pretrain_weights,
+        num_classes=num_classes,
+        num_keypoints=num_keypoints,
+        keypoint_names=keypoint_names,
+        rfdetr_config_name=model_name,
+        device=device,
+    )
+
+    # ── DataLoaders ───────────────────────────────────────────────────
+    resolution = run_config.get("resolution", 560)
+    batch_size = run_config.get("batch_size", 8)
+
+    def _make_loader(split, shuffle):
+        # ── FiftyOne-native mode (pre-fetched, no COCO export needed) ─
+        if fo_prefetched is not None:
+            from workflows.keypoint.fo_keypoint_dataset import (
+                FiftyOneKeypointDataset, fo_kp_collate_fn,
+            )
+            split_key = "valid" if split == "valid" else split   # normalise key
+            data = fo_prefetched.get(split_key)
+            if not data:
+                return None
+            ds = FiftyOneKeypointDataset(
+                prefetched=data,
+                num_keypoints=num_keypoints,
+                keypoint_names=keypoint_names,
+                resolution=resolution,
+                augment=shuffle,
+            )
+            collate = fo_kp_collate_fn
+        else:
+            # ── COCO-export mode (original path) ──────────────────────
+            split_dir = os.path.join(dataset_dir, split)
+            ann_path = os.path.join(split_dir, "_annotations.coco.json")
+            if not os.path.exists(ann_path):
+                return None
+            ds = CocoKeypointDataset(
+                image_dir=split_dir,
+                annotation_path=ann_path,
+                num_keypoints=num_keypoints,
+                resolution=resolution,
+                augment=shuffle,
+            )
+            collate = kp_collate_fn
+
+        if is_distributed and shuffle:
+            sampler = DistributedSampler(ds, rank=rank, num_replicas=world_size, shuffle=True)
+            return DataLoader(ds, batch_size=batch_size, sampler=sampler,
+                              num_workers=2, collate_fn=collate, pin_memory=True)
+        return DataLoader(ds, batch_size=batch_size, shuffle=shuffle,
+                          num_workers=2, collate_fn=collate,
+                          pin_memory=torch.cuda.is_available())
+
+    train_loader = _make_loader("train", shuffle=True)
+    val_loader   = _make_loader("valid", shuffle=False)
+    if train_loader is None:
+        raise FileNotFoundError("No training data found.")
+
+    # ── Matcher + criteria ────────────────────────────────────────────
+    from rfdetr.main import populate_args
+    from rfdetr.config import (RFDETRBaseConfig, RFDETRNanoConfig,
+                                RFDETRSmallConfig, RFDETRMediumConfig, RFDETRLargeConfig)
+    from rfdetr.platform.models import RFDETRXLargeConfig, RFDETR2XLargeConfig
+    from rfdetr.models import build_criterion_and_postprocessors
+
+    CONFIG_MAP = {
+        "rfdetr_nano":    RFDETRNanoConfig,
+        "rfdetr_small":   RFDETRSmallConfig,
+        "rfdetr_medium":  RFDETRMediumConfig,
+        "rfdetr_base":    RFDETRBaseConfig,
+        "rfdetr_large":   RFDETRLargeConfig,
+        "rfdetr_xlarge":  RFDETRXLargeConfig,
+        "rfdetr_2xlarge": RFDETR2XLargeConfig,
+    }
+    cfg_cls = CONFIG_MAP.get(model_name, RFDETRBaseConfig)
+    config_device = "cuda" if str(device).startswith("cuda") else str(device)
+    model_cfg = cfg_cls(num_classes=num_classes, device=config_device)
+    rfdetr_args = populate_args(**model_cfg.model_dump())
+
+    criterion, _ = build_criterion_and_postprocessors(rfdetr_args)
+    criterion = criterion.to(device)
+
+    kp_criterion = KeypointCriterion(
+        matcher=build_matcher(rfdetr_args),
+        num_keypoints=num_keypoints,
+        kp_xy_coef=run_config.get("kp_xy_coef", 5.0),
+        kp_vis_coef=run_config.get("kp_vis_coef", 1.0),
+        group_detr=rfdetr_args.group_detr,
+    )
+
+    # ── Optimizer ────────────────────────────────────────────────────
+    epochs   = shared_config.get("epochs", 50)
+    base_lr  = shared_config.get("learning_rate", 1e-4)
+    lr_enc   = run_config.get("lr_encoder") or (base_lr * 0.1)
+    wd       = shared_config.get("weight_decay", 1e-4)
+
+    if is_distributed:
+        model = DDP(model, device_ids=[rank], find_unused_parameters=True)
+        raw_model = model.module
+    else:
+        raw_model = model
+
+    backbone_params = list(raw_model.backbone.parameters())
+    head_params = (
+        list(raw_model.transformer.parameters())
+        + list(raw_model.class_embed.parameters())
+        + list(raw_model.bbox_embed.parameters())
+        + list(raw_model.keypoint_embed.parameters())
+        + list(raw_model.refpoint_embed.parameters())
+        + list(raw_model.query_feat.parameters())
+    )
+    optimizer = optim.AdamW(
+        [{"params": backbone_params, "lr": lr_enc},
+         {"params": head_params,     "lr": base_lr}],
+        weight_decay=wd,
+    )
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+
+    freeze_epochs = run_config.get("freeze_backbone_epochs", 5)
+    best_val_loss = float("inf")
+    patience  = shared_config.get("early_stop_patience", 10)
+    no_improve = 0
+
+    if is_main:
+        logging.info("=" * 70)
+        logging.info("RF-DETR KEYPOINT TRAINING")
+        logging.info(f"  Model     : {model_name}")
+        logging.info(f"  Epochs    : {epochs}")
+        logging.info(f"  Batch size: {batch_size}  ×  {world_size} GPU(s)")
+        logging.info(f"  Keypoints : {num_keypoints} {keypoint_names}")
+        logging.info("=" * 70)
+
+    for epoch in range(epochs):
+        requires_grad = epoch >= freeze_epochs
+        for p in raw_model.backbone.parameters():
+            p.requires_grad_(requires_grad)
+        if is_distributed and hasattr(train_loader.sampler, "set_epoch"):
+            train_loader.sampler.set_epoch(epoch)
+
+        # ── Train ─────────────────────────────────────────────────────
+        model.train()
+        epoch_loss, n_batches = 0.0, 0
+        for imgs, targets in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}",
+                                  disable=not is_main):
+            imgs    = [img.to(device) for img in imgs]
+            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+            nested  = nested_tensor_from_tensor_list(imgs)
+            outputs = model(nested, targets)
+
+            det_loss_dict = criterion(outputs, targets)
+            det_loss = sum(det_loss_dict[k] * criterion.weight_dict[k]
+                           for k in det_loss_dict if k in criterion.weight_dict)
+            kp_loss_dict = kp_criterion(outputs, targets)
+            kp_loss = (kp_criterion.kp_xy_coef * kp_loss_dict.get("loss_kp_xy", 0.0)
+                       + kp_criterion.kp_vis_coef * kp_loss_dict.get("loss_kp_vis", 0.0))
+
+            total_loss = det_loss + kp_loss
+            optimizer.zero_grad()
+            total_loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.1)
+            optimizer.step()
+            epoch_loss += total_loss.item()
+            n_batches  += 1
+
+        scheduler.step()
+        avg_train_loss = epoch_loss / max(n_batches, 1)
+
+        # ── Validation (ALL ranks) ────────────────────────────────────
+        # All ranks process the full val set simultaneously so that
+        # dist.all_reduce inside rfdetr's criterion stays in sync.
+        avg_val_loss = avg_train_loss
+        val_metrics: dict = {}
+        if val_loader is not None:
+            if is_main:
+                logging.info(f"Epoch {epoch+1}: running validation on all ranks…")
+            model.eval()
+            val_loss, n_val = 0.0, 0
+            K = num_keypoints
+            agg = dict(
+                tp=0, fp=0, fn=0, n_gt=0, ap_entries=[],
+                oks_sum=0.0, n_oks=0,
+                oks_per_kp=[0.0]*K, n_oks_per_kp=[0]*K,
+                pck_correct=0, pck_total=0,
+                pck_per_kp=[0]*K, pck_total_per_kp=[0]*K,
+                # Diagnostics: track raw prediction counts to distinguish
+                # "no predictions at all" from "predictions below conf_thresh"
+                n_pred_total=0, max_pred_conf=0.0,
+            )
+            with torch.no_grad():
+                for imgs, targets in tqdm(val_loader, desc=f"  Val {epoch+1}/{epochs}",
+                                          disable=not is_main):
+                    imgs    = [img.to(device) for img in imgs]
+                    targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+                    nested  = nested_tensor_from_tensor_list(imgs)
+                    outputs = raw_model(nested)
+                    # Both criterion (rfdetr det loss) and kp_criterion are safe
+                    # here because ALL ranks run this loop together, so any
+                    # dist.all_reduce inside criterion completes without deadlock.
+                    det_loss_dict = criterion(outputs, targets)
+                    det_loss = sum(det_loss_dict[k] * criterion.weight_dict[k]
+                                   for k in det_loss_dict if k in criterion.weight_dict)
+                    kp_loss_dict = kp_criterion(outputs, targets)
+                    kp_loss = (kp_criterion.kp_xy_coef * kp_loss_dict.get("loss_kp_xy", 0.0)
+                               + kp_criterion.kp_vis_coef * kp_loss_dict.get("loss_kp_vis", 0.0))
+                    batch_loss = det_loss + kp_loss
+                    val_loss += batch_loss.item() if hasattr(batch_loss, "item") else float(batch_loss)
+                    n_val += 1
+                    if "pred_keypoints" in outputs and outputs["pred_keypoints"] is not None:
+                        # Accumulate raw confidence stats for diagnostics (before
+                        # conf_thresh filtering, so we can tell "no predictions" from
+                        # "predictions present but all below 0.5 threshold").
+                        scores = outputs["pred_logits"].detach().sigmoid().max(dim=-1).values
+                        agg["n_pred_total"] += int(scores.numel())
+                        batch_max = float(scores.max().item()) if scores.numel() > 0 else 0.0
+                        if batch_max > agg["max_pred_conf"]:
+                            agg["max_pred_conf"] = batch_max
+
+                        batch_m = _val_metrics_batch(
+                            outputs["pred_logits"].detach(),
+                            outputs["pred_boxes"].detach(),
+                            outputs["pred_keypoints"].detach(),
+                            targets,
+                        )
+                        for key in ("tp","fp","fn","n_gt","oks_sum","n_oks","pck_correct","pck_total"):
+                            agg[key] += batch_m[key]
+                        agg["ap_entries"].extend(batch_m["ap_entries"])
+                        for k in range(K):
+                            agg["oks_per_kp"][k]       += batch_m["oks_per_kp"][k]
+                            agg["n_oks_per_kp"][k]     += batch_m["n_oks_per_kp"][k]
+                            agg["pck_per_kp"][k]       += batch_m["pck_per_kp"][k]
+                            agg["pck_total_per_kp"][k] += batch_m["pck_total_per_kp"][k]
+
+            avg_val_loss = val_loss / max(n_val, 1)
+            # Only rank 0 computes final metrics (all ranks have identical values
+            # since they all processed the full val set without a DistributedSampler)
+            if is_main:
+                tp, fp, fn = agg["tp"], agg["fp"], agg["fn"]
+                prec = tp/(tp+fp) if (tp+fp)>0 else 0.0
+                rec  = tp/(tp+fn) if (tp+fn)>0 else 0.0
+                f1   = 2*prec*rec/(prec+rec) if (prec+rec)>0 else 0.0
+                mAP  = _compute_ap(agg["ap_entries"], agg["n_gt"])
+                oks  = agg["oks_sum"]/agg["n_oks"] if agg["n_oks"]>0 else float("nan")
+                pck  = agg["pck_correct"]/agg["pck_total"] if agg["pck_total"]>0 else float("nan")
+                per_kp_oks = [agg["oks_per_kp"][k]/agg["n_oks_per_kp"][k]
+                              if agg["n_oks_per_kp"][k]>0 else float("nan") for k in range(K)]
+                per_kp_pck = [agg["pck_per_kp"][k]/agg["pck_total_per_kp"][k]
+                              if agg["pck_total_per_kp"][k]>0 else float("nan") for k in range(K)]
+                val_metrics = dict(prec=prec, rec=rec, f1=f1, mAP=mAP, oks=oks, pck=pck,
+                                   per_kp_oks=per_kp_oks, per_kp_pck=per_kp_pck)
+
+        # ── Logging & checkpoint (rank 0 only) ────────────────────────
+        should_stop = 0
+        if is_main:
+            logging.info(f"Epoch {epoch+1}/{epochs} | train_loss={avg_train_loss:.4f} | val_loss={avg_val_loss:.4f}")
+            if val_metrics:
+                logging.info(f"  BBox  → Prec={val_metrics['prec']:.4f}  Rec={val_metrics['rec']:.4f}  "
+                             f"F1={val_metrics['f1']:.4f}  mAP@0.5={val_metrics['mAP']:.4f}")
+                def _fmt(v): return f"{v:.4f}" if v == v else "N/A (no annotated KP matched)"
+                def _fmt3(v): return f"{v:.3f}" if v == v else "N/A"
+                logging.info(f"  KP    → OKS={_fmt(val_metrics['oks'])}  "
+                             f"PCK@0.2={_fmt(val_metrics['pck'])}")
+                if val_metrics['oks'] != val_metrics['oks']:   # is nan
+                    # Distinguish the two failure modes:
+                    #   A) TPs=0 because model confidence is too low (below conf_thresh=0.5)
+                    #   B) TPs exist but matched GT boxes all have vis=0 (keypoint data missing)
+                    if agg["tp"] == 0:
+                        if agg["max_pred_conf"] < 0.3:
+                            diag = (
+                                f"max_conf={agg['max_pred_conf']:.3f} < 0.3 thresh — "
+                                "model producing very low-confidence predictions. "
+                                "Verify pretrain_weights loaded (check log for 'Loaded checkpoint')."
+                            )
+                        else:
+                            diag = (
+                                f"max_conf={agg['max_pred_conf']:.3f} but no IoU>0.5 match — "
+                                "predictions present but not overlapping GT boxes well enough."
+                            )
+                    else:
+                        diag = "TPs exist but matched GT keypoints all have vis=0 — check 'pedestrian_points' field."
+                    logging.warning(
+                        f"  OKS=N/A: n_oks={agg['n_oks']}, TPs={agg['tp']}, "
+                        f"n_gt={agg['n_gt']}, n_pred_total={agg['n_pred_total']}, "
+                        f"max_pred_conf={agg['max_pred_conf']:.3f}. {diag}"
+                    )
+                oks_strs = "  ".join(f"{keypoint_names[k]}:{_fmt3(val_metrics['per_kp_oks'][k])}"
+                                     for k in range(num_keypoints))
+                pck_strs = "  ".join(f"{keypoint_names[k]}:{_fmt3(val_metrics['per_kp_pck'][k])}"
+                                     for k in range(num_keypoints))
+                logging.info(f"  OKS/kp  → {oks_strs}")
+                logging.info(f"  PCK/kp  → {pck_strs}")
+
+            ckpt = {
+                "epoch": epoch, "model": raw_model.state_dict(),
+                "optimizer": optimizer.state_dict(), "val_loss": avg_val_loss,
+                "num_keypoints": num_keypoints, "keypoint_names": keypoint_names,
+                "num_classes": num_classes, "class_names": class_names,
+                "model_name": model_name,
+            }
+            torch.save(ckpt, os.path.join(output_dir, "last.pt"))
+
+            if avg_val_loss < best_val_loss:
+                best_val_loss = avg_val_loss
+                no_improve = 0
+                torch.save(ckpt, os.path.join(output_dir, "best.pt"))
+                logging.info(f"  ✓ Saved best model (val_loss={best_val_loss:.4f})")
+            else:
+                no_improve += 1
+                if no_improve >= patience:
+                    logging.info(f"Early stopping at epoch {epoch+1}")
+                    should_stop = 1
+
+        # Broadcast stop decision from rank 0 to all ranks.
+        # This runs AFTER validation is fully complete on all ranks,
+        # so there is no risk of deadlock with criterion's all_reduce.
+        if is_distributed:
+            stop_flag = torch.tensor([should_stop], device=device)
+            dist.broadcast(stop_flag, src=0)
+            if stop_flag.item() == 1:
+                break
+        elif should_stop:
+            break
+
+    if is_distributed:
+        dist.destroy_process_group()
+
+
+# 7.  Main workflow class
 # ─────────────────────────────────────────────────────────────────────────────
 
 class RFDETRKeypointDetection:
@@ -606,6 +1211,11 @@ class RFDETRKeypointDetection:
               valid/
               test/
         """
+        if self.run_config.get("fo_native", False):
+            logging.info("fo_native=True — skipping COCO export in convert_data().")
+            return
+
+        import fiftyone as fo  # lazy import — not needed by DDP workers
         export_dir = os.path.join(
             self.export_dir_root, self.dataset_name, "rfdetr_kp"
         )
@@ -613,7 +1223,31 @@ class RFDETRKeypointDetection:
             # Only skip if the train split annotation file is actually present
             train_ann = os.path.join(export_dir, "train", "_annotations.coco.json")
             if os.path.exists(train_ann):
-                logging.info(f"Export dir {export_dir} already complete, skipping.")
+                # Check if keypoints are already injected; if not, re-inject
+                # without re-exporting (saves time when export exists but
+                # injection was skipped in a prior run).
+                with open(train_ann) as _f:
+                    _sample_data = json.load(_f)
+                _has_kp = any(
+                    a.get("num_keypoints", 0) > 0
+                    for a in _sample_data.get("annotations", [])[:200]
+                )
+                if _has_kp:
+                    logging.info(f"Export dir {export_dir} already complete, skipping.")
+                    return
+                logging.warning(
+                    "Export exists but keypoints are missing — re-running injection "
+                    "on existing annotation files (no re-export needed)."
+                )
+                for split_out in ("train", "valid", "test"):
+                    ann_path = os.path.join(export_dir, split_out, "_annotations.coco.json")
+                    if not os.path.exists(ann_path):
+                        continue
+                    # Pass an empty iterator as split_view — raw COCO file
+                    # lookup doesn't need FiftyOne samples.
+                    self._inject_keypoints(ann_path, [])
+                    self._fix_annotation_indices(ann_path)
+                logging.info("Keypoint injection complete.")
                 return
             logging.warning(
                 f"Export dir {export_dir} exists but is incomplete "
@@ -644,7 +1278,7 @@ class RFDETRKeypointDetection:
             # Fill any missing splits by sub-sampling from an existing one
             if "train" in split_views and "val" not in split_views and "test" not in split_views:
                 train_ids, val_ids = self._ids_split_fraction(
-                    split_views["train"].values("id"), fraction=0.01
+                    split_views["train"].values("id"), fraction=0.1
                 )
                 split_views["train"] = self.dataset.select(train_ids)
                 split_views["val"]   = self.dataset.select(val_ids)
@@ -663,10 +1297,10 @@ class RFDETRKeypointDetection:
         else:
             # No tags at all (e.g. coco-2017-train zoo dataset) — split in memory
             logging.warning(
-                "No split tags found. Splitting all samples: 99% train / 1% val."
+                "No split tags found. Splitting all samples: 90% train / 10% val."
             )
             all_ids = self.dataset.values("id")
-            train_ids, val_ids = self._ids_split_fraction(all_ids, fraction=0.01)
+            train_ids, val_ids = self._ids_split_fraction(all_ids, fraction=0.1)
             split_views["train"] = self.dataset.select(train_ids)
             split_views["val"]   = self.dataset.select(val_ids)
             logging.info(
@@ -720,12 +1354,33 @@ class RFDETRKeypointDetection:
 
         logging.info(f"Dataset exported to {export_dir}")
 
+    def _build_coco_kp_lookup(self, coco_kp_file: str) -> dict:
+        """
+        Build a lookup: basename(file_name) → list of COCO annotations with keypoints.
+        Reads from a raw COCO person_keypoints JSON (e.g. person_keypoints_train2017.json).
+        """
+        from collections import defaultdict
+        with open(coco_kp_file) as f:
+            kp_data = json.load(f)
+        img_id_to_fn = {img["id"]: os.path.basename(img["file_name"])
+                        for img in kp_data.get("images", [])}
+        lookup = defaultdict(list)
+        for ann in kp_data.get("annotations", []):
+            if ann.get("num_keypoints", 0) > 0:
+                fn = img_id_to_fn.get(ann["image_id"], "")
+                lookup[fn].append(ann)
+        logging.info(f"COCO KP lookup built: {len(lookup)} images with keypoints "
+                     f"from {coco_kp_file}")
+        return lookup
+
     def _inject_keypoints(self, ann_path: str, split_view):
         """
-        Patch a COCO JSON file to add keypoint data from FiftyOne keypoints field.
+        Patch a COCO JSON file to add keypoint data.
 
-        For each annotation, finds the matching FiftyOne sample + detection and
-        appends the "keypoints" list in COCO format [x1,y1,v1, x2,y2,v2, ...].
+        Priority:
+          1. Raw COCO keypoints file (run_config["coco_keypoints_file"]) — most reliable
+          2. FiftyOne sample field (run_config["keypoint_field"])          — if available
+          3. Zeros                                                          — fallback
         """
         with open(ann_path, "r") as f:
             data = json.load(f)
@@ -745,12 +1400,18 @@ class RFDETRKeypointDetection:
             cat["keypoints"] = kp_names
             cat["skeleton"] = []
 
-        # Build filename → image_id map
-        fn_to_img_id = {}
-        for img_info in data.get("images", []):
-            fn_to_img_id[img_info["file_name"]] = img_info["id"]
+        # ── Option 1: raw COCO keypoints file ────────────────────────────
+        coco_kp_file = self.run_config.get("coco_keypoints_file", None)
+        coco_kp_lookup = None
+        if coco_kp_file and os.path.exists(coco_kp_file):
+            coco_kp_lookup = self._build_coco_kp_lookup(coco_kp_file)
 
-        # Build image_id → sample map
+        # Build filename → image_id map for this exported JSON
+        fn_to_img_id = {img_info["file_name"]: img_info["id"]
+                        for img_info in data.get("images", [])}
+        img_id_to_fn = {v: k for k, v in fn_to_img_id.items()}
+
+        # Build image_id → sample map (for FiftyOne field fallback)
         img_id_to_sample = {}
         for sample in split_view:
             fn = os.path.basename(sample.filepath)
@@ -758,15 +1419,35 @@ class RFDETRKeypointDetection:
             if img_id is not None:
                 img_id_to_sample[img_id] = sample
 
+        injected = 0
         # For each annotation, attach keypoints
         for ann in data["annotations"]:
-            sample = img_id_to_sample.get(ann["image_id"])
-            if sample is None:
-                ann["keypoints"] = [0] * (self.num_keypoints * 3)
-                ann["num_keypoints"] = 0
-                continue
+            # ── Try raw COCO file first ───────────────────────────────────
+            if coco_kp_lookup is not None:
+                fn = os.path.basename(img_id_to_fn.get(ann["image_id"], ""))
+                candidates = coco_kp_lookup.get(fn, [])
+                best, best_dist = None, float("inf")
+                ax, ay, aw, ah = ann["bbox"]
+                for c in candidates:
+                    cx, cy = c["bbox"][0], c["bbox"][1]
+                    d = abs(cx - ax) + abs(cy - ay)
+                    if d < best_dist:
+                        best_dist, best = d, c
+                if best and best_dist < max(aw, ah):  # sanity: close enough
+                    kp = best["keypoints"]
+                    if len(kp) < self.num_keypoints * 3:
+                        kp = kp + [0] * (self.num_keypoints * 3 - len(kp))
+                    ann["keypoints"] = kp[: self.num_keypoints * 3]
+                    ann["num_keypoints"] = sum(
+                        1 for i in range(2, len(ann["keypoints"]), 3)
+                        if ann["keypoints"][i] > 0
+                    )
+                    injected += 1
+                    continue
 
-            kp_field = getattr(sample, self.keypoint_field, None)
+            # ── Try FiftyOne field ────────────────────────────────────────
+            sample = img_id_to_sample.get(ann["image_id"])
+            kp_field = getattr(sample, self.keypoint_field, None) if sample else None
             if kp_field is None:
                 ann["keypoints"] = [0] * (self.num_keypoints * 3)
                 ann["num_keypoints"] = 0
@@ -785,7 +1466,9 @@ class RFDETRKeypointDetection:
         with open(ann_path, "w") as f:
             json.dump(data, f, indent=2)
 
-        logging.info(f"Injected keypoints into {ann_path}")
+        total = len(data["annotations"])
+        logging.info(f"Injected keypoints into {ann_path} "
+                     f"({injected}/{total} annotations have visible keypoints)")
 
     def _extract_keypoints_for_annotation(
         self,
@@ -869,292 +1552,90 @@ class RFDETRKeypointDetection:
     # ── Training ──────────────────────────────────────────────────────
 
     def train(self, run_config: dict, shared_config: dict):
-        """Train the dual-head RF-DETR model."""
-        import torch.optim as optim
+        """Train the dual-head RF-DETR model (multi-GPU via mp.spawn).
 
-        dataset_dir = os.path.join(
-            self.export_dir_root, self.dataset_name, "rfdetr_kp"
-        )
-        if not os.path.exists(dataset_dir):
-            raise FileNotFoundError(
-                f"Dataset directory not found: {dataset_dir}. "
-                "Run convert_data() first."
-            )
+        Two modes:
+          FO-native  (run_config["fo_native"] = True):
+            Reads directly from the FiftyOne dataset — no COCO export.
+            Pre-fetches all annotation data in the main process before
+            spawning DDP workers (workers have no FiftyOne connection).
 
+          COCO-export (default):
+            Reads from the directory written by convert_data().
+        """
         model_name = self.config_key.lower()
         output_dir = os.path.join(
             "output/models/rfdetr_kp", self.dataset_name, model_name
         )
         os.makedirs(output_dir, exist_ok=True)
 
-        # Device
-        if torch.cuda.is_available():
-            device = "cuda"
-            logging.info(f"Using {torch.cuda.device_count()} GPU(s)")
-        else:
-            device = "cpu"
-            logging.warning("No GPU – training on CPU")
+        fo_prefetched = None
 
-        # Class names from dataset — use same field auto-detection as convert_data
-        detection_field = run_config.get("detection_field", None)
-        if detection_field is None:
-            schema = self.dataset.get_field_schema()
-            for candidate in ("ground_truth", "detections", "objects", "annotations"):
-                if candidate in schema:
-                    detection_field = candidate
-                    break
-        try:
-            class_names = sorted(
-                self.dataset.distinct(f"{detection_field}.detections.label")
-            )
-            num_classes = len(class_names)
-        except Exception:
-            num_classes = run_config.get("num_classes", 1)
-            class_names = None
+        if run_config.get("fo_native", False):
+            # ── FiftyOne-native path ───────────────────────────────────
+            import fiftyone as fo
+            from workflows.keypoint.fo_keypoint_dataset import prefetch_fo_split
 
-        logging.info(f"Classes: {num_classes}")
+            detection_field = run_config.get("detection_field", "ground_truth")
+            keypoint_field  = run_config.get("keypoint_field",  "pedestrian_points")
+            target_label    = run_config.get("target_label",    "pedestrian")
 
-        # Pretrain weights path
-        pretrain_weights = run_config.get("pretrain_weights", None)
-        if pretrain_weights is None:
-            # Map config to default rf-detr weights
-            DEFAULT_WEIGHTS = {
-                "rfdetr_nano":    "rf-detr-nano.pth",
-                "rfdetr_small":   "rf-detr-small.pth",
-                "rfdetr_medium":  "rf-detr-medium.pth",
-                "rfdetr_base":    "rf-detr-base.pth",
-                "rfdetr_large":   "rf-detr-large.pth",
-                "rfdetr_xlarge":  "rf-detr-xlarge.pth",
-                "rfdetr_2xlarge": "rf-detr-xxlarge.pth",
-            }
-            pretrain_weights = DEFAULT_WEIGHTS.get(model_name, "rf-detr-base.pth")
+            logging.info(f"FO-native mode: pre-fetching from '{self.dataset_name}' …")
+            dataset = self.dataset   # fo.Dataset set on the workflow instance
 
-        # Build model
-        logging.info(f"Building {model_name} with {self.num_keypoints} keypoints …")
-        model = build_rfdetr_keypoint_model(
-            pretrain_weights=pretrain_weights,
-            num_classes=num_classes,
-            num_keypoints=self.num_keypoints,
-            keypoint_names=self.keypoint_names,
-            rfdetr_config_name=model_name,
-            device=device,
-        )
+            available_tags = dataset.distinct("tags")
+            train_view = (dataset.match_tags("train")
+                          if "train" in available_tags else dataset)
+            val_view   = (dataset.match_tags("val")
+                          if "val" in available_tags
+                          else dataset.match_tags("validation")
+                          if "validation" in available_tags else None)
 
-        # ── DataLoaders ───────────────────────────────────────────────
-        resolution = run_config.get("resolution", 560)
-        batch_size = run_config.get("batch_size", 8)
+            if val_view is None or len(val_view) == 0:
+                # carve 10 % off train
+                all_ids = train_view.values("id")
+                n_val   = max(1, int(len(all_ids) * 0.1))
+                val_ids   = all_ids[:n_val]
+                train_ids = all_ids[n_val:]
+                train_view = dataset.select(train_ids)
+                val_view   = dataset.select(val_ids)
+                logging.info(f"No 'val' tag — carved {n_val} val samples from train")
 
-        def _make_loader(split, shuffle):
-            split_dir = os.path.join(dataset_dir, split)
-            ann_path = os.path.join(split_dir, "_annotations.coco.json")
-            if not os.path.exists(ann_path):
-                return None
-            ds = CocoKeypointDataset(
-                image_dir=split_dir,
-                annotation_path=ann_path,
+            kw = dict(
+                detection_field=detection_field,
+                keypoint_field=keypoint_field,
+                target_label=target_label,
                 num_keypoints=self.num_keypoints,
-                resolution=resolution,
-                augment=shuffle,
             )
-            return DataLoader(
-                ds,
-                batch_size=batch_size,
-                shuffle=shuffle,
-                num_workers=2,
-                collate_fn=kp_collate_fn,
-                pin_memory=torch.cuda.is_available(),
-            )
-
-        train_loader = _make_loader("train", shuffle=True)
-        val_loader = _make_loader("valid", shuffle=False)
-        if train_loader is None:
-            raise FileNotFoundError("No training data found.")
-
-        # ── Matcher + criteria ────────────────────────────────────────
-        from rfdetr.main import populate_args
-        from rfdetr.config import RFDETRBaseConfig, RFDETRNanoConfig, RFDETRSmallConfig, RFDETRMediumConfig, RFDETRLargeConfig
-        from rfdetr.platform.models import RFDETRXLargeConfig, RFDETR2XLargeConfig
-        from rfdetr.models import build_criterion_and_postprocessors
-
-        CONFIG_MAP = {
-            "rfdetr_nano":    RFDETRNanoConfig,
-            "rfdetr_small":   RFDETRSmallConfig,
-            "rfdetr_medium":  RFDETRMediumConfig,
-            "rfdetr_base":    RFDETRBaseConfig,
-            "rfdetr_large":   RFDETRLargeConfig,
-            "rfdetr_xlarge":  RFDETRXLargeConfig,
-            "rfdetr_2xlarge": RFDETR2XLargeConfig,
-        }
-        cfg_cls = CONFIG_MAP.get(model_name, RFDETRBaseConfig)
-        model_cfg = cfg_cls(num_classes=num_classes, device=device)
-        args = populate_args(**model_cfg.model_dump())
-
-        criterion, postprocessors = build_criterion_and_postprocessors(args)
-        criterion = criterion.to(device)
-
-        kp_criterion = KeypointCriterion(
-            matcher=build_matcher(args),
-            num_keypoints=self.num_keypoints,
-            kp_xy_coef=run_config.get("kp_xy_coef", 5.0),
-            kp_vis_coef=run_config.get("kp_vis_coef", 1.0),
-            group_detr=args.group_detr,
-        )
-
-        # ── Optimizer (different LR for backbone vs heads) ────────────
-        epochs = shared_config.get("epochs", 50)
-        base_lr = shared_config.get("learning_rate", 1e-4)
-        lr_encoder = run_config.get("lr_encoder") or (base_lr * 0.1)
-        wd = shared_config.get("weight_decay", 1e-4)
-
-        backbone_params = list(model.backbone.parameters())
-        head_params = (
-            list(model.transformer.parameters())
-            + list(model.class_embed.parameters())
-            + list(model.bbox_embed.parameters())
-            + list(model.keypoint_embed.parameters())
-            + list(model.refpoint_embed.parameters())
-            + list(model.query_feat.parameters())
-        )
-
-        optimizer = optim.AdamW(
-            [
-                {"params": backbone_params, "lr": lr_encoder},
-                {"params": head_params, "lr": base_lr},
-            ],
-            weight_decay=wd,
-        )
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-
-        # ── Freeze backbone for first N epochs ────────────────────────
-        freeze_epochs = run_config.get("freeze_backbone_epochs", 5)
-
-        best_val_loss = float("inf")
-        patience = shared_config.get("early_stop_patience", 10)
-        no_improve = 0
-
-        logging.info("=" * 70)
-        logging.info("RF-DETR KEYPOINT TRAINING")
-        logging.info(f"  Model     : {model_name}")
-        logging.info(f"  Epochs    : {epochs}")
-        logging.info(f"  Batch size: {batch_size}")
-        logging.info(f"  Keypoints : {self.num_keypoints} {self.keypoint_names}")
-        logging.info("=" * 70)
-
-        for epoch in range(epochs):
-            # Freeze/unfreeze backbone
-            requires_grad = epoch >= freeze_epochs
-            for p in model.backbone.parameters():
-                p.requires_grad_(requires_grad)
-
-            # ── Train epoch ───────────────────────────────────────────
-            model.train()
-            epoch_loss = 0.0
-            n_batches = 0
-
-            for imgs, targets in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}"):
-                imgs = [img.to(device) for img in imgs]
-                targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-
-                nested = nested_tensor_from_tensor_list(imgs)
-                outputs = model(nested, targets)
-
-                # Detection loss
-                det_loss_dict = criterion(outputs, targets)
-                det_weight = criterion.weight_dict
-                det_loss = sum(
-                    det_loss_dict[k] * det_weight[k]
-                    for k in det_loss_dict
-                    if k in det_weight
-                )
-
-                # Keypoint loss
-                kp_loss_dict = kp_criterion(outputs, targets)
-                kp_loss = (
-                    kp_criterion.kp_xy_coef * kp_loss_dict.get("loss_kp_xy", 0.0)
-                    + kp_criterion.kp_vis_coef * kp_loss_dict.get("loss_kp_vis", 0.0)
-                )
-
-                total_loss = det_loss + kp_loss
-
-                optimizer.zero_grad()
-                total_loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.1)
-                optimizer.step()
-
-                epoch_loss += total_loss.item()
-                n_batches += 1
-
-            scheduler.step()
-            avg_train_loss = epoch_loss / max(n_batches, 1)
-
-            # ── Validation ────────────────────────────────────────────
-            avg_val_loss = avg_train_loss  # fallback
-            if val_loader is not None:
-                model.eval()
-                val_loss = 0.0
-                n_val = 0
-                with torch.no_grad():
-                    for imgs, targets in val_loader:
-                        imgs = [img.to(device) for img in imgs]
-                        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-                        nested = nested_tensor_from_tensor_list(imgs)
-                        outputs = model(nested)
-
-                        det_loss_dict = criterion(outputs, targets)
-                        det_loss = sum(
-                            det_loss_dict[k] * criterion.weight_dict[k]
-                            for k in det_loss_dict
-                            if k in criterion.weight_dict
-                        )
-                        kp_loss_dict = kp_criterion(outputs, targets)
-                        kp_loss = (
-                            kp_criterion.kp_xy_coef * kp_loss_dict.get("loss_kp_xy", 0.0)
-                            + kp_criterion.kp_vis_coef * kp_loss_dict.get("loss_kp_vis", 0.0)
-                        )
-                        val_loss += (det_loss + kp_loss).item()
-                        n_val += 1
-
-                avg_val_loss = val_loss / max(n_val, 1)
-
-            logging.info(
-                f"Epoch {epoch+1}/{epochs} | "
-                f"train_loss={avg_train_loss:.4f} | "
-                f"val_loss={avg_val_loss:.4f}"
-            )
-
-            # ── Checkpoint ────────────────────────────────────────────
-            ckpt = {
-                "epoch": epoch,
-                "model": model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "val_loss": avg_val_loss,
-                "num_keypoints": self.num_keypoints,
-                "keypoint_names": self.keypoint_names,
-                "num_classes": num_classes,
-                "class_names": class_names,
-                "model_name": model_name,
+            fo_prefetched = {
+                "train": prefetch_fo_split(train_view, **kw),
+                "valid": prefetch_fo_split(val_view,   **kw),
             }
+            dataset_dir = ""   # not used in FO-native mode
+        else:
+            # ── COCO-export path ───────────────────────────────────────
+            dataset_dir = os.path.join(
+                self.export_dir_root, self.dataset_name, "rfdetr_kp"
+            )
+            if not os.path.exists(dataset_dir):
+                raise FileNotFoundError(
+                    f"Dataset directory not found: {dataset_dir}. "
+                    "Run convert_data() first, or set fo_native=True in run_config."
+                )
 
-            last_path = os.path.join(output_dir, "last.pt")
-            torch.save(ckpt, last_path)
+        n_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
+        args = (dataset_dir, output_dir, run_config, shared_config,
+                self.num_keypoints, self.keypoint_names, fo_prefetched)
 
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-                no_improve = 0
-                best_path = os.path.join(output_dir, "best.pt")
-                torch.save(ckpt, best_path)
-                logging.info(f"  ✓ Saved best model (val_loss={best_val_loss:.4f})")
-            else:
-                no_improve += 1
-                if no_improve >= patience:
-                    logging.info(f"Early stopping at epoch {epoch+1}")
-                    break
+        if n_gpus > 1:
+            import torch.multiprocessing as mp
+            mp.spawn(_ddp_train_worker, args=(n_gpus, *args), nprocs=n_gpus, join=True)
+        else:
+            _ddp_train_worker(0, max(n_gpus, 1), *args)
 
         self.model_path = os.path.join(output_dir, "best.pt")
-
         if HF_DO_UPLOAD:
             self._upload_to_hf()
-
         return True
 
     # ── Upload ────────────────────────────────────────────────────────
@@ -1190,6 +1671,7 @@ class RFDETRKeypointDetection:
           <pred_key>          : fo.Detections  (bounding boxes)
           <pred_key>_keypoints: fo.Keypoints   (associated keypoints per instance)
         """
+        import fiftyone as fo  # lazy import — not needed by DDP workers
         logging.info(f"Running RF-DETR keypoint inference on {self.dataset_name}")
 
         model_name = self.config_key.lower()
@@ -1289,8 +1771,23 @@ class RFDETRKeypointDetection:
         if inference_settings.get("inference_on_test", True):
             dataset_view = self.dataset.match_tags(["test"])
             if len(dataset_view) == 0:
-                logging.error("No test samples found.")
-                return False
+                # Tags were never persisted (in-memory split). Try to reconstruct
+                # the test set from the exported COCO annotation file.
+                export_dir = os.path.join(self.export_dir_root, dataset_name, "rfdetr_kp")
+                test_ann = os.path.join(export_dir, "test", "_annotations.coco.json")
+                if os.path.exists(test_ann):
+                    with open(test_ann) as _f:
+                        _test_data = json.load(_f)
+                    test_filenames = {img["file_name"] for img in _test_data.get("images", [])}
+                    all_fps = self.dataset.values("filepath")
+                    all_ids = self.dataset.values("id")
+                    test_ids = [sid for sid, fp in zip(all_ids, all_fps)
+                                if os.path.basename(fp) in test_filenames]
+                    dataset_view = self.dataset.select(test_ids)
+                    logging.info(f"Reconstructed test view from COCO export: {len(dataset_view)} samples")
+                if len(dataset_view) == 0:
+                    logging.warning("No test samples found via tags or export; running inference on full dataset.")
+                    dataset_view = self.dataset
         else:
             dataset_view = self.dataset
 
@@ -1408,3 +1905,4 @@ class RFDETRKeypointDetection:
                     logging.error(f"Evaluation failed: {e}")
 
         return True
+
