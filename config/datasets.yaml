@@ -77,3 +77,6 @@ datasets:
   - name: mcity-engineering/mcity-person-keypoints
     loader_fct: load_mcity_31k
     hf_dataset_name: mcity-engineering/mcity-person-keypoints
+  - name: mcity-person-kp_bb
+    loader_fct: load_mcity_31k
+    hf_dataset_name: mcity-engineering/mcity-person-kp_bb
