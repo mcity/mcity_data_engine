@@ -43,11 +43,11 @@ from workflows.auto_labeling import (
     ZeroShotObjectDetection,
 )
 from workflows.rfdetr_keypoint import RFDETRKeypointDetection
-from workflows.vitpose_keypoint import (
-    ViTPoseKeypointDetection,
-    RoIKeypointDetection,
-    download_vitpose_weights,
-)
+# from workflows.vitpose_keypoint import (
+#     ViTPoseKeypointDetection,
+#     RoIKeypointDetection,
+#     download_vitpose_weights,
+# )
 from workflows.aws_download import AwsDownloader
 from workflows.class_mapping import ClassMapper
 from workflows.embedding_selection import EmbeddingSelection
@@ -1228,4 +1228,3 @@ def main():
 if __name__ == "__main__":
     cleanup_memory()
     main()
-

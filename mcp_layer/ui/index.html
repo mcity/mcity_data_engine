@@ -244,7 +244,18 @@ function addMsg(role, text) {
     line.className = `msg ${role}`;
     const bubble = document.createElement("div");
     bubble.className = "bubble";
-    bubble.textContent = text;
+    bubble.innerHTML = text.replace(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/g,
+    url => {
+        // Only strip trailing ) if it's unmatched (more closing than opening parens)
+        const openCount = (url.match(/\(/g) || []).length;
+        const closeCount = (url.match(/\)/g) || []).length;
+        if (closeCount > openCount) {
+            url = url.replace(/\)+$/, '');
+        }
+        // Strip other trailing punctuation
+        url = url.replace(/[.,;:!?]+$/, '');
+        return `<a href="${url}" target="_blank" style="color:inherit;text-decoration:underline;">${url}</a>`;
+    });
     line.appendChild(bubble);
     chatEl.appendChild(line);
     chatEl.scrollTop = chatEl.scrollHeight;

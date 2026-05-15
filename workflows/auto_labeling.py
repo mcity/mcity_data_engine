@@ -1874,12 +1874,16 @@ class CustomRFDETRObjectDetection:
         """
         export_dir = os.path.join(self.export_dir_root, self.dataset_name, "rfdetr")
 
-        # Check if folder already exists
+        # Check if folder already exists — delete and re-export if no labels present
         if os.path.exists(export_dir):
-            logging.warning(
-                f"Folder {export_dir} already exists, skipping data export."
-            )
-            return
+            schema = self.dataset.get_field_schema()
+            has_labels = "ground_truth" in schema
+            if not has_labels:
+                logging.warning(f"Folder {export_dir} exists but dataset has no labels. Re-exporting.")
+                shutil.rmtree(export_dir)
+            else:
+                logging.warning(f"Folder {export_dir} already exists, skipping data export.")
+                return
 
         # Make directory
         os.makedirs(export_dir, exist_ok=True)
@@ -1929,12 +1933,30 @@ class CustomRFDETRObjectDetection:
 
             logging.info(f"Exporting {len(split_view)} samples to {rfdetr_split}/")
 
-            split_view.export(
-                dataset_type=fo.types.COCODetectionDataset,
-                data_path=split_export_dir,
-                labels_path=annotation_path,
-                label_field="ground_truth",
-            )
+            schema = self.dataset.get_field_schema()
+            has_labels = "ground_truth" in schema
+
+            if has_labels:
+                split_view.export(
+                        dataset_type=fo.types.COCODetectionDataset,
+                        data_path=split_export_dir,
+                        labels_path=annotation_path,
+                        label_field="ground_truth",
+                    )
+            else:
+                # No ground truth — export images with empty annotations
+                self.dataset.add_sample_field(
+                    "empty_detections",
+                    fo.EmbeddedDocumentField,
+                    embedded_doc_type=fo.Detections
+                )
+                split_view.export(
+                    dataset_type=fo.types.COCODetectionDataset,
+                    data_path=split_export_dir,
+                    labels_path=annotation_path,
+                    label_field="empty_detections",
+                )
+                self.dataset.delete_sample_field("empty_detections")
 
             # Fix category IDs: Convert from 1-indexed to 0-indexed
             self._fix_annotation_indices(annotation_path)
@@ -2281,22 +2303,27 @@ class CustomRFDETRObjectDetection:
                     break
 
             if model_path is None:
-                # Try downloading from auto-generated HF repo
-                logging.info(f"Local model not found. Attempting to download from {self.hf_repo_name}")
-                download_dir = os.path.join(
-                    "output/models/rfdetr", self.dataset_name, model_name
-                )
-                os.makedirs(download_dir, exist_ok=True)
-
-                try:
-                    model_path = hf_hub_download(
-                        repo_id=self.hf_repo_name,
-                        filename="best.pt",
-                        local_dir=download_dir,
+                # Check inference_settings for explicit model_path
+                config_model_path = inference_settings.get("model_path", None)
+                if config_model_path and os.path.exists(config_model_path):
+                    model_path = config_model_path
+                    logging.info(f"Using model_path from inference_settings: {model_path}")
+                else:
+                    # Try downloading from auto-generated HF repo
+                    logging.info(f"Local model not found. Attempting to download from {self.hf_repo_name}")
+                    download_dir = os.path.join(
+                        "output/models/rfdetr", self.dataset_name, model_name
                     )
-                except Exception as e:
-                    logging.error(f"Failed to load or download model: {e}")
-                    return False
+                    os.makedirs(download_dir, exist_ok=True)
+                    try:
+                        model_path = hf_hub_download(
+                            repo_id=self.hf_repo_name,
+                            filename="best.pt",
+                            local_dir=download_dir,
+                        )
+                    except Exception as e:
+                        logging.error(f"Failed to load or download model: {e}")
+                        return False
 
         # Check if model exists
         if not os.path.exists(model_path):
@@ -2320,7 +2347,7 @@ class CustomRFDETRObjectDetection:
             logging.info(f"Found {num_classes} classes: {class_names}")
         except Exception as e:
             logging.warning(f"Could not extract class names from dataset: {e}")
-            num_classes = 8  # Default fallback
+            num_classes = 90  # COCO default
             class_names = None
 
         # Load model with trained weights
@@ -2329,10 +2356,14 @@ class CustomRFDETRObjectDetection:
             model = ModelClass(
                 pretrain_weights=model_path,
                 num_classes=num_classes,
-		accept_platform_model_license=True
+                accept_platform_model_license=True
             )
-
             logging.info("RF-DETR model loaded successfully")
+
+            # Use model's class names if dataset has none
+            if class_names is None and hasattr(model, 'class_names') and model.class_names:
+                class_names = model.class_names
+                logging.info(f"Using model class names: {class_names[:5]}...")
         except Exception as e:
             logging.error(f"Failed to load model: {e}")
             return False

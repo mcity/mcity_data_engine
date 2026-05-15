@@ -94,6 +94,38 @@ You may have internal knowledge of 4 datasets (fisheye8k, fisheye8k_mini, mcity_
 - ALWAYS call list_datasets() before asking the user to select a dataset
 - If you show only 4 datasets without calling the tool, you are making a critical error
 
+**POST-DATASET-SELECTION LABELING FLOW:**
+This flow applies whenever a dataset is selected, whether just ingested OR already existing.
+
+After the user selects a dataset (via set_selected_dataset):
+1. ALWAYS ask: "Would you like to label this dataset manually or use auto-labeling?
+   - **Manual labeling**: I'll export the dataset to CVAT so you can annotate it yourself.
+   - **Auto-labeling**: I'll run RF-DETR to generate bounding box predictions, then export to CVAT for review."
+2. NEVER skip this question. NEVER proceed to model selection without asking this first.
+
+If manual labeling:
+- Call export_to_cvat(dataset_name=<name>, with_predictions=False)
+- Tell the user their dataset is ready in CVAT with the link
+- Then say: "Let me know when you have finished annotating in CVAT and I will import your labels."
+- When the user confirms they are done, call import_from_cvat(dataset_name=<name>)
+- After import, ask if they want to visualize in Voxel51
+- IMPORTANT: Always use the same dataset_name that was used for export_to_cvat when calling import_from_cvat.
+
+If auto-labeling:
+- Proceed with steps 5-11 below
+- export_to_cvat with with_predictions=True is called automatically after run_auto_labeling
+- After export, say: "Let me know when you have finished reviewing and correcting the predictions in CVAT and I will import your labels."
+- When the user confirms they are done, call import_from_cvat(dataset_name=<name>)
+- After import, ask if they want to visualize in Voxel51
+- IMPORTANT: Always use the same dataset_name that was used for export_to_cvat when calling import_from_cvat.
+- NEVER call export_to_cvat yourself for the auto-labeling path. It is ALWAYS called
+automatically by the system code after run_auto_labeling completes. If you call it
+yourself, it will run before the model has generated predictions, producing wrong results.
+Your ONLY job after run_auto_labeling is to wait for the system export message and then
+tell the user to review in CVAT.
+
+IMPORTANT: Always use the exact dataset name returned from the ingestion step.
+
 Your responsibilities are mentioned in the following steps:
 1. Guide the user to select a workflow (auto_labeling, class_mapping, anomaly_detection, embedding_selection, auto_labeling_zero_shot or ensmble_selection), however let the user know that the ensemble selection workflow works on top of the zero-shot auto labeling workflow, and thus it can't be used before the zero shot auto labeling workflow has been used. So if the user selects ensemble selection as the first workflow to use, send a message guiding them to use zero shot autolabeling before ensemble selection.
 2. Then YOU MUST call the `select_workflow` mcp tool based on the workflow that the user selected, remember it takes in only one argument(valid argument examples - auto_labeling or class_mapping or anomaly_detection or embedding_selection or auto_labeling_zero_shot or ensemble_selection), Then you must guide the user to choose a dataset before proceeding, however you can skip this step if the user chooses class_mapping. You must call the list_datasets tool to list the compatible datasets so that the user can choose one, remember it takes no input arguments. If the user chooses anomaly detection workflow, let them know that only the fisheye8k & fisheye8k_mini datasets are compatible with it.
@@ -264,7 +296,8 @@ async def chat(request: Request):
 
     conversation_state = {
         "workflow_name": None,
-        "dataset_selected": False
+        "dataset_selected": False,
+        "auto_labeling_complete": False
     }
 
     hyperparam_cache = {
@@ -314,11 +347,13 @@ async def chat(request: Request):
                     if fn_name == "select_workflow":
                         conversation_state["workflow_name"] = fn_args["workflow_name"]
                         conversation_state["dataset_selected"] = False  # reset if new workflow
+                        conversation_state["auto_labeling_complete"] = False
                         result = await mcp_client.call_tool(fn_name, fn_args)
 
                     elif fn_name == "switch_workflow":
                         conversation_state["workflow_name"] = fn_args["workflow_name"]
                         conversation_state["dataset_selected"] = False  # reset dataset
+                        conversation_state["auto_labeling_complete"] = False
                         result = await mcp_client.call_tool(fn_name, fn_args)
 
                     elif fn_name == "set_auto_labeling_hyperparams":
@@ -332,10 +367,14 @@ async def chat(request: Request):
                     elif fn_name == "set_selected_dataset":
                         conversation_state["dataset_selected"] = True
                         selected_dataset_cache["dataset_name"] = fn_args["dataset_name"]
-                        selected_dataset_cache["n_samples"] = None  # Always set to None
+                        selected_dataset_cache["n_samples"] = None
                         result = await mcp_client.call_tool(fn_name, {
                             "dataset_name": selected_dataset_cache["dataset_name"]
                         })
+                        messages.append({
+                        "role": "system",
+                        "content": f"CURRENT_DATASET: {fn_args['dataset_name']}"
+                         })
 
 
                     elif fn_name == "set_anomaly_detection_hyperparams":
@@ -358,6 +397,26 @@ async def chat(request: Request):
                             if v is not None:
                                 ensemble_selection_cache[k] = v
                         result = await mcp_client.call_tool(fn_name, ensemble_selection_cache.copy())
+                    elif fn_name == "export_to_cvat":
+                        if (conversation_state.get("workflow_name") == "auto_labeling"
+                                and not conversation_state.get("auto_labeling_complete")):
+                            tool_results.append({
+                                "tool_call_id": call.id,
+                                "name": fn_name,
+                                "result": (
+                                    "export_to_cvat cannot be called yet. "
+                                    "The auto-labeling model must be configured and run_auto_labeling "
+                                    "must complete first. Please continue with model configuration."
+                                )
+                            })
+                        else:
+                            result = await mcp_client.call_tool(fn_name, fn_args)
+                            tool_results.append({
+                                "tool_call_id": call.id,
+                                "name": fn_name,
+                                "result": result
+                            })
+                        continue
 
                     else:
                         result = await mcp_client.call_tool(fn_name, fn_args)
@@ -395,6 +454,7 @@ async def chat(request: Request):
             tool_output = str(result.get("result", result.get("error", "Tool error.")))
 
             if fn_name == "run_auto_labeling":
+                conversation_state["auto_labeling_complete"] = True
                 tool_output_raw = result.get("result", result.get("error", "Tool error."))
                 #tool_output = tool_output_raw.text if hasattr(tool_output_raw, "text") else str(tool_output_raw)
 
@@ -416,7 +476,42 @@ async def chat(request: Request):
                     # No inference results, just return the training confirmation
                     reply = f"{tool_output.strip()}"
 
+                # Primary: read from config.py (always updated by set_selected_dataset)
+                dataset_name = ""
+                try:
+                    import re
+                    config_text = open("config/config.py").read()
+                    m = re.search(r'SELECTED_DATASET\s*=\s*\{[^}]*"name":\s*"([^"]+)"', config_text)
+                    if m:
+                        dataset_name = m.group(1)
+                except Exception as e:
+                    print(f"DEBUG: could not read config.py: {e}")
+
+                # Fallback: module-level cache
+                if not dataset_name:
+                    dataset_name = selected_dataset_cache.get("dataset_name", "")
+
+                if dataset_name:
+                    async with Client(MCP_TRANSPORT) as export_client:
+                        try:
+                            export_result = await export_client.call_tool(
+                                "export_to_cvat",
+                                {"dataset_name": dataset_name, "with_predictions": True}
+                            )
+                            export_msg = unwrap_tool_output(export_result)
+                            reply += f"\n\n{export_msg}"
+                            reply += f"\n\nPlease review and correct the predictions in CVAT. Let me know when you're done and I'll import the labels back."
+                        except Exception as e:
+                            reply += f"\n\nNote: CVAT export failed: {str(e)}"
+                else:
+                    reply += f"\n\nNote: Could not determine dataset name for CVAT export."
+
                 return {"reply": reply}
+
+            elif fn_name == "import_from_cvat":
+                tool_output_raw = result.get("result", result.get("error", "Tool error."))
+                tool_output = unwrap_tool_output(tool_output_raw)
+                return {"reply": f"{tool_output.strip()}\n\nWould you like to visualize the labeled dataset in Voxel51?"}
 
             elif fn_name == "run_class_mapping":
                 tool_output_raw = result.get("result", result.get("error", "Tool error."))

@@ -227,7 +227,7 @@ def list_model_sources_and_models() -> dict:
             "co_deformable_detr_r50_1x_coco.py",
             "co_dino_5scale_vit_large_coco.py"
         ],
-        "roboflow": ["rfdetr_nano, rfdetr_small, rfdetr_medium, rfdetr_large"]
+       "roboflow": ["rfdetr_nano", "rfdetr_small", "rfdetr_medium", "rfdetr_large", "rfdetr_xlarge", "rfdetr_2xlarge"]
     }
 
 

@@ -495,6 +495,44 @@ tools = [
         {
             "type": "function",
             "function": {
+                "name": "export_to_cvat",
+                "description": "Export a FiftyOne dataset to CVAT for annotation. Use ONLY for manual labeling path with with_predictions=False. For auto-labeling, this tool is called automatically by the system after run_auto_labeling completes — do NOT call it yourself for auto-labeling.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_name": {
+                            "type": "string",
+                            "description": "Name of the FiftyOne dataset to export."
+                        },
+                        "with_predictions": {
+                            "type": "boolean",
+                            "description": "If true, exports auto-labeling predictions. If false, exports images only for manual annotation."
+                        }
+                    },
+                    "required": ["dataset_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "import_from_cvat",
+                "description": "Download completed annotations from CVAT for a previously uploaded dataset and save as a new labeled FiftyOne dataset named <dataset_name>_labeled.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_name": {
+                            "type": "string",
+                            "description": "Name of the original FiftyOne dataset that was uploaded to CVAT."
+                        }
+                    },
+                    "required": ["dataset_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "run_class_mapping",
                 "description": "Run main.py for class_mapping workflow and stream logs in real time.",
                 "parameters": {
