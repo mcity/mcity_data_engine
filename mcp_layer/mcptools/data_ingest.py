@@ -202,14 +202,12 @@ async def _run_data_ingest_streaming_core(
             nonlocal ds_name, samples
             combined_lines.append(f"[{source}] {line}")
             text = line.strip()
-            m = re.search(r'(\d+)\s*/\s*(\d+)', text)
-            if m:
-                try:
-                    cur, tot = int(m.group(1)), int(m.group(2))
-                    await _emit(emit, {"type": "progress", "data": {"current": cur, "total": tot}})
-                except: pass
-            n, s = _parse_name_samples(text)
-            if n and not ds_name: ds_name = n
+            # Target the specific ingestion line directly
+            ingest_match = re.search(r"Ingesting dataset:\s*([A-Za-z0-9_\-\.]+)", text)
+            if ingest_match:
+                ds_name = ingest_match.group(1)
+
+            _, s = _parse_name_samples(text)
             if s: samples = s
             await _emit(emit, {"type": "log", "data": {"msg": text}})
 
