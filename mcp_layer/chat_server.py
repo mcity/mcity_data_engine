@@ -92,7 +92,7 @@ def _has_intent_without_action(message) -> bool:
     return any(phrase in content for phrase in INTENT_PHRASES)
 
 async def _retry_if_intent(messages: list, assistant_message, llm, tools) -> tuple:
-    for _ in range(MAX_INTENT_RETRIES):
+    for attempt in range(MAX_INTENT_RETRIES):
         if not _has_intent_without_action(assistant_message):
             break
         messages.append({
@@ -102,11 +102,13 @@ async def _retry_if_intent(messages: list, assistant_message, llm, tools) -> tup
         messages.append({
             "role": "system",
             "content": (
-                "You stated an intention but did not call any tool. "
-                "You MUST call the appropriate tool now. Do not explain — just call it."
+                "You said you would perform an action but did not call any tool. "
+                "You MUST call the appropriate tool RIGHT NOW. "
+                "Do NOT answer from memory. Do NOT list anything as text. "
+                "ONLY call the tool. No explanation."
             )
         })
-        assistant_message = await llm.chat(messages, tools=tools)
+        assistant_message = await llm.chat(messages, tools=tools, tool_choice="required")
         if hasattr(assistant_message, "tool_calls") and assistant_message.tool_calls:
             break
     return assistant_message, messages
@@ -673,19 +675,25 @@ async def chat(request: Request):
                 "content": tool_output
             })
 
-        if conversation_state["workflow_name"] and not conversation_state["dataset_selected"]:
+        # Skip reminder if datasets were just fetched
+        tools_called_this_round = [r["name"] for r in tool_results]
+        if conversation_state["workflow_name"] and not conversation_state["dataset_selected"] \
+                and "list_datasets" not in tools_called_this_round:
             messages.append({
                 "role": "system",
                 "content": (
                     "Reminder: the user has selected a workflow but has not yet selected a dataset. "
-                    "Guide them to choose one of the supported datasets: "
-                    "fisheye8k, fisheye8k_mini, mcity_fisheye_2000, or mcity_fisheye_2100."
+                    "Show the user the dataset list returned by list_datasets above. "
+                    "Do NOT list datasets from memory."
                 )
             })
 
-        final_response_msg = await llm.chat(messages)
+        # Continue with normal summarization for other tools
+        final_response_msg = await llm.chat(messages, tools=None, tool_choice=None)
         reply_content = getattr(final_response_msg, "content", final_response_msg)
         reply = unwrap_tool_output(reply_content)
+        if not reply:
+            reply = "I've completed the action. What would you like to do next?"
 
     else:
         reply = assistant_message.content

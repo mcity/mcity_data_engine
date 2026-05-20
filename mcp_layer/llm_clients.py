@@ -6,8 +6,8 @@ import google.generativeai as genai
 
 
 class BaseLLMClient:
-    async def chat(self, messages, tools: Optional[List] = None):
-        raise NotImplementedError("Subclasses must implement this method")
+    async def chat(self, messages, tools: Optional[List] = None, tool_choice: Optional[str] = None):
+        raise NotImplementedError
 
     async def summarize_classification_report(self, tool_output: str) -> str:
         prompt = f"""
@@ -46,7 +46,7 @@ class BaseLLMClient:
         return await self._summarize(prompt)
 
     async def _summarize(self, prompt: str) -> str:
-        raise NotImplementedError("Subclasses must implement summarization logic")
+        raise NotImplementedError
 
 
 class OpenAIClient(BaseLLMClient):
@@ -54,12 +54,14 @@ class OpenAIClient(BaseLLMClient):
         self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-    async def chat(self, messages, tools=None):
+    async def chat(self, messages, tools=None, tool_choice=None):
+        resolved_tool_choice = tool_choice if tool_choice else ("auto" if tools else None)
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=messages,
             tools=tools,
-            tool_choice="auto" if tools else None
+            tool_choice=resolved_tool_choice,
+            temperature=0.1,
         )
         return response.choices[0].message
 
@@ -73,12 +75,14 @@ class GroqClient(BaseLLMClient):
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
         self.model = os.getenv("GROQ_MODEL", "llama3-70b-8192")
 
-    async def chat(self, messages, tools=None):
+    async def chat(self, messages, tools=None, tool_choice=None):
+        resolved_tool_choice = tool_choice if tool_choice else ("auto" if tools else None)
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=messages,
             tools=tools,
-            tool_choice="auto" if tools else None
+            tool_choice=resolved_tool_choice,
+            temperature=0.1,
         )
         return response.choices[0].message
 
@@ -92,17 +96,24 @@ class GeminiClient(BaseLLMClient):
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = genai.GenerativeModel(model_name="gemini-1.5-flash")
 
-    async def chat(self, messages, tools=None):
+    async def chat(self, messages, tools=None, tool_choice=None):
+        # Gemini does not support tool_choice — ignored
         parts = [{"role": m["role"], "parts": [m["content"]]} for m in messages]
         try:
-            response = await self.model.generate_content_async(parts)
+            response = await self.model.generate_content_async(
+                parts,
+                generation_config={"temperature": 0.1},
+            )
             return {"content": response.text.strip(), "tool_calls": []}
         except Exception as e:
             return {"content": f"[Gemini error] {str(e)}", "tool_calls": []}
 
     async def _summarize(self, prompt: str) -> str:
         try:
-            response = await self.model.generate_content_async(prompt)
+            response = await self.model.generate_content_async(
+                prompt,
+                generation_config={"temperature": 0.1},
+            )
             return response.text.strip()
         except Exception as e:
             return f"[Gemini summarization error] {str(e)}"
