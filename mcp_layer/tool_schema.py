@@ -46,29 +46,28 @@ tools = [
                 }
             }
         },
-
-        {
+       {
             "type": "function",
             "function": {
                 "name": "set_selected_dataset",
-                "description": "Update the SELECTED_DATASET field in config.py to choose which dataset to use.",
+                "description": (
+                    "REQUIRED: Update SELECTED_DATASET in config.py. "
+                    "Call this immediately whenever the user provides a dataset name — "
+                    "whether from ingestion or from the existing list. "
+                    "No downstream tool (run_auto_labeling, export_to_cvat, etc.) works correctly without this."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "dataset_name": {
                             "type": "string",
-                            "description": "The name of the dataset (e.g., 'fisheye8k', 'fisheye8k_mini')"
-                        },
-                        "n_samples": {
-                            "type": ["integer", "null"],
-                            "description": "Optional number of samples to use (use null for full dataset)"
+                            "description": "The name of the dataset to select."
                         }
                     },
                     "required": ["dataset_name"]
                 }
             }
         },
-
         {
             "type": "function",
             "function": {
@@ -456,16 +455,20 @@ tools = [
                 }
             }
         },
-
-
         {
             "type": "function",
             "function": {
                 "name": "launch_voxel51_session",
-                "description": "Launch the Voxel51 session to visualize workflow results.",
+                "description": "Launch the Voxel51 session for a specific dataset. Always pass dataset_name explicitly — never call without it.",
                 "parameters": {
                     "type": "object",
-                    "properties": {}
+                    "properties": {
+                        "dataset_name": {
+                            "type": "string",
+                            "description": "Name of the FiftyOne dataset to visualize. After import_from_cvat, use the labeled name (e.g. 'custom_dataset15_labeled')."
+                        }
+                    },
+                    "required": ["dataset_name"]
                 }
             }
         },
