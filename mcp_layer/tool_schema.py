@@ -499,7 +499,7 @@ tools = [
             "type": "function",
             "function": {
                 "name": "export_to_cvat",
-                "description": "Export a FiftyOne dataset to CVAT for annotation. Use ONLY for manual labeling path with with_predictions=False. For auto-labeling, this tool is called automatically by the system after run_auto_labeling completes — do NOT call it yourself for auto-labeling.",
+                "description": "Export a FiftyOne dataset to CVAT for annotation. Use ONLY for the Manual Labeling path with with_predictions=False. For Auto Generated Labeling, this tool is called automatically by the system after run_auto_labeling completes — do NOT call it yourself for Auto Generated Labeling.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -509,7 +509,7 @@ tools = [
                         },
                         "with_predictions": {
                             "type": "boolean",
-                            "description": "If true, exports auto-labeling predictions. If false, exports images only for manual annotation."
+                            "description": "If true, exports model predictions for Auto Generated Labeling. If false, exports images only for Manual Labeling."
                         }
                     },
                     "required": ["dataset_name"]

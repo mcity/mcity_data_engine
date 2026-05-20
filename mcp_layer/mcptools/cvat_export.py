@@ -54,6 +54,21 @@ def export_to_cvat(dataset_name: str, with_predictions: bool = False) -> str:
         classes = []
         if with_predictions:
             pred_fields = [f for f in schema.keys() if f.startswith("pred_od_")]
+            # Prediction field may not be committed to MongoDB yet — wait for it
+            if not pred_fields:
+                for attempt in range(10):
+                    time.sleep(2)
+                    dataset = fo.load_dataset(dataset_name)
+                    schema = dataset.get_field_schema()
+                    pred_fields = [f for f in schema.keys() if f.startswith("pred_od_")]
+                    if pred_fields:
+                        image_paths = [sample.filepath for sample in dataset]
+                        break
+                else:
+                    return (
+                        f"No prediction field found on dataset '{dataset_name}' after 20 seconds. "
+                        f"Inference may not have completed correctly. Please check the auto-labeling logs."
+                    )
             if "predictions" in schema:
                 label_field = "predictions"
             elif "ground_truth" in schema:
@@ -222,15 +237,12 @@ def import_from_cvat(dataset_name: str) -> str:
 
             for attempt in range(5):
                 existing = fo.list_datasets()
-                logging.warning(f"[IMPORT VERIFY] Attempt {attempt+1}: labeled_name='{labeled_name}', in_list={labeled_name in existing}, all_datasets={existing}")
                 if labeled_name in existing:
                     verify = fo.load_dataset(labeled_name)
-                    logging.warning(f"[IMPORT VERIFY] Loaded, len={len(verify)}")
                     if len(verify) > 0:
                         break
                 time.sleep(2)
             else:
-                logging.warning(f"[IMPORT VERIFY] FAILED after 5 attempts")
                 return (
                     f"Import appeared to succeed but dataset '{labeled_name}' "
                     f"could not be verified in FiftyOne after 10 seconds. "
