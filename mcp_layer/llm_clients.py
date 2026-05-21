@@ -55,14 +55,16 @@ class OpenAIClient(BaseLLMClient):
         self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
     async def chat(self, messages, tools=None, tool_choice=None):
-        resolved_tool_choice = tool_choice if tool_choice else ("auto" if tools else None)
-        response = await self.client.chat.completions.create(
+        kwargs = dict(
             model=self.model,
             messages=messages,
-            tools=tools,
-            tool_choice=resolved_tool_choice,
             temperature=0.1,
         )
+        if tools:
+            kwargs["tools"] = tools
+        if tool_choice:
+            kwargs["tool_choice"] = tool_choice
+        response = await self.client.chat.completions.create(**kwargs)
         return response.choices[0].message
 
     async def _summarize(self, prompt: str) -> str:
@@ -76,14 +78,16 @@ class GroqClient(BaseLLMClient):
         self.model = os.getenv("GROQ_MODEL", "llama3-70b-8192")
 
     async def chat(self, messages, tools=None, tool_choice=None):
-        resolved_tool_choice = tool_choice if tool_choice else ("auto" if tools else None)
-        response = await self.client.chat.completions.create(
+        kwargs = dict(
             model=self.model,
             messages=messages,
-            tools=tools,
-            tool_choice=resolved_tool_choice,
             temperature=0.1,
         )
+        if tools:
+            kwargs["tools"] = tools
+        if tool_choice:
+            kwargs["tool_choice"] = tool_choice
+        response = await self.client.chat.completions.create(**kwargs)
         return response.choices[0].message
 
     async def _summarize(self, prompt: str) -> str:

@@ -18,6 +18,8 @@ def configure_auto_labeling(selected_source: str, selected_model: str) -> str:
     """
     Enable the selected model source and model inside config.py for the auto_labeling workflow.
     """
+    selected_source = selected_source.lower().strip()
+    selected_model = selected_model.strip()
     lines = CONFIG_PATH.read_text().split('\n')
     modified = []
 

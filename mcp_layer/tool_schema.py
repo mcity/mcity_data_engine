@@ -3,6 +3,27 @@ tools = [
         {
             "type": "function",
             "function": {
+                "name": "send_reply",
+                "description": (
+                    "Use this to send a plain text reply to the user when no other tool is needed. "
+                    "Call this instead of responding with text directly. "
+                    "Use for greetings, explanations, confirmations, follow-up questions, and any response that does not require calling another tool."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "message": {
+                            "type": "string",
+                            "description": "The reply to send to the user."
+                        }
+                    },
+                    "required": ["message"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "select_workflow",
                 "description": "Set the selected workflow (auto_labeling or class_mapping) in the config file.",
                 "parameters": {
@@ -420,7 +441,7 @@ tools = [
                     "properties": {
                         "agreement_threshold": {
                             "type": "integer",
-                            "description": "Required. Minimum number of models that must agree on overlapping detections; must be ≥ 1 and ≤ number of zero-shot models used."
+                            "description": "Required. Minimum number of models that must agree on overlapping detections; must be >= 1 and <= number of zero-shot models used."
                         },
                         "iou_threshold": {
                             "type": "number",

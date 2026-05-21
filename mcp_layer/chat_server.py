@@ -24,6 +24,7 @@ import ast
 import importlib
 import sys
 from config.config import WORKFLOW_STATE_DEFAULT
+import importlib, config.config as _cc
 
 
 load_dotenv()
@@ -44,9 +45,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-import os
-from dotenv import load_dotenv
-
 load_dotenv()
 host = os.getenv("PUBLIC_IP", "localhost")
 
@@ -54,12 +52,9 @@ CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "config.py"
 
 def _read_workflow_state() -> dict:
     try:
-        if "config.config" in sys.modules:
-            del sys.modules["config.config"]
-        from config.config import WORKFLOW_STATE
-        return dict(WORKFLOW_STATE)
+        importlib.reload(_cc)
+        return dict(_cc.WORKFLOW_STATE)
     except Exception:
-        from config.config import WORKFLOW_STATE_DEFAULT
         return dict(WORKFLOW_STATE_DEFAULT)
 
 def _write_workflow_state(state: dict):
@@ -73,11 +68,9 @@ def _write_workflow_state(state: dict):
                     if isinstance(target, ast.Name) and target.id == "WORKFLOW_STATE":
                         start = node.lineno - 1
                         end = node.end_lineno
-                        new_block = (
-                            f"WORKFLOW_STATE = {repr(state)}"
-                        )
+                        new_block = f"WORKFLOW_STATE = {repr(state)}"
                         lines[start:end] = [new_block]
-                        CONFIG_PATH.write_text("\n".join(lines))
+                        CONFIG_PATH.write_text("\n".join(lines) + "\n")
                         return
     except Exception as e:
         logging.warning(f"[STATE] Failed to write WORKFLOW_STATE: {e}")
@@ -96,47 +89,6 @@ def _reset_workflow_state() -> dict:
     except Exception as e:
         logging.warning(f"[STATE] Failed to reset WORKFLOW_STATE: {e}")
         return {}
-
-
-INTENT_PHRASES = [
-    "i'll fetch", "i'll get", "i'll check", "i'll import", "i'll load",
-    "i'll show", "i'll list", "let me fetch", "let me get", "let me check",
-    "let me import", "let me load", "let me show", "let me list",
-    "one moment", "i will fetch", "i will get", "i will check",
-    "i will import", "i will load", "i will show", "fetching",
-    "pulling up", "loading up", "grabbing", "retrieving",
-]
-
-MAX_INTENT_RETRIES = 2
-
-def _has_intent_without_action(message) -> bool:
-    """Returns True if the LLM announced an action but did not call any tool."""
-    if hasattr(message, "tool_calls") and message.tool_calls:
-        return False
-    content = (getattr(message, "content", "") or "").lower()
-    return any(phrase in content for phrase in INTENT_PHRASES)
-
-async def _retry_if_intent(messages: list, assistant_message, llm, tools) -> tuple:
-    for attempt in range(MAX_INTENT_RETRIES):
-        if not _has_intent_without_action(assistant_message):
-            break
-        messages.append({
-            "role": "assistant",
-            "content": getattr(assistant_message, "content", "") or ""
-        })
-        messages.append({
-            "role": "system",
-            "content": (
-                "You said you would perform an action but did not call any tool. "
-                "You MUST call the appropriate tool RIGHT NOW. "
-                "Do NOT answer from memory. Do NOT list anything as text. "
-                "ONLY call the tool. No explanation."
-            )
-        })
-        assistant_message = await llm.chat(messages, tools=tools, tool_choice="required")
-        if hasattr(assistant_message, "tool_calls") and assistant_message.tool_calls:
-            break
-    return assistant_message, messages
 
 
 def get_imds_token():
@@ -171,7 +123,6 @@ else:
 
 url = f"http://{host}:8000/sse"
 MCP_TRANSPORT = SSETransport(url=url)
-
 
 SYSTEM_PROMPT = (Path(__file__).resolve().parent / "prompts" / "system_prompt.txt").read_text()
 
@@ -210,8 +161,9 @@ async def chat(request: Request):
         messages.append({"role": "assistant", "content": assistant})
     messages.append({"role": "user", "content": message})
 
-    assistant_message = await llm.chat(messages, tools=tools)
-    assistant_message, messages = await _retry_if_intent(messages, assistant_message, llm, tools)
+    # Always require a tool call — the model must call either a real tool or send_reply.
+    # This eliminates all intent-detection logic and makes routing fully deterministic.
+    assistant_message = await llm.chat(messages, tools=tools, tool_choice="required")
 
     selected_dataset_cache = {
         "dataset_name": "fisheye8k_mini",
@@ -257,9 +209,39 @@ async def chat(request: Request):
         tool_calls = assistant_message.tool_calls
         tool_results = []
 
+        # FIX 1 (edge case 2): send_reply fast-path with robust fallback
+        if len(tool_calls) == 1 and tool_calls[0].function.name == "send_reply":
+            try:
+                args = json.loads(tool_calls[0].function.arguments)
+                return {"reply": args.get("message", "")}
+            except Exception:
+                try:
+                    # Raw arguments string is better than nothing
+                    return {"reply": tool_calls[0].function.arguments}
+                except Exception:
+                    return {"reply": "Something went wrong. Please try again."}
+
         async with Client(MCP_TRANSPORT) as mcp_client:
             for call in tool_calls:
                 fn_name = call.function.name
+
+                # FIX 1 (edge case 1): send_reply mixed with real tools —
+                # append a tool result so the message history stays valid for
+                # the final llm.chat call, then skip MCP execution.
+                if fn_name == "send_reply":
+                    try:
+                        args = json.loads(call.function.arguments)
+                        reply_text = args.get("message", "")
+                    except Exception:
+                        reply_text = ""
+                    tool_results.append({
+                        "tool_call_id": call.id,
+                        "name": fn_name,
+                        "fn_args": {"message": reply_text},
+                        "result": reply_text
+                    })
+                    continue
+
                 try:
                     fn_args = json.loads(call.function.arguments)
                 except json.JSONDecodeError:
@@ -393,6 +375,32 @@ async def chat(request: Request):
                         })
                         continue
 
+                    # FIX 2 (edge case 5): guard launch_voxel51_session against
+                    # empty dataset_name before hitting the MCP tool.
+                    elif fn_name == "launch_voxel51_session":
+                        dataset_name = fn_args.get("dataset_name", "").strip()
+                        if not dataset_name:
+                            state = _read_workflow_state()
+                            dataset_name = (
+                                state.get("labeled_dataset_name", "").strip()
+                                or state.get("dataset_name", "").strip()
+                            )
+                        if not dataset_name:
+                            tool_results.append({
+                                "tool_call_id": call.id,
+                                "name": fn_name,
+                                "fn_args": fn_args,
+                                "result": (
+                                    "Cannot launch Voxel51: no dataset name was provided or "
+                                    "found in session state. Please specify the dataset name."
+                                )
+                            })
+                            continue
+                        fn_args["dataset_name"] = dataset_name
+                        logging.warning(f"[CHAT] Calling MCP tool: launch_voxel51_session with dataset='{dataset_name}'")
+                        result = await mcp_client.call_tool(fn_name, fn_args)
+                        logging.warning(f"[CHAT] MCP tool launch_voxel51_session returned")
+
                     else:
                         logging.warning(f"[CHAT] Calling MCP tool: {fn_name} with args: {fn_args}")
                         result = await mcp_client.call_tool(fn_name, fn_args)
@@ -432,15 +440,24 @@ async def chat(request: Request):
             fn_args = result.get("fn_args", {})
             tool_output = str(result.get("result", result.get("error", "Tool error.")))
 
+            # FIX 1 (edge case 1): send_reply tool result must be appended to
+            # keep the message history valid when mixed with real tool calls.
+            if fn_name == "send_reply":
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": result["tool_call_id"],
+                    "name": fn_name,
+                    "content": fn_args.get("message", "")
+                })
+                continue
+
             if fn_name == "run_auto_labeling":
                 conversation_state["auto_labeling_complete"] = True
                 tool_output_raw = result.get("result", result.get("error", "Tool error."))
                 tool_output = unwrap_tool_output(tool_output_raw)
 
-                # If the guard blocked execution, just return the message — don't export
                 if "Cannot run auto-labeling" in tool_output:
                     return {"reply": tool_output}
-
 
                 if "precision" in tool_output and "recall" in tool_output and "f1-score" in tool_output:
                     summary = await llm.summarize_classification_report(tool_output)
@@ -453,7 +470,6 @@ async def chat(request: Request):
                 else:
                     reply = f"{tool_output.strip()}"
 
-                # Read dataset name from config.py
                 dataset_name = ""
                 try:
                     import re
@@ -488,9 +504,10 @@ async def chat(request: Request):
                 tool_output_raw = result.get("result", result.get("error", "Tool error."))
                 tool_output = unwrap_tool_output(tool_output_raw)
 
-                # FIX: persist the labeled dataset name so launch_voxel51_session loads the right one
+                # FIX 2 (edge case 4): strip _labeled suffix before constructing
+                # labeled name to avoid double-suffixing if LLM passes wrong name.
                 try:
-                    base_dataset = fn_args.get("dataset_name", "")
+                    base_dataset = fn_args.get("dataset_name", "").removesuffix("_labeled")
                     labeled_name = f"{base_dataset}_labeled" if base_dataset else ""
                     _update_workflow_state(labeled_dataset_name=labeled_name)
                 except Exception:
@@ -588,8 +605,8 @@ async def chat(request: Request):
                 )
             })
 
-        # Continue with normal summarization for other tools
         logging.warning(f"[CHAT] Calling final llm.chat, message count={len(messages)}")
+        # Final summarization call — plain text only, no tools needed
         final_response_msg = await llm.chat(messages, tools=None, tool_choice=None)
         logging.warning(f"[CHAT] Final response received: '{(getattr(final_response_msg, 'content', '') or '')[:100]}'")
         try:
@@ -597,7 +614,7 @@ async def chat(request: Request):
             reply = unwrap_tool_output(reply_content)
             if not reply:
                 reply = "I've completed the action. What would you like to do next?"
-            logging.warning(f"[CHAT] Full reply length={len(reply)}: '{reply}'")  # correct placement
+            logging.warning(f"[CHAT] Full reply length={len(reply)}: '{reply}'")
             return {"reply": reply}
         except Exception as e:
             logging.warning(f"[CHAT] Exception after final llm.chat: {e}")
@@ -606,8 +623,11 @@ async def chat(request: Request):
             return {"reply": "I've completed the action. What would you like to do next?"}
 
     else:
-        reply = assistant_message.content
-    return {"reply": reply}
+        # tool_choice="required" means this branch should never be reached,
+        # but handle it gracefully just in case
+        reply = assistant_message.content or ""
+        logging.warning(f"[CHAT] Unexpected: no tool_calls despite tool_choice=required. Content: '{reply[:100]}'")
+        return {"reply": reply}
 
 if __name__ == "__main__":
     import uvicorn
