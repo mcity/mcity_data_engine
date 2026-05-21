@@ -11,6 +11,19 @@ SELECTED_DATASET = {
     "custom_view": None,
 }
 
+#: Default runtime session state — source of truth for resets
+WORKFLOW_STATE_DEFAULT = {
+    "workflow_name": None,
+    "dataset_confirmed": False,
+    "dataset_name": "",
+    "labeled_dataset_name": "",
+    "auto_labeling_complete": False,
+    "cvat_task_id": None,
+}
+
+#: Runtime session state — managed by the agent, do not edit manually
+WORKFLOW_STATE = {'workflow_name': None, 'dataset_confirmed': True, 'dataset_name': 'custom_dataset11', 'labeled_dataset_name': 'custom_dataset11_labeled', 'auto_labeling_complete': False, 'cvat_task_id': None}
+
 #: Workflows and associated parameters
 WORKFLOWS = {
     "aws_download": {

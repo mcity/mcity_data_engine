@@ -1,3 +1,5 @@
+import importlib
+
 from mcptools import mcp
 import subprocess
 import re
@@ -9,6 +11,9 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from utils.dataset_loader import load_dataset
 from typing import List, Optional
+import fiftyone as fo
+import fiftyone.core.odm as _foodm
+import ast as _ast
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
@@ -43,6 +48,14 @@ def set_selected_dataset(dataset_name: str) -> str:
     Updates SELECTED_DATASET section in config.py with the given dataset name.
     Always uses the full dataset (n_samples = None).
     """
+    _foodm.get_db_conn()
+    available = fo.list_datasets()
+    if dataset_name not in available:
+        yaml_names = _extract_names_after_line(DEFAULT_DATASETS_YAML, 0)
+        fixed_names = ["fisheye8k", "fisheye8k_mini", "mcity_fisheye_2000", "mcity_fisheye_2100"]
+        all_known = set(available + yaml_names + fixed_names)
+        if dataset_name not in all_known:
+            return f"DATASET_NOT_FOUND: '{dataset_name}' does not exist."
     lines = CONFIG_PATH.read_text().split("\n")
     modified = []
     in_dataset_block = False
@@ -101,31 +114,53 @@ def switch_workflow(workflow_name: str) -> str:
 @mcp.tool()
 def reset_workflow_state() -> str:
     """
-    Resets SELECTED_WORKFLOW and SELECTED_DATASET in config.py,
+    Resets SELECTED_WORKFLOW, SELECTED_DATASET, and WORKFLOW_STATE in config.py,
     allowing the user to start a new workflow.
     """
-    lines = CONFIG_PATH.read_text().split("\n")
-    modified = []
+    src = CONFIG_PATH.read_text()
+    tree = _ast.parse(src)
+    lines = src.splitlines()
 
-    for line in lines:
-        # Reset SELECTED_WORKFLOW
+    # Reset WORKFLOW_STATE using AST
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Assign):
+            for target in node.targets:
+                if isinstance(target, _ast.Name) and target.id == "WORKFLOW_STATE":
+                    if "config.config" in sys.modules:
+                        importlib.reload(sys.modules["config.config"])
+                    from config.config import WORKFLOW_STATE_DEFAULT
+                    defaults = dict(WORKFLOW_STATE_DEFAULT)
+                    start = node.lineno - 1
+                    end = node.end_lineno
+                    new_block = (
+                        f"WORKFLOW_STATE = {repr(defaults)}"
+                    )
+                    lines[start:end] = [new_block]
+                    src = "\n".join(lines)
+                    break
+
+    # Reset SELECTED_WORKFLOW and SELECTED_DATASET using line replacement
+    result_lines = []
+    src_lines = src.split("\n")
+    i = 0
+    while i < len(src_lines):
+        line = src_lines[i]
         if line.strip().startswith("SELECTED_WORKFLOW"):
-            modified.append('SELECTED_WORKFLOW = [""]')
-        # Reset SELECTED_DATASET block
+            result_lines.append('SELECTED_WORKFLOW = [""]')
         elif "SELECTED_DATASET = {" in line:
-            modified.append('SELECTED_DATASET = {')
-            modified.append('    "name": "",')
-            modified.append('    "n_samples": None')
-            modified.append('}')
-            # Skip lines until end of block
-            while not line.strip().endswith("}"):
-                line = next(iter(lines), "")
-            continue
+            result_lines.append('SELECTED_DATASET = {')
+            result_lines.append('    "name": "",')
+            result_lines.append('    "n_samples": None,')
+            result_lines.append('    "custom_view": None,')
+            result_lines.append('}')
+            while i < len(src_lines) and not src_lines[i].strip() == "}":
+                i += 1
         else:
-            modified.append(line)
+            result_lines.append(line)
+        i += 1
 
-    CONFIG_PATH.write_text("\n".join(modified))
-    return "Workflow and dataset have been reset. You may now start a new workflow."
+    CONFIG_PATH.write_text("\n".join(result_lines))
+    return "Workflow, dataset, and session state have been reset. You may now start a new workflow."
 
 
 # The four you always want to include (in this order)

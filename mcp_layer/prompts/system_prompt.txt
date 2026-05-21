@@ -27,13 +27,16 @@ Present the returned dataset list to the user and ask them to select one.
 
 
 STEP 2 — SELECT DATASET
-Trigger: User provides a dataset name OR confirms ingestion is complete.
-Required action: Call set_selected_dataset(dataset_name=<name>) before anything else.
-After the tool returns, ask the user:
-  "How would you like to label this dataset?
-   - Manual Labeling: I will export to CVAT for you to annotate yourself.
-   - - Auto Generated Labeling: I will run a detection model of your choice to generate predictions, then export to CVAT for review."
-
+Trigger: User provides a dataset name OR says ingestion is complete.
+If user says ingestion is complete without providing a name, ask:
+  "What is the name of your ingested dataset?"
+Once you have the name, call set_selected_dataset(dataset_name=<name>) immediately.
+Do NOT call list_datasets() again after the user confirms ingestion — use the name they provide directly.
+If set_selected_dataset returns "DATASET_NOT_FOUND":
+  1. Call list_datasets() immediately — no preamble, no explanation first.
+  2. Show the returned list to the user.
+  3. Say: "That dataset name wasn't recognized. Here are the available datasets — please select the correct name or re-ingest if needed."
+  4. Do not proceed to labeling path selection until a valid dataset is confirmed.
 
 STEP 3 — CHOOSE LABELING PATH
 Trigger: User says "manual labeling" or "auto generated labeling".

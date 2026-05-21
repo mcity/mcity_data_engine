@@ -1,17 +1,32 @@
-import fiftyone as fo
-import subprocess
 import os
-import signal
 import re
-import logging
-import json as _json
-from pathlib import Path
-from mcptools import mcp
+import sys
+import ast
 import time
+import signal
+import logging
+import importlib
+import subprocess
+import traceback
+from pathlib import Path
+
+import fiftyone as fo
+from mcptools import mcp
+import fiftyone.core.odm as _foodm
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT_DIR / "config" / "config.py"
-WORKFLOW_STATE_FILE = ROOT_DIR / "output" / "workflow_state.json"
+
+
+def _read_config_state() -> dict:
+    try:
+        if "config.config" in sys.modules:
+            importlib.reload(sys.modules["config.config"])
+        from config.config import WORKFLOW_STATE
+        return dict(WORKFLOW_STATE)
+    except Exception as e:
+        logging.warning(f"[V51] Error reading WORKFLOW_STATE: {e}")
+        return {}
 
 
 @mcp.tool()
@@ -20,29 +35,19 @@ def launch_voxel51_session(dataset_name: str = "") -> str:
 
     if not target_dataset:
         try:
-            if WORKFLOW_STATE_FILE.exists():
-                state = _json.loads(WORKFLOW_STATE_FILE.read_text())
-                labeled = state.get("labeled_dataset_name", "")
-                base = state.get("dataset_name", "")
-                target_dataset = labeled if labeled else base
-                logging.warning(f"[V51] Resolved from state file: '{target_dataset}'")
+            state = _read_config_state()
+            labeled = state.get("labeled_dataset_name", "")
+            base = state.get("dataset_name", "")
+            target_dataset = labeled if labeled else base
+            logging.warning(f"[V51] Resolved from config state: labeled='{labeled}' base='{base}' -> using '{target_dataset}'")
         except Exception as e:
-            logging.warning(f"[V51] Error reading state file: {e}")
-
-    if not target_dataset:
-        try:
-            config_text = CONFIG_PATH.read_text()
-            m = re.search(r'SELECTED_DATASET\s*=\s*\{[^}]*"name":\s*"([^"]+)"', config_text)
-            if m:
-                target_dataset = m.group(1)
-                logging.warning(f"[V51] Resolved from config.py: '{target_dataset}'")
-        except Exception as e:
-            logging.warning(f"[V51] Error reading config.py: {e}")
+            logging.warning(f"[V51] Error reading config state: {e}")
 
     if not target_dataset:
         return "Could not determine which dataset to visualize. Please provide a dataset name."
 
     try:
+        _foodm.get_db_conn()  # force fresh MongoDB connection to clear stale cache
         dataset = fo.load_dataset(target_dataset)
         logging.warning(f"[V51] Direct load succeeded: '{target_dataset}', {len(dataset)} samples")
     except Exception as e:
@@ -50,6 +55,7 @@ def launch_voxel51_session(dataset_name: str = "") -> str:
         for attempt in range(5):
             time.sleep(2)
             try:
+                _foodm.get_db_conn()
                 dataset = fo.load_dataset(target_dataset)
                 logging.warning(f"[V51] Load succeeded on attempt {attempt + 2}")
                 break
@@ -82,5 +88,4 @@ def launch_voxel51_session(dataset_name: str = "") -> str:
             f"Open your browser and go to: http://localhost:5151"
         )
     except Exception as e:
-        import traceback
         return f"Failed to launch Voxel51 session: {e}\n{traceback.format_exc()}"

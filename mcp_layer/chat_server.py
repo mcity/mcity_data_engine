@@ -20,6 +20,11 @@ from sse_starlette.sse import EventSourceResponse
 from mcptools.data_ingest import _run_data_ingest_streaming_core
 import requests
 
+import ast
+import importlib
+import sys
+from config.config import WORKFLOW_STATE_DEFAULT
+
 
 load_dotenv()
 
@@ -45,6 +50,54 @@ from dotenv import load_dotenv
 load_dotenv()
 host = os.getenv("PUBLIC_IP", "localhost")
 
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "config.py"
+
+def _read_workflow_state() -> dict:
+    try:
+        if "config.config" in sys.modules:
+            del sys.modules["config.config"]
+        from config.config import WORKFLOW_STATE
+        return dict(WORKFLOW_STATE)
+    except Exception:
+        from config.config import WORKFLOW_STATE_DEFAULT
+        return dict(WORKFLOW_STATE_DEFAULT)
+
+def _write_workflow_state(state: dict):
+    try:
+        src = CONFIG_PATH.read_text()
+        tree = ast.parse(src)
+        lines = src.splitlines()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == "WORKFLOW_STATE":
+                        start = node.lineno - 1
+                        end = node.end_lineno
+                        new_block = (
+                            f"WORKFLOW_STATE = {repr(state)}"
+                        )
+                        lines[start:end] = [new_block]
+                        CONFIG_PATH.write_text("\n".join(lines))
+                        return
+    except Exception as e:
+        logging.warning(f"[STATE] Failed to write WORKFLOW_STATE: {e}")
+
+def _update_workflow_state(**kwargs) -> dict:
+    state = _read_workflow_state()
+    state.update(kwargs)
+    _write_workflow_state(state)
+    return state
+
+def _reset_workflow_state() -> dict:
+    try:
+        defaults = dict(WORKFLOW_STATE_DEFAULT)
+        _write_workflow_state(defaults)
+        return defaults
+    except Exception as e:
+        logging.warning(f"[STATE] Failed to reset WORKFLOW_STATE: {e}")
+        return {}
+
+
 INTENT_PHRASES = [
     "i'll fetch", "i'll get", "i'll check", "i'll import", "i'll load",
     "i'll show", "i'll list", "let me fetch", "let me get", "let me check",
@@ -55,34 +108,6 @@ INTENT_PHRASES = [
 ]
 
 MAX_INTENT_RETRIES = 2
-
-import json as _json
-
-WORKFLOW_STATE_FILE = Path(__file__).resolve().parent.parent / "output" / "workflow_state.json"
-
-def _read_workflow_state() -> dict:
-    try:
-        if WORKFLOW_STATE_FILE.exists():
-            return _json.loads(WORKFLOW_STATE_FILE.read_text())
-    except Exception:
-        pass
-    return {"dataset_confirmed": False, "dataset_name": "", "labeled_dataset_name": ""}
-
-# FIX: added labeled_dataset_name parameter
-def _write_workflow_state(
-    dataset_confirmed: bool,
-    dataset_name: str = "",
-    labeled_dataset_name: str = ""
-):
-    try:
-        WORKFLOW_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        WORKFLOW_STATE_FILE.write_text(_json.dumps({
-            "dataset_confirmed": dataset_confirmed,
-            "dataset_name": dataset_name,
-            "labeled_dataset_name": labeled_dataset_name
-        }))
-    except Exception:
-        pass
 
 def _has_intent_without_action(message) -> bool:
     """Returns True if the LLM announced an action but did not call any tool."""
@@ -245,14 +270,14 @@ async def chat(request: Request):
                         conversation_state["workflow_name"] = fn_args["workflow_name"]
                         conversation_state["dataset_selected"] = False
                         conversation_state["auto_labeling_complete"] = False
-                        _write_workflow_state(False)
+                        _reset_workflow_state()
                         result = await mcp_client.call_tool(fn_name, fn_args)
 
                     elif fn_name == "switch_workflow":
                         conversation_state["workflow_name"] = fn_args["workflow_name"]
                         conversation_state["dataset_selected"] = False
                         conversation_state["auto_labeling_complete"] = False
-                        _write_workflow_state(False)
+                        _reset_workflow_state()
                         result = await mcp_client.call_tool(fn_name, fn_args)
 
                     elif fn_name == "set_auto_labeling_hyperparams":
@@ -265,20 +290,21 @@ async def chat(request: Request):
                         conversation_state["dataset_selected"] = True
                         selected_dataset_cache["dataset_name"] = fn_args["dataset_name"]
                         selected_dataset_cache["n_samples"] = None
-                        # FIX: preserve labeled_dataset_name from previous state
-                        existing_state = _read_workflow_state()
-                        _write_workflow_state(
-                            True,
-                            fn_args["dataset_name"],
-                            existing_state.get("labeled_dataset_name", "")
-                        )
                         result = await mcp_client.call_tool(fn_name, {
-                            "dataset_name": selected_dataset_cache["dataset_name"]
+                            "dataset_name": fn_args["dataset_name"]
                         })
-                        messages.append({
-                            "role": "system",
-                            "content": f"CURRENT_DATASET: {fn_args['dataset_name']}"
-                        })
+                        tool_output = unwrap_tool_output(result)
+                        if "DATASET_NOT_FOUND" not in tool_output:
+                            _update_workflow_state(
+                                dataset_confirmed=True,
+                                dataset_name=fn_args["dataset_name"],
+                            )
+                            messages.append({
+                                "role": "system",
+                                "content": f"CURRENT_DATASET: {fn_args['dataset_name']}"
+                            })
+                        else:
+                            conversation_state["dataset_selected"] = False
 
                     elif fn_name == "set_anomaly_detection_hyperparams":
                         for k, v in fn_args.items():
@@ -310,6 +336,7 @@ async def chat(request: Request):
                             tool_results.append({
                                 "tool_call_id": call.id,
                                 "name": fn_name,
+                                "fn_args": fn_args,
                                 "result": (
                                     "export_to_cvat cannot be called yet. "
                                     "The auto-labeling model must be configured and run_auto_labeling "
@@ -321,7 +348,8 @@ async def chat(request: Request):
                             tool_results.append({
                                 "tool_call_id": call.id,
                                 "name": fn_name,
-                                "result": result
+                                "result": result,
+                                "fn_args": fn_args,
                             })
                         continue
 
@@ -346,6 +374,7 @@ async def chat(request: Request):
                             tool_results.append({
                                 "tool_call_id": call.id,
                                 "name": fn_name,
+                                "fn_args": fn_args,
                                 "result": (
                                     f"Cannot run auto-labeling: no dataset was confirmed this session. "
                                     f"Config currently points to '{config_dataset}'. "
@@ -359,22 +388,27 @@ async def chat(request: Request):
                         tool_results.append({
                             "tool_call_id": call.id,
                             "name": fn_name,
+                            "fn_args": fn_args,
                             "result": result
                         })
                         continue
 
                     else:
+                        logging.warning(f"[CHAT] Calling MCP tool: {fn_name} with args: {fn_args}")
                         result = await mcp_client.call_tool(fn_name, fn_args)
+                        logging.warning(f"[CHAT] MCP tool {fn_name} returned")
 
                     tool_results.append({
                         "tool_call_id": call.id,
                         "name": fn_name,
+                        "fn_args": fn_args,
                         "result": result
                     })
                 except Exception as e:
                     tool_results.append({
                         "tool_call_id": call.id,
                         "name": fn_name,
+                        "fn_args": fn_args,
                         "error": str(e)
                     })
 
@@ -395,6 +429,7 @@ async def chat(request: Request):
 
         for result in tool_results:
             fn_name = result["name"]
+            fn_args = result.get("fn_args", {})
             tool_output = str(result.get("result", result.get("error", "Tool error.")))
 
             if fn_name == "run_auto_labeling":
@@ -457,12 +492,7 @@ async def chat(request: Request):
                 try:
                     base_dataset = fn_args.get("dataset_name", "")
                     labeled_name = f"{base_dataset}_labeled" if base_dataset else ""
-                    state = _read_workflow_state()
-                    _write_workflow_state(
-                        state.get("dataset_confirmed", False),
-                        state.get("dataset_name", ""),
-                        labeled_name
-                    )
+                    _update_workflow_state(labeled_dataset_name=labeled_name)
                 except Exception:
                     pass
 
@@ -512,6 +542,31 @@ async def chat(request: Request):
                 )
                 return {"reply": reply}
 
+            elif fn_name == "set_selected_dataset":
+                tool_output_raw = result.get("result", result.get("error", "Tool error."))
+                tool_output = unwrap_tool_output(tool_output_raw)
+                if "DATASET_NOT_FOUND" in tool_output:
+                    async with Client(MCP_TRANSPORT) as list_client:
+                        try:
+                            list_result = await list_client.call_tool("list_datasets", {})
+                            list_output = unwrap_tool_output(list_result)
+                            return {
+                                "reply": (
+                                    f"That dataset name wasn't recognized. "
+                                    f"Here are the available datasets:\n\n{list_output}\n\n"
+                                    f"Please select the correct name or re-ingest if needed."
+                                )
+                            }
+                        except Exception as e:
+                            return {"reply": f"Dataset not found and couldn't fetch the list: {e}"}
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": result["tool_call_id"],
+                    "name": fn_name,
+                    "content": tool_output
+                })
+                continue
+
             # For other tools, keep old flow
             messages.append({
                 "role": "tool",
@@ -534,11 +589,21 @@ async def chat(request: Request):
             })
 
         # Continue with normal summarization for other tools
+        logging.warning(f"[CHAT] Calling final llm.chat, message count={len(messages)}")
         final_response_msg = await llm.chat(messages, tools=None, tool_choice=None)
-        reply_content = getattr(final_response_msg, "content", final_response_msg)
-        reply = unwrap_tool_output(reply_content)
-        if not reply:
-            reply = "I've completed the action. What would you like to do next?"
+        logging.warning(f"[CHAT] Final response received: '{(getattr(final_response_msg, 'content', '') or '')[:100]}'")
+        try:
+            reply_content = getattr(final_response_msg, "content", final_response_msg)
+            reply = unwrap_tool_output(reply_content)
+            if not reply:
+                reply = "I've completed the action. What would you like to do next?"
+            logging.warning(f"[CHAT] Full reply length={len(reply)}: '{reply}'")  # correct placement
+            return {"reply": reply}
+        except Exception as e:
+            logging.warning(f"[CHAT] Exception after final llm.chat: {e}")
+            import traceback
+            logging.warning(traceback.format_exc())
+            return {"reply": "I've completed the action. What would you like to do next?"}
 
     else:
         reply = assistant_message.content
