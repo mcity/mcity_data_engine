@@ -217,9 +217,14 @@ async def _run_data_ingest_streaming_core(
         log_path = LOG_DIR / "last_data_ingest_log.txt"
         _write(log_path, "".join(combined_lines))
 
-        _write(CONFIG_PATH, _read(backup_path))
-        try: backup_path.unlink(missing_ok=True)
-        except: pass
+        try:
+            if backup_path.exists():
+                _write(CONFIG_PATH, _read(backup_path))
+                backup_path.unlink(missing_ok=True)
+            else:
+                logging.warning("[INGEST] Backup not found — config.py not restored")
+        except Exception as restore_err:
+            logging.warning(f"[INGEST] Failed to restore config.py: {restore_err}")
 
         if not ds_name:
             ds_name = dataset_prefix or "custom_dataset"

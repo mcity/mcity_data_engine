@@ -1,9 +1,5 @@
-import os
-import re
 import sys
-import ast
 import time
-import signal
 import logging
 import importlib
 import subprocess
@@ -64,16 +60,16 @@ def launch_voxel51_session(dataset_name: str = "") -> str:
         else:
             return f"Dataset '{target_dataset}' could not be loaded after 10 seconds. Please try again."
 
-    try:
-        kill_result = subprocess.run(["lsof", "-ti", ":5151"], capture_output=True, text=True)
-        for pid in kill_result.stdout.strip().split():
-            try:
-                os.kill(int(pid), signal.SIGTERM)
-                logging.warning(f"[V51] Killed existing session PID={pid}")
-            except Exception:
-                pass
-    except Exception:
-        pass
+    # try:
+    #     kill_result = subprocess.run(["lsof", "-ti", ":5151"], capture_output=True, text=True)
+    #     for pid in kill_result.stdout.strip().split():
+    #         try:
+    #             os.kill(int(pid), signal.SIGTERM)
+    #             logging.warning(f"[V51] Killed existing session PID={pid}")
+    #         except Exception:
+    #             pass
+    # except Exception:
+    #     pass
 
     try:
         proc = subprocess.Popen(

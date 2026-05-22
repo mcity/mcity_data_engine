@@ -244,18 +244,23 @@ function addMsg(role, text) {
     line.className = `msg ${role}`;
     const bubble = document.createElement("div");
     bubble.className = "bubble";
-    bubble.innerHTML = text.replace(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/g,
-    url => {
-        // Only strip trailing ) if it's unmatched (more closing than opening parens)
+
+    // Step 1: convert markdown links [text](url) to <a> tags first
+    let processed = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, linkText, url) => {
+        url = url.replace(/[.,;:!?]+$/, '');
+        return `<a href="${url}" target="_blank" style="color:inherit;text-decoration:underline;">${linkText}</a>`;
+    });
+
+    // Step 2: convert remaining bare URLs (not already inside <a> tags)
+    processed = processed.replace(/(?<!href="|">)https?:\/\/[^\s<>"{}|\\^`\[\]]+/g, url => {
         const openCount = (url.match(/\(/g) || []).length;
         const closeCount = (url.match(/\)/g) || []).length;
-        if (closeCount > openCount) {
-            url = url.replace(/\)+$/, '');
-        }
-        // Strip other trailing punctuation
+        if (closeCount > openCount) url = url.replace(/\)+$/, '');
         url = url.replace(/[.,;:!?]+$/, '');
         return `<a href="${url}" target="_blank" style="color:inherit;text-decoration:underline;">${url}</a>`;
     });
+
+    bubble.innerHTML = processed;
     line.appendChild(bubble);
     chatEl.appendChild(line);
     chatEl.scrollTop = chatEl.scrollHeight;
