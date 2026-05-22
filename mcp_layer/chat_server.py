@@ -20,12 +20,10 @@ from tool_schema import tools
 
 load_dotenv()
 
-
 # LLM client
 
 llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
 llm = {"openai": OpenAIClient, "groq": GroqClient, "gemini": GeminiClient}[llm_provider]()
-
 
 # FastAPI app
 
@@ -37,19 +35,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # MCP transport
 
 host = resolve_host()
 MCP_TRANSPORT = SSETransport(url=f"http://{host}:8000/sse")
-
 
 # System prompt
 
 SYSTEM_PROMPT = (
     Path(__file__).resolve().parent / "prompts" / "system_prompt.txt"
 ).read_text()
-
 
 # Chat endpoint
 
@@ -70,7 +65,6 @@ async def chat(request: Request):
     assistant_message = await llm.chat(messages, tools=tools, tool_choice="required")
 
     if not (hasattr(assistant_message, "tool_calls") and assistant_message.tool_calls):
-        # Should never happen with tool_choice="required" — handle gracefully
         reply = assistant_message.content or ""
         logging.warning(f"[CHAT] No tool_calls despite tool_choice=required: '{reply[:100]}'")
         return {"reply": reply}
@@ -113,35 +107,21 @@ async def chat(request: Request):
     # Remind model to show dataset list if workflow selected but no dataset yet
     tools_called = [r["name"] for r in tool_results]
     if (
-        pipeline.conversation_state["workflow_name"]
-        and not pipeline.conversation_state["dataset_selected"]
+        pipeline.state.workflow_name
+        and not pipeline.state.dataset_confirmed
         and "list_datasets" not in tools_called
     ):
         messages.append({
             "role": "system",
             "content": (
-                "Reminder: the user has selected a workflow but has not yet selected a dataset. "
-                "Show the user the dataset list returned by list_datasets above. "
-                "Do NOT list datasets from memory."
+                "Reminder: the user has selected a workflow but has not yet "
+                "confirmed a dataset. Show the user the dataset list returned "
+                "by list_datasets above. Do NOT list datasets from memory."
             ),
         })
 
     # Final LLM call to summarize tool results into a user-facing reply
     logging.warning(f"[CHAT] Final llm.chat, message count={len(messages)}")
-
-    # Diagnostic: log every message role + tool_call_id to catch unmatched tool calls
-    for i, m in enumerate(messages):
-        role = m.get("role", "?")
-        name = m.get("name", "")
-        tcid = m.get("tool_call_id", "")
-        tcs = [tc.get("id", "?") for tc in m.get("tool_calls", [])]
-        logging.warning(
-            f"[CHAT] messages[{i}] role={role}"
-            + (f" name={name}" if name else "")
-            + (f" tool_call_id={tcid}" if tcid else "")
-            + (f" tool_calls={tcs}" if tcs else "")
-        )
-
     final_msg = await llm.chat(messages, tools=None, tool_choice=None)
     logging.warning(
         f"[CHAT] Final response: '{(getattr(final_msg, 'content', '') or '')[:100]}'"

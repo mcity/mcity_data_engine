@@ -11,18 +11,19 @@ SELECTED_DATASET = {
     "custom_view": None,
 }
 
-#: Default runtime session state — source of truth for resets
-WORKFLOW_STATE_DEFAULT = {
-    "workflow_name": None,
-    "dataset_confirmed": False,
+#: Runtime session state — managed by the agent via WorkflowState, do not edit manually
+WORKFLOW_STATE = {
+    "workflow_name": "",
     "dataset_name": "",
+    "dataset_confirmed": False,
     "labeled_dataset_name": "",
-    "auto_labeling_complete": False,
-    "cvat_task_id": None,
+    "auto_labeling": None,
+    "class_mapping": None,
+    "anomaly_detection": None,
+    "embedding_selection": None,
+    "auto_labeling_zero_shot": None,
+    "ensemble_selection": None,
 }
-
-#: Runtime session state — managed by the agent, do not edit manually
-WORKFLOW_STATE = {'workflow_name': None, 'dataset_confirmed': True, 'dataset_name': 'custom_dataset11', 'labeled_dataset_name': 'custom_dataset11_labeled', 'auto_labeling_complete': False, 'cvat_task_id': None}
 
 #: Workflows and associated parameters
 WORKFLOWS = {

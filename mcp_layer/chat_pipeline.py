@@ -10,54 +10,14 @@ from pathlib import Path
 from fastmcp import Client
 from fastmcp.client.transports import SSETransport
 
-import config.config as _cc
-from config.config import WORKFLOW_STATE_DEFAULT
+from validate_workflow_state import (
+    WorkflowState, AutoLabelingState, ClassMappingState,
+    AnomalyDetectionState, EmbeddingSelectionState,
+    ZeroShotAutoLabelingState, EnsembleSelectionState,
+    WORKFLOW_DEPENDENCIES, validate_tool_input,
+)
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "config.py"
-
-# Workflow state — persisted to config.py so it survives across requests
-
-def read_workflow_state() -> dict:
-    try:
-        importlib.reload(_cc)
-        return dict(_cc.WORKFLOW_STATE)
-    except Exception:
-        return dict(WORKFLOW_STATE_DEFAULT)
-
-
-def write_workflow_state(state: dict) -> None:
-    try:
-        src = CONFIG_PATH.read_text()
-        tree = ast.parse(src)
-        lines = src.splitlines()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == "WORKFLOW_STATE":
-                        start = node.lineno - 1
-                        end = node.end_lineno
-                        lines[start:end] = [f"WORKFLOW_STATE = {repr(state)}"]
-                        CONFIG_PATH.write_text("\n".join(lines) + "\n")
-                        return
-    except Exception as e:
-        logging.warning(f"[STATE] Failed to write WORKFLOW_STATE: {e}")
-
-
-def update_workflow_state(**kwargs) -> dict:
-    state = read_workflow_state()
-    state.update(kwargs)
-    write_workflow_state(state)
-    return state
-
-
-def reset_workflow_state() -> dict:
-    try:
-        defaults = dict(WORKFLOW_STATE_DEFAULT)
-        write_workflow_state(defaults)
-        return defaults
-    except Exception as e:
-        logging.warning(f"[STATE] Failed to reset WORKFLOW_STATE: {e}")
-        return {}
 
 
 # Output normalization
@@ -91,28 +51,27 @@ def unwrap_tool_output(raw) -> str:
 class ChatPipeline:
     """
     Owns all processing between the HTTP endpoint and the MCP tools:
-    - per-request state and cache management
-    - tool dispatch, pre-call guards, and immediate message appending
-    - post-call reply building
-    - workflow state persistence
+    - WorkflowState loaded fresh each request as single source of truth
+    - Tool dispatch, pre-call precondition enforcement, immediate message appending
+    - Post-call reply building
 
     Design invariant: every tool call is appended to `messages` immediately
-    after it executes in `_dispatch`, before any reply logic runs. This makes
-    it structurally impossible for OpenAI to receive an assistant message with
-    tool_call_ids that have no corresponding tool result messages.
+    after it executes in `_dispatch`. This makes it structurally impossible
+    for OpenAI to receive an assistant message with tool_call_ids that have
+    no corresponding tool result messages.
     """
 
     def __init__(self, mcp_transport: SSETransport, llm):
         self.transport = mcp_transport
         self.llm = llm
 
-        # Per-request caches — fresh instance created per request in chat_server
-        self.conversation_state = {
-            "workflow_name": None,
-            "dataset_selected": False,
-            "auto_labeling_complete": False,
-        }
-        self.selected_dataset_cache = {"dataset_name": "fisheye8k_mini", "n_samples": None}
+        # WorkflowState is loaded fresh at start of run() — single source of truth
+        # for all workflow/dataset/step state across requests.
+        self.state: WorkflowState = WorkflowState()
+
+        # Per-request hyperparam caches — these are not persisted to config.py
+        # by WorkflowState (they live in the WORKFLOWS section of config.py,
+        # written directly by the mcptools). They remain as in-request accumulators.
         self.hyperparam_cache = {
             "mode": ["train", "inference"],
             "epochs": 10,
@@ -138,11 +97,11 @@ class ChatPipeline:
             "iou_threshold": 0.5,
             "max_bbox_size": 0.1,
         }
-        # Set by _handle_set_selected_dataset when dataset is confirmed;
-        # consumed by _build_reply to inject CURRENT_DATASET system message
+
+        # Set by _handle_set_selected_dataset when dataset is confirmed.
+        # Consumed by _build_reply to inject CURRENT_DATASET system message
         # after all tool results are appended (OpenAI ordering requirement).
         self._confirmed_dataset: str | None = None
-
 
     # Public entry point
 
@@ -150,17 +109,20 @@ class ChatPipeline:
         """
         Process all tool calls for one request.
 
-        Each tool is executed and its result is appended to `messages`
-        immediately in `_dispatch`. Once all calls are complete, `_build_reply`
-        scans the results and returns an early reply string if appropriate,
-        or None to let chat_server do a final LLM summarization pass.
+        Loads WorkflowState fresh from config.py at the start of every request
+        so state changes from previous requests are always visible.
 
         Returns:
             (tool_results, early_reply)
         """
-        tool_results = []
+        # Load fresh state at start of every request
+        self.state = WorkflowState.load()
 
-        logging.warning(f"[PIPELINE] Processing {len(tool_calls)} tool call(s): {[c.function.name for c in tool_calls]}")
+        tool_results = []
+        logging.warning(
+            f"[PIPELINE] Processing {len(tool_calls)} tool call(s): "
+            f"{[c.function.name for c in tool_calls]}"
+        )
 
         async with Client(self.transport) as mcp_client:
             for call in tool_calls:
@@ -170,6 +132,24 @@ class ChatPipeline:
                     fn_args = json.loads(call.function.arguments)
                 except json.JSONDecodeError:
                     fn_args = {}
+
+                # Validate tool arguments against registered input contract before dispatch
+                ok, err, fn_args = validate_tool_input(fn_name, fn_args)
+                if not ok:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "name": fn_name,
+                        "content": err,
+                    })
+                    tool_results.append({
+                        "tool_call_id": call.id,
+                        "name": fn_name,
+                        "fn_args": fn_args,
+                        "result": err,
+                    })
+                    logging.warning(f"[PIPELINE] Tool input validation failed for {fn_name}: {err}")
+                    continue
 
                 result = await self._dispatch(
                     fn_name, fn_args, call, mcp_client, messages
@@ -184,103 +164,145 @@ class ChatPipeline:
         early_reply = await self._build_reply(tool_results, messages)
         return tool_results, early_reply
 
-
-    # Dispatch — execute tool, update state, append to messages immediately
-
+    # Dispatch — execute tool, enforce preconditions, append to messages
 
     async def _dispatch(self, fn_name, fn_args, call, mcp_client, messages) -> str:
         """
-        Execute a single tool call, apply any pre/post state updates,
-        and immediately append the result to `messages`.
-
-        Returns the raw tool output string.
+        Execute a single tool call with precondition checks and state updates.
+        Always appends result to messages before returning.
         """
         try:
             if fn_name == "send_reply":
-                # No MCP call — capture the reply text directly
                 content = fn_args.get("message", "")
                 result = content
 
             elif fn_name in ("select_workflow", "switch_workflow"):
-                self.conversation_state.update({
-                    "workflow_name": fn_args.get("workflow_name"),
-                    "dataset_selected": False,
-                    "auto_labeling_complete": False,
-                })
-                reset_workflow_state()
-                result = unwrap_tool_output(
-                    await mcp_client.call_tool(fn_name, fn_args)
+                result = await self._handle_select_or_switch_workflow(
+                    fn_name, fn_args, mcp_client
                 )
                 content = result
 
             elif fn_name == "set_selected_dataset":
-                result = await self._handle_set_selected_dataset(
-                    fn_args, mcp_client
-                )
+                result = await self._handle_set_selected_dataset(fn_args, mcp_client)
                 content = result
 
-            elif fn_name == "set_auto_labeling_hyperparams":
-                for k, v in fn_args.items():
-                    if v is not None:
-                        self.hyperparam_cache[k] = v
-                result = unwrap_tool_output(
-                    await mcp_client.call_tool(fn_name, self.hyperparam_cache.copy())
-                )
-                content = result
-
-            elif fn_name == "set_anomaly_detection_hyperparams":
-                for k, v in fn_args.items():
-                    if v is not None:
-                        self.hyperparam_cache_anomaly[k] = v
-                result = unwrap_tool_output(
-                    await mcp_client.call_tool(fn_name, self.hyperparam_cache_anomaly.copy())
-                )
-                content = result
-
-            elif fn_name == "set_embedding_selection_params":
-                for k, v in fn_args.items():
-                    if v is not None:
-                        self.embedding_selection_cache[k] = v
-                result = unwrap_tool_output(
-                    await mcp_client.call_tool(fn_name, self.embedding_selection_cache.copy())
-                )
-                content = result
-
-            elif fn_name == "set_ensemble_selection_parameters":
-                if not fn_args.get("agreement_threshold"):
-                    result = "Please provide the required `agreement_threshold` parameter."
-                    content = result
-                else:
-                    for k, v in fn_args.items():
-                        if v is not None:
-                            self.ensemble_selection_cache[k] = v
-                    result = unwrap_tool_output(
-                        await mcp_client.call_tool(fn_name, self.ensemble_selection_cache.copy())
-                    )
-                    content = result
-
-            elif fn_name == "export_to_cvat":
-                result = unwrap_tool_output(
-                    await self._handle_export_to_cvat(fn_args, mcp_client)
-                )
-                content = result
-
-            elif fn_name == "run_auto_labeling":
-                result = unwrap_tool_output(
-                    await self._handle_run_auto_labeling(fn_args, mcp_client)
-                )
-                content = result
-
-            elif fn_name == "import_from_cvat":
+            elif fn_name == "list_model_sources_and_models":
+                # Listing models implies auto generated labeling path — infer it.
+                if self.state.auto_labeling is None:
+                    self.state.auto_labeling = AutoLabelingState()
+                if not self.state.auto_labeling.labeling_path:
+                    self.state.auto_labeling.labeling_path = "auto"
+                    self.state.save()
                 result = unwrap_tool_output(
                     await mcp_client.call_tool(fn_name, fn_args)
                 )
                 content = result
 
-            elif fn_name == "launch_voxel51_session":
-                result = unwrap_tool_output(
-                    await self._handle_launch_voxel51(fn_args, mcp_client)
+            elif fn_name == "configure_auto_labeling":
+                result = await self._handle_configure_auto_labeling(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "set_auto_labeling_hyperparams":
+                result = await self._handle_set_auto_labeling_hyperparams(
+                    fn_args, mcp_client
                 )
+                content = result
+
+            # --- Class mapping ---
+            elif fn_name == "configure_class_mapping_model":
+                result = await self._handle_configure_class_mapping_model(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "set_class_mapping_dataset_source":
+                result = await self._handle_set_class_mapping_dataset_source(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "set_class_mapping_dataset_target":
+                result = await self._handle_set_class_mapping_dataset_target(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "set_class_mapping_candidate_labels":
+                result = await self._handle_set_class_mapping_candidate_labels(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "run_class_mapping":
+                result = await self._handle_run_class_mapping(mcp_client)
+                content = result
+
+            # --- Anomaly detection ---
+            elif fn_name == "configure_anomaly_detection_model":
+                result = await self._handle_configure_anomaly_detection_model(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "set_anomaly_detection_data_source":
+                result = await self._handle_set_anomaly_detection_data_source(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "set_anomaly_detection_hyperparams":
+                result = await self._handle_set_anomaly_detection_hyperparams(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "run_anomaly_detection":
+                result = await self._handle_run_anomaly_detection(mcp_client)
+                content = result
+
+            # --- Embedding selection ---
+            elif fn_name == "configure_embedding_selection_model":
+                result = await self._handle_configure_embedding_selection_model(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "set_embedding_selection_params":
+                result = await self._handle_set_embedding_selection_params(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "run_embedding_selection":
+                result = await self._handle_run_embedding_selection(mcp_client)
+                content = result
+
+            # --- Zero-shot auto-labeling ---
+            elif fn_name == "configure_auto_labeling_zero_shot_models":
+                result = await self._handle_configure_zero_shot_models(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "set_auto_labeling_zero_shot_threshold":
+                result = await self._handle_set_zero_shot_threshold(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "set_auto_labeling_zero_shot_classes":
+                result = await self._handle_set_zero_shot_classes(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "run_zero_shot_auto_labeling":
+                result = await self._handle_run_zero_shot(mcp_client)
+                content = result
+
+            # --- Ensemble selection ---
+            elif fn_name == "set_ensemble_selection_parameters":
+                result = await self._handle_set_ensemble_selection_parameters(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "set_ensemble_selection_classes":
+                result = await self._handle_set_ensemble_classes(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "run_ensemble_selection":
+                result = await self._handle_run_ensemble_selection(mcp_client)
+                content = result
+
+            elif fn_name == "export_to_cvat":
+                result = await self._handle_export_to_cvat(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "run_auto_labeling":
+                result = await self._handle_run_auto_labeling(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "import_from_cvat":
+                result = await self._handle_import_from_cvat(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "launch_voxel51_session":
+                result = await self._handle_launch_voxel51(fn_args, mcp_client)
                 content = result
 
             else:
@@ -303,66 +325,434 @@ class ChatPipeline:
             "name": fn_name,
             "content": content,
         })
-        logging.warning(f"[PIPELINE] Appended tool result: name={fn_name} tool_call_id={call.id}")
+        logging.warning(
+            f"[PIPELINE] Appended tool result: name={fn_name} "
+            f"tool_call_id={call.id}"
+        )
 
         return result
 
-
     # Per-tool handlers
 
-    async def _handle_set_selected_dataset(self, fn_args, mcp_client) -> str:
-        self.conversation_state["dataset_selected"] = True
-        self.selected_dataset_cache["dataset_name"] = fn_args["dataset_name"]
-        self.selected_dataset_cache["n_samples"] = None
+    async def _handle_select_or_switch_workflow(
+        self, fn_name: str, fn_args: dict, mcp_client
+    ) -> str:
+        """
+        Reset state completely for the new workflow, then call the MCP tool.
+        Handles both select_workflow and switch_workflow identically.
+        Checks WORKFLOW_DEPENDENCIES before allowing the workflow to start.
+        """
+        workflow_name = fn_args.get("workflow_name", "")
+
+        # Check workflow dependencies — e.g. ensemble_selection requires zero_shot first
+        deps = WORKFLOW_DEPENDENCIES.get(workflow_name, [])
+        if deps:
+            # Determine which workflows have been completed this session
+            # A workflow substate exists and has been used if its substate is non-None
+            completed = [
+                wf for wf in [
+                    "auto_labeling", "class_mapping", "anomaly_detection",
+                    "embedding_selection", "auto_labeling_zero_shot", "ensemble_selection"
+                ]
+                if getattr(self.state, wf, None) is not None
+            ]
+            ok, msg = self.state.check_workflow_dependencies(workflow_name, completed)
+            if not ok:
+                return msg
+
+        # Full reset — all prior state cleared, new workflow initialised
+        self.state = self.state.reset_for_workflow(workflow_name)
+        result = unwrap_tool_output(
+            await mcp_client.call_tool(fn_name, fn_args)
+        )
+        return result
+
+    async def _handle_set_selected_dataset(self, fn_args: dict, mcp_client) -> str:
+        ok, msg = self.state.can_confirm_dataset()
+        if not ok:
+            return msg
+
         raw = await mcp_client.call_tool("set_selected_dataset", {
             "dataset_name": fn_args["dataset_name"]
         })
         tool_output = unwrap_tool_output(raw)
+
         if "DATASET_NOT_FOUND" not in tool_output:
-            update_workflow_state(
-                dataset_confirmed=True,
-                dataset_name=fn_args["dataset_name"],
-            )
-            # Store confirmed name — system message injected after all tool
-            # results are appended, to avoid breaking OpenAI message ordering.
+            self.state.dataset_name = fn_args["dataset_name"]
+            self.state.dataset_confirmed = True
+            self.state.save()
+            # System message injected in _build_reply after all tool results
+            # are appended — injecting here would break OpenAI message ordering.
             self._confirmed_dataset = fn_args["dataset_name"]
         else:
-            self.conversation_state["dataset_selected"] = False
+            self.state.dataset_confirmed = False
+
         return tool_output
 
-    async def _handle_export_to_cvat(self, fn_args, mcp_client):
-        is_premature = (
-            fn_args.get("with_predictions", False)
-            and self.conversation_state.get("workflow_name") == "auto_labeling"
-            and not self.conversation_state.get("auto_labeling_complete")
+    async def _handle_configure_auto_labeling(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.auto_labeling is None:
+            self.state.auto_labeling = AutoLabelingState()
+
+        # Configuring a model implies auto generated labeling path — infer it.
+        if not self.state.auto_labeling.labeling_path:
+            self.state.auto_labeling.labeling_path = "auto"
+            self.state.save()
+
+        result = unwrap_tool_output(
+            await mcp_client.call_tool("configure_auto_labeling", fn_args)
         )
-        if is_premature:
-            return (
-                "export_to_cvat cannot be called yet. "
-                "The auto-labeling model must be configured and run_auto_labeling "
-                "must complete first. Please continue with model configuration."
-            )
-        return await mcp_client.call_tool("export_to_cvat", fn_args)
+        self.state.auto_labeling.model_configured = True
+        # Hyperparams are confirmed by default after model configuration.
+        # If the user changes values, set_auto_labeling_hyperparams will
+        # be called and hyperparams_confirmed stays True. If the user
+        # accepts defaults, no tool is called — but confirmation is implicit.
+        self.state.auto_labeling.hyperparams_confirmed = True
+        self.state.save()
+        return result
 
-    async def _handle_run_auto_labeling(self, fn_args, mcp_client):
-        state = read_workflow_state()
-        if not state.get("dataset_confirmed", False):
-            config_dataset = self._read_dataset_from_config()
-            return (
-                f"Cannot run auto-labeling: no dataset was confirmed this session. "
-                f"Config currently points to '{config_dataset}'. "
-                f"Please confirm with the user: is '{config_dataset}' the correct dataset? "
-                f"If not, ask them for the correct name and call set_selected_dataset first."
-            )
-        return await mcp_client.call_tool("run_auto_labeling", fn_args)
+    async def _handle_set_auto_labeling_hyperparams(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.auto_labeling is None:
+            self.state.auto_labeling = AutoLabelingState()
 
-    async def _handle_launch_voxel51(self, fn_args, mcp_client):
+        for k, v in fn_args.items():
+            if v is not None:
+                self.hyperparam_cache[k] = v
+
+        result = unwrap_tool_output(
+            await mcp_client.call_tool(
+                "set_auto_labeling_hyperparams", self.hyperparam_cache.copy()
+            )
+        )
+        self.state.auto_labeling.hyperparams_confirmed = True
+        self.state.save()
+        return result
+
+    # --- Class mapping handlers ---
+
+    async def _handle_configure_class_mapping_model(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.class_mapping is None:
+            self.state.class_mapping = ClassMappingState()
+        result = unwrap_tool_output(
+            await mcp_client.call_tool("configure_class_mapping_model", fn_args)
+        )
+        self.state.class_mapping.model_configured = True
+        self.state.save()
+        return result
+
+    async def _handle_set_class_mapping_dataset_source(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.class_mapping is None:
+            self.state.class_mapping = ClassMappingState()
+        result = unwrap_tool_output(
+            await mcp_client.call_tool("set_class_mapping_dataset_source", fn_args)
+        )
+        self.state.class_mapping.source_dataset_set = True
+        self.state.save()
+        return result
+
+    async def _handle_set_class_mapping_dataset_target(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.class_mapping is None:
+            self.state.class_mapping = ClassMappingState()
+        result = unwrap_tool_output(
+            await mcp_client.call_tool("set_class_mapping_dataset_target", fn_args)
+        )
+        self.state.class_mapping.target_dataset_set = True
+        self.state.save()
+        return result
+
+    async def _handle_set_class_mapping_candidate_labels(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.class_mapping is None:
+            self.state.class_mapping = ClassMappingState()
+        result = unwrap_tool_output(
+            await mcp_client.call_tool("set_class_mapping_candidate_labels", fn_args)
+        )
+        self.state.class_mapping.candidate_labels_set = True
+        self.state.save()
+        return result
+
+    async def _handle_run_class_mapping(self, mcp_client) -> str:
+        if self.state.class_mapping is None:
+            self.state.class_mapping = ClassMappingState()
+        ok, msg = self.state.class_mapping.can_run_class_mapping(
+            self.state.dataset_confirmed
+        )
+        if not ok:
+            return msg
+        return unwrap_tool_output(await mcp_client.call_tool("run_class_mapping", {}))
+
+    # --- Anomaly detection handlers ---
+
+    async def _handle_configure_anomaly_detection_model(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.anomaly_detection is None:
+            self.state.anomaly_detection = AnomalyDetectionState()
+        result = unwrap_tool_output(
+            await mcp_client.call_tool("configure_anomaly_detection_model", fn_args)
+        )
+        self.state.anomaly_detection.model_configured = True
+        self.state.save()
+        return result
+
+    async def _handle_set_anomaly_detection_data_source(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.anomaly_detection is None:
+            self.state.anomaly_detection = AnomalyDetectionState()
+        result = unwrap_tool_output(
+            await mcp_client.call_tool("set_anomaly_detection_data_source", fn_args)
+        )
+        self.state.anomaly_detection.data_source_set = True
+        self.state.save()
+        return result
+
+    async def _handle_set_anomaly_detection_hyperparams(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.anomaly_detection is None:
+            self.state.anomaly_detection = AnomalyDetectionState()
+        for k, v in fn_args.items():
+            if v is not None:
+                self.hyperparam_cache_anomaly[k] = v
+        result = unwrap_tool_output(
+            await mcp_client.call_tool(
+                "set_anomaly_detection_hyperparams",
+                self.hyperparam_cache_anomaly.copy()
+            )
+        )
+        self.state.anomaly_detection.hyperparams_confirmed = True
+        self.state.save()
+        return result
+
+    async def _handle_run_anomaly_detection(self, mcp_client) -> str:
+        if self.state.anomaly_detection is None:
+            self.state.anomaly_detection = AnomalyDetectionState()
+        ok, msg = self.state.anomaly_detection.can_run_anomaly_detection(
+            self.state.dataset_confirmed
+        )
+        if not ok:
+            return msg
+        return unwrap_tool_output(
+            await mcp_client.call_tool("run_anomaly_detection", {})
+        )
+
+    # --- Embedding selection handlers ---
+
+    async def _handle_configure_embedding_selection_model(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.embedding_selection is None:
+            self.state.embedding_selection = EmbeddingSelectionState()
+        result = unwrap_tool_output(
+            await mcp_client.call_tool("configure_embedding_selection_model", fn_args)
+        )
+        self.state.embedding_selection.model_configured = True
+        self.state.save()
+        return result
+
+    async def _handle_set_embedding_selection_params(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.embedding_selection is None:
+            self.state.embedding_selection = EmbeddingSelectionState()
+        for k, v in fn_args.items():
+            if v is not None:
+                self.embedding_selection_cache[k] = v
+        result = unwrap_tool_output(
+            await mcp_client.call_tool(
+                "set_embedding_selection_params",
+                self.embedding_selection_cache.copy()
+            )
+        )
+        self.state.embedding_selection.params_set = True
+        self.state.save()
+        return result
+
+    async def _handle_run_embedding_selection(self, mcp_client) -> str:
+        if self.state.embedding_selection is None:
+            self.state.embedding_selection = EmbeddingSelectionState()
+        ok, msg = self.state.embedding_selection.can_run_embedding_selection(
+            self.state.dataset_confirmed
+        )
+        if not ok:
+            return msg
+        return unwrap_tool_output(
+            await mcp_client.call_tool("run_embedding_selection", {})
+        )
+
+    # --- Zero-shot auto-labeling handlers ---
+
+    async def _handle_configure_zero_shot_models(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.auto_labeling_zero_shot is None:
+            self.state.auto_labeling_zero_shot = ZeroShotAutoLabelingState()
+        result = unwrap_tool_output(
+            await mcp_client.call_tool(
+                "configure_auto_labeling_zero_shot_models", fn_args
+            )
+        )
+        self.state.auto_labeling_zero_shot.models_configured = True
+        self.state.save()
+        return result
+
+    async def _handle_set_zero_shot_threshold(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.auto_labeling_zero_shot is None:
+            self.state.auto_labeling_zero_shot = ZeroShotAutoLabelingState()
+        result = unwrap_tool_output(
+            await mcp_client.call_tool(
+                "set_auto_labeling_zero_shot_threshold", fn_args
+            )
+        )
+        self.state.auto_labeling_zero_shot.threshold_set = True
+        self.state.save()
+        return result
+
+    async def _handle_set_zero_shot_classes(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.auto_labeling_zero_shot is None:
+            self.state.auto_labeling_zero_shot = ZeroShotAutoLabelingState()
+        result = unwrap_tool_output(
+            await mcp_client.call_tool(
+                "set_auto_labeling_zero_shot_classes", fn_args
+            )
+        )
+        self.state.auto_labeling_zero_shot.classes_set = True
+        self.state.save()
+        return result
+
+    async def _handle_run_zero_shot(self, mcp_client) -> str:
+        if self.state.auto_labeling_zero_shot is None:
+            self.state.auto_labeling_zero_shot = ZeroShotAutoLabelingState()
+        ok, msg = self.state.auto_labeling_zero_shot.can_run_zero_shot(
+            self.state.dataset_confirmed
+        )
+        if not ok:
+            return msg
+        return unwrap_tool_output(
+            await mcp_client.call_tool("run_zero_shot_auto_labeling", {})
+        )
+
+    # --- Ensemble selection handlers ---
+
+    async def _handle_set_ensemble_selection_parameters(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.ensemble_selection is None:
+            self.state.ensemble_selection = EnsembleSelectionState()
+        for k, v in fn_args.items():
+            if v is not None:
+                self.ensemble_selection_cache[k] = v
+        result = unwrap_tool_output(
+            await mcp_client.call_tool(
+                "set_ensemble_selection_parameters",
+                self.ensemble_selection_cache.copy()
+            )
+        )
+        self.state.ensemble_selection.params_set = True
+        self.state.save()
+        return result
+
+    async def _handle_set_ensemble_classes(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        if self.state.ensemble_selection is None:
+            self.state.ensemble_selection = EnsembleSelectionState()
+        result = unwrap_tool_output(
+            await mcp_client.call_tool("set_ensemble_selection_classes", fn_args)
+        )
+        self.state.ensemble_selection.classes_set = True
+        self.state.save()
+        return result
+
+    async def _handle_run_ensemble_selection(self, mcp_client) -> str:
+        if self.state.ensemble_selection is None:
+            self.state.ensemble_selection = EnsembleSelectionState()
+        ok, msg = self.state.ensemble_selection.can_run_ensemble_selection(
+            self.state.dataset_confirmed
+        )
+        if not ok:
+            return msg
+        return unwrap_tool_output(
+            await mcp_client.call_tool("run_ensemble_selection", {})
+        )
+
+    async def _handle_export_to_cvat(self, fn_args: dict, mcp_client) -> str:
+        with_predictions = fn_args.get("with_predictions", False)
+
+        if self.state.workflow_name == "auto_labeling":
+            if self.state.auto_labeling is None:
+                self.state.auto_labeling = AutoLabelingState()
+
+            # If labeling path not yet set, infer it from with_predictions
+            if not self.state.auto_labeling.labeling_path:
+                inferred = "manual" if not with_predictions else "auto"
+                self.state.auto_labeling.labeling_path = inferred
+                self.state.save()
+
+            ok, msg = self.state.auto_labeling.can_export_to_cvat(with_predictions)
+            if not ok:
+                return msg
+
+        result = unwrap_tool_output(
+            await mcp_client.call_tool("export_to_cvat", fn_args)
+        )
+
+        # Extract and persist task_id from the result string
+        if self.state.auto_labeling and "Task ID:" in result:
+            try:
+                task_id = int(result.split("Task ID:")[1].split()[0].strip())
+                self.state.auto_labeling.cvat_task_id = task_id
+                self.state.save()
+            except Exception:
+                pass
+
+        return result
+
+    async def _handle_run_auto_labeling(self, fn_args: dict, mcp_client) -> str:
+        if self.state.auto_labeling is None:
+            self.state.auto_labeling = AutoLabelingState()
+
+        ok, msg = self.state.auto_labeling.can_run_auto_labeling(
+            self.state.dataset_confirmed,
+            self.state.dataset_name,
+        )
+        if not ok:
+            return msg
+
+        return unwrap_tool_output(
+            await mcp_client.call_tool("run_auto_labeling", fn_args)
+        )
+
+    async def _handle_import_from_cvat(self, fn_args: dict, mcp_client) -> str:
+        if self.state.auto_labeling:
+            ok, msg = self.state.auto_labeling.can_import_from_cvat()
+            if not ok:
+                return msg
+        return unwrap_tool_output(
+            await mcp_client.call_tool("import_from_cvat", fn_args)
+        )
+
+    async def _handle_launch_voxel51(self, fn_args: dict, mcp_client) -> str:
         dataset_name = fn_args.get("dataset_name", "").strip()
         if not dataset_name:
-            state = read_workflow_state()
             dataset_name = (
-                state.get("labeled_dataset_name", "").strip()
-                or state.get("dataset_name", "").strip()
+                self.state.labeled_dataset_name.strip()
+                or self.state.dataset_name.strip()
             )
         if not dataset_name:
             return (
@@ -371,22 +761,19 @@ class ChatPipeline:
             )
         fn_args["dataset_name"] = dataset_name
         logging.warning(f"[PIPELINE] launch_voxel51_session -> dataset='{dataset_name}'")
-        return await mcp_client.call_tool("launch_voxel51_session", fn_args)
+        return unwrap_tool_output(
+            await mcp_client.call_tool("launch_voxel51_session", fn_args)
+        )
 
-
-    # Reply building — pure, no message mutation
+    # Reply building — no message mutation except CURRENT_DATASET injection
 
     async def _build_reply(self, tool_results: list, messages: list) -> str | None:
         """
-        Scan completed tool results and return an early reply if any tool
-        requires one, otherwise return None for final LLM summarization.
-
-        All tool results are already appended to messages by _dispatch.
-        Any extra system messages (e.g. CURRENT_DATASET) are injected here,
-        after the tool results, so OpenAI message ordering is never violated.
+        Inject any deferred system messages, then scan tool results for
+        early-return tools. Returns a reply string or None for final LLM pass.
         """
-        # Inject CURRENT_DATASET system message now that all tool results
-        # are in messages — injecting it earlier would break OpenAI ordering.
+        # Inject CURRENT_DATASET after all tool results are in messages —
+        # injecting earlier would violate OpenAI's message ordering rules.
         if self._confirmed_dataset:
             messages.append({
                 "role": "system",
@@ -417,25 +804,34 @@ class ChatPipeline:
             if fn_name == "run_ensemble_selection":
                 return self._format_ensemble_reply(tool_output)
 
+            if fn_name == "run_embedding_selection":
+                # Embedding selection has no special formatter — falls through
+                # to final LLM summarization
+                pass
+
             if fn_name == "set_selected_dataset" and "DATASET_NOT_FOUND" in tool_output:
                 return await self._dataset_not_found_reply()
 
         return None
 
-
     # Reply formatters
 
     async def _finalize_auto_labeling(self, tool_output: str) -> str:
-        self.conversation_state["auto_labeling_complete"] = True
-
-        if "Cannot run auto-labeling" in tool_output:
+        # Block if precondition was not met (guard returned an error string)
+        if any(phrase in tool_output for phrase in [
+            "No dataset has been confirmed",
+            "model source and model must be configured",
+            "Hyperparameters must be confirmed",
+        ]):
             return tool_output
 
+        # Mark auto-labeling complete and persist
+        if self.state.auto_labeling:
+            self.state.auto_labeling.auto_labeling_complete = True
+            self.state.save()
+
         reply = await self._format_auto_labeling_reply(tool_output)
-        dataset_name = (
-            self._read_dataset_from_config()
-            or self.selected_dataset_cache.get("dataset_name", "")
-        )
+        dataset_name = self.state.dataset_name
 
         if dataset_name:
             async with Client(self.transport) as export_client:
@@ -445,6 +841,16 @@ class ChatPipeline:
                         {"dataset_name": dataset_name, "with_predictions": True}
                     )
                     export_msg = unwrap_tool_output(export_result)
+                    # Extract and persist task_id
+                    if self.state.auto_labeling and "Task ID:" in export_msg:
+                        try:
+                            task_id = int(
+                                export_msg.split("Task ID:")[1].split()[0].strip()
+                            )
+                            self.state.auto_labeling.cvat_task_id = task_id
+                            self.state.save()
+                        except Exception:
+                            pass
                     reply += (
                         f"\n\n{export_msg}"
                         f"\n\nPlease review and correct the predictions in CVAT. "
@@ -458,16 +864,26 @@ class ChatPipeline:
         return reply
 
     def _finalize_import_from_cvat(self, fn_args: dict, tool_output: str) -> str:
+        base_dataset = fn_args.get("dataset_name", "").removesuffix("_labeled")
+        labeled_name = f"{base_dataset}_labeled" if base_dataset else ""
         try:
-            base_dataset = fn_args.get("dataset_name", "").removesuffix("_labeled")
-            labeled_name = f"{base_dataset}_labeled" if base_dataset else ""
-            update_workflow_state(labeled_dataset_name=labeled_name)
+            self.state.labeled_dataset_name = labeled_name
+            if self.state.auto_labeling:
+                self.state.auto_labeling.labels_imported = True
+            self.state.save()
         except Exception:
             pass
-        return f"{tool_output.strip()}\n\nWould you like to visualize the labeled dataset in Voxel51?"
+        return (
+            f"{tool_output.strip()}\n\n"
+            f"Would you like to visualize the labeled dataset in Voxel51?"
+        )
 
     async def _format_auto_labeling_reply(self, tool_output: str) -> str:
-        if "precision" in tool_output and "recall" in tool_output and "f1-score" in tool_output:
+        if (
+            "precision" in tool_output
+            and "recall" in tool_output
+            and "f1-score" in tool_output
+        ):
             summary = await self.llm.summarize_classification_report(tool_output)
             return (
                 f"{summary}\n\n"
@@ -507,11 +923,11 @@ class ChatPipeline:
             f"Would you like to launch Voxel51 to explore the results?\n\n"
             f"- In the ENSEMBLE SELECTION section of the left sidebar, use the "
             f"`n_unique_ensemble_selection` field as a filter. "
-            f"- It represents the number of overlapping objects retained in each sample "
-            f"based on model agreement. "
-            f"- Once you select a sample image, use the `detections_overlap` tag from "
-            f"the TAGS panel to visualize only those detections that had sufficient "
-            f"overlap and were retained by the ensemble logic."
+            f"- It represents the number of overlapping objects retained in each "
+            f"sample based on model agreement. "
+            f"- Once you select a sample image, use the `detections_overlap` tag "
+            f"from the TAGS panel to visualize only those detections that had "
+            f"sufficient overlap and were retained by the ensemble logic."
         )
 
     async def _dataset_not_found_reply(self) -> str:
@@ -526,17 +942,3 @@ class ChatPipeline:
                 )
             except Exception as e:
                 return f"Dataset not found and couldn't fetch the list: {e}"
-
-
-    # Utilities
-
-    def _read_dataset_from_config(self) -> str:
-        try:
-            config_text = open("config/config.py").read()
-            m = re.search(
-                r'SELECTED_DATASET\s*=\s*\{[^}]*"name":\s*"([^"]+)"',
-                config_text
-            )
-            return m.group(1) if m else ""
-        except Exception:
-            return ""
