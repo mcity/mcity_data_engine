@@ -1,10 +1,7 @@
 from mcptools import mcp
-import subprocess
 import re
 import asyncio
 from pathlib import Path
-import os
-import ast
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
@@ -76,7 +73,7 @@ def configure_embedding_selection_model(selected_model: str) -> str:
 
         emb_modified.append(line)
 
-    CONFIG_PATH.write_text('\n'.join(emb_modified))
+    CONFIG_PATH.write_text('\n'.join(emb_modified) + "\n")
     return f"Embedding Selection model updated to `{selected_model}`."
 
 
@@ -140,7 +137,7 @@ def set_embedding_selection_params(
 
         modified.append(line)
 
-    CONFIG_PATH.write_text("\n".join(modified))
+    CONFIG_PATH.write_text("\n".join(modified) + "\n")
     return "Embedding Selection parameters updated successfully."
 
 @mcp.tool()

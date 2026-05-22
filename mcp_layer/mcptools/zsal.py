@@ -1,10 +1,7 @@
 from mcptools import mcp
-import subprocess
 import re
 import asyncio
 from pathlib import Path
-import os
-import ast
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
@@ -81,7 +78,7 @@ def configure_auto_labeling_zero_shot_models(selected_models: list) -> str:
         # Default case
         modified.append(line)
 
-    CONFIG_PATH.write_text('\n'.join(modified))
+    CONFIG_PATH.write_text('\n'.join(modified) + "\n")
     return f"Updated models: {', '.join(selected_models)}"
 
 @mcp.tool()
@@ -111,7 +108,7 @@ def set_auto_labeling_zero_shot_threshold(threshold: float) -> str:
 
         modified.append(line)
 
-    CONFIG_PATH.write_text("\n".join(modified))
+    CONFIG_PATH.write_text("\n".join(modified) + "\n")
     return f"Detection threshold set to `{threshold}` in `auto_labeling_zero_shot`."
 
 @mcp.tool()
@@ -154,7 +151,7 @@ def set_auto_labeling_zero_shot_classes(object_classes: list) -> str:
 
         modified.append(line)
 
-    CONFIG_PATH.write_text("\n".join(modified))
+    CONFIG_PATH.write_text("\n".join(modified) + "\n")
     return f"Set `object_classes` to: {object_classes}"
 
 

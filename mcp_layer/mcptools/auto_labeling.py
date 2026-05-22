@@ -1,10 +1,7 @@
 from mcptools import mcp  #shared instance from __init__.py
-import subprocess
 import re
 import asyncio
 from pathlib import Path
-import os
-import ast
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
@@ -146,7 +143,7 @@ def configure_auto_labeling(selected_source: str, selected_model: str) -> str:
 
         modified.append(line)
 
-    CONFIG_PATH.write_text('\n'.join(modified))
+    CONFIG_PATH.write_text('\n'.join(modified) + "\n")
     return f"Config updated to use `{selected_model}` from `{selected_source}`."
 
 @mcp.tool()
@@ -199,7 +196,7 @@ def set_auto_labeling_hyperparams(
 
         modified.append(line)
 
-    CONFIG_PATH.write_text("\n".join(modified))
+    CONFIG_PATH.write_text("\n".join(modified) + "\n")
     return "Hyperparameters updated successfully."
 
 

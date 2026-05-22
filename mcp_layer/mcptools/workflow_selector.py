@@ -1,22 +1,22 @@
 import importlib
-
-from mcptools import mcp
-import subprocess
 import re
-import asyncio
-from pathlib import Path
-import os
-import ast
 import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from utils.dataset_loader import load_dataset
+import os
+import ast as _ast
+from pathlib import Path
 from typing import List, Optional
+
 import fiftyone as fo
 import fiftyone.core.odm as _foodm
-import ast as _ast
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from utils.dataset_loader import load_dataset
+from mcptools import mcp
+
+import config.config as _cc
+from config.config import WORKFLOW_STATE_DEFAULT
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-
 CONFIG_PATH = ROOT_DIR / "config" / "config.py"
 MAIN_PATH = ROOT_DIR / "main.py"
 DEFAULT_DATASETS_YAML = ROOT_DIR / "config" / "datasets.yaml"
@@ -38,7 +38,7 @@ def select_workflow(workflow_name: str) -> str:
         else:
             modified.append(line)
 
-    CONFIG_PATH.write_text('\n'.join(modified))
+    CONFIG_PATH.write_text('\n'.join(modified) + "\n")
     return f"Workflow selected: `{workflow_name}`."
 
 
@@ -56,6 +56,7 @@ def set_selected_dataset(dataset_name: str) -> str:
         all_known = set(available + yaml_names + fixed_names)
         if dataset_name not in all_known:
             return f"DATASET_NOT_FOUND: '{dataset_name}' does not exist."
+
     lines = CONFIG_PATH.read_text().split("\n")
     modified = []
     in_dataset_block = False
@@ -86,12 +87,13 @@ def set_selected_dataset(dataset_name: str) -> str:
 
         modified.append(line)
 
-    CONFIG_PATH.write_text("\n".join(modified))
+    CONFIG_PATH.write_text("\n".join(modified) + "\n")
 
     if not dataset_name.startswith("custom"):
         dataset, dataset_info = load_dataset({"name": dataset_name, "n_samples": None, "custom_view": None})
 
     return f"Dataset set to `{dataset_name}`."
+
 
 @mcp.tool()
 def switch_workflow(workflow_name: str) -> str:
@@ -108,8 +110,9 @@ def switch_workflow(workflow_name: str) -> str:
         else:
             modified.append(line)
 
-    CONFIG_PATH.write_text('\n'.join(modified))
+    CONFIG_PATH.write_text('\n'.join(modified) + "\n")
     return f"Switched to workflow: `{workflow_name}`."
+
 
 @mcp.tool()
 def reset_workflow_state() -> str:
@@ -121,21 +124,16 @@ def reset_workflow_state() -> str:
     tree = _ast.parse(src)
     lines = src.splitlines()
 
-    # Reset WORKFLOW_STATE using AST
+    # Reset WORKFLOW_STATE using importlib.reload (consistent with chat_pipeline.py)
     for node in _ast.walk(tree):
         if isinstance(node, _ast.Assign):
             for target in node.targets:
                 if isinstance(target, _ast.Name) and target.id == "WORKFLOW_STATE":
-                    if "config.config" in sys.modules:
-                        importlib.reload(sys.modules["config.config"])
-                    from config.config import WORKFLOW_STATE_DEFAULT
+                    importlib.reload(_cc)
                     defaults = dict(WORKFLOW_STATE_DEFAULT)
                     start = node.lineno - 1
                     end = node.end_lineno
-                    new_block = (
-                        f"WORKFLOW_STATE = {repr(defaults)}"
-                    )
-                    lines[start:end] = [new_block]
+                    lines[start:end] = [f"WORKFLOW_STATE = {repr(defaults)}"]
                     src = "\n".join(lines)
                     break
 
@@ -159,11 +157,13 @@ def reset_workflow_state() -> str:
             result_lines.append(line)
         i += 1
 
-    CONFIG_PATH.write_text("\n".join(result_lines))
+    CONFIG_PATH.write_text("\n".join(result_lines) + "\n")
     return "Workflow, dataset, and session state have been reset. You may now start a new workflow."
 
 
-# The four you always want to include (in this order)
+
+# Dataset listing helpers
+
 FIXED_DATASETS: List[str] = [
     "fisheye8k",
     "fisheye8k_mini",
@@ -173,20 +173,12 @@ FIXED_DATASETS: List[str] = [
 
 _NAME_LINE = re.compile(r'^\s*-\s*name:\s*["\']?([^"\']+)["\']?\s*$', re.IGNORECASE)
 
+
 def _extract_names_after_line(yaml_path: Path, start_line_1_based: int) -> List[str]:
-    """
-    Return dataset names found after the given 1-based line number.
-    We scan the file tail and pick lines like:  - name: <value>  (quoted or not)
-    """
     if not yaml_path.exists():
         return []
-
     lines = yaml_path.read_text(encoding="utf-8", errors="ignore").splitlines()
-
-    # Convert 1-based "after line N" to a 0-based slice starting at index N
-    # e.g., after line 52 => start at lines[52], which is line 53 in 1-based terms
     tail = lines[start_line_1_based:]
-
     found: List[str] = []
     for raw in tail:
         m = _NAME_LINE.match(raw)
@@ -197,19 +189,15 @@ def _extract_names_after_line(yaml_path: Path, start_line_1_based: int) -> List[
             found.append(name)
     return found
 
+
 @mcp.tool()
 def list_datasets() -> List[str]:
     """
     Returns a list of dataset names.
     - The first four are always: fisheye8k, fisheye8k_mini, mcity_fisheye_2000, mcity_fisheye_2100
-    - Then we append names found in datasets.yaml AFTER the given line number (1-based)
+    - Then appends names found in datasets.yaml after line 52
     """
-    path = DEFAULT_DATASETS_YAML
-    after_line = 52
-
-    dynamic_names = _extract_names_after_line(path, after_line)
-
-    # Build final list: fixed first (dedup), then dynamic (excluding duplicates)
+    dynamic_names = _extract_names_after_line(DEFAULT_DATASETS_YAML, 52)
     out: List[str] = []
     for n in FIXED_DATASETS:
         if n not in out:
@@ -217,5 +205,4 @@ def list_datasets() -> List[str]:
     for n in dynamic_names:
         if n not in out:
             out.append(n)
-
     return out

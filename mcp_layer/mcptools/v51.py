@@ -9,6 +9,7 @@ from pathlib import Path
 import fiftyone as fo
 from mcptools import mcp
 import fiftyone.core.odm as _foodm
+import config.config as _cc
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT_DIR / "config" / "config.py"
@@ -16,10 +17,8 @@ CONFIG_PATH = ROOT_DIR / "config" / "config.py"
 
 def _read_config_state() -> dict:
     try:
-        if "config.config" in sys.modules:
-            importlib.reload(sys.modules["config.config"])
-        from config.config import WORKFLOW_STATE
-        return dict(WORKFLOW_STATE)
+        importlib.reload(_cc)
+        return dict(_cc.WORKFLOW_STATE)
     except Exception as e:
         logging.warning(f"[V51] Error reading WORKFLOW_STATE: {e}")
         return {}
@@ -43,7 +42,7 @@ def launch_voxel51_session(dataset_name: str = "") -> str:
         return "Could not determine which dataset to visualize. Please provide a dataset name."
 
     try:
-        _foodm.get_db_conn()  # force fresh MongoDB connection to clear stale cache
+        _foodm.get_db_conn()
         dataset = fo.load_dataset(target_dataset)
         logging.warning(f"[V51] Direct load succeeded: '{target_dataset}', {len(dataset)} samples")
     except Exception as e:
@@ -59,17 +58,6 @@ def launch_voxel51_session(dataset_name: str = "") -> str:
                 logging.warning(f"[V51] Attempt {attempt + 2} failed: {e2}")
         else:
             return f"Dataset '{target_dataset}' could not be loaded after 10 seconds. Please try again."
-
-    # try:
-    #     kill_result = subprocess.run(["lsof", "-ti", ":5151"], capture_output=True, text=True)
-    #     for pid in kill_result.stdout.strip().split():
-    #         try:
-    #             os.kill(int(pid), signal.SIGTERM)
-    #             logging.warning(f"[V51] Killed existing session PID={pid}")
-    #         except Exception:
-    #             pass
-    # except Exception:
-    #     pass
 
     try:
         proc = subprocess.Popen(
