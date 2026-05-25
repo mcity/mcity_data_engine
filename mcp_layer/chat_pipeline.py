@@ -1,6 +1,7 @@
 # mcp_layer/chat_pipeline.py
 
 import ast
+import asyncio
 import json
 import logging
 import importlib
@@ -161,6 +162,34 @@ class ChatPipeline:
                     "result": result,
                 })
 
+        # If set_selected_dataset and select/switch_workflow fired in the same
+        # batch, the workflow reset in _handle_select_or_switch_workflow wipes
+        # dataset_confirmed. Re-apply it now if both succeeded.
+        workflow_reset_this_batch = any(
+            r["name"] in ("select_workflow", "switch_workflow")
+            for r in tool_results
+        )
+        dataset_set_this_batch = next(
+            (r for r in tool_results if r["name"] == "set_selected_dataset"), None
+        )
+        if (
+            workflow_reset_this_batch
+            and dataset_set_this_batch
+            and "DATASET_NOT_FOUND" not in unwrap_tool_output(
+                dataset_set_this_batch.get("result", "")
+            )
+        ):
+            dataset_name = dataset_set_this_batch.get("fn_args", {}).get("dataset_name", "")
+            if dataset_name and not self.state.dataset_confirmed:
+                logging.warning(
+                    f"[PIPELINE] Re-applying dataset confirmation for '{dataset_name}' "
+                    f"after workflow reset in same batch"
+                )
+                self.state.dataset_name = dataset_name
+                self.state.dataset_confirmed = True
+                self._confirmed_dataset = dataset_name
+                self.state.save()
+
         early_reply = await self._build_reply(tool_results, messages)
         return tool_results, early_reply
 
@@ -187,16 +216,24 @@ class ChatPipeline:
                 content = result
 
             elif fn_name == "list_model_sources_and_models":
-                # Listing models implies auto generated labeling path — infer it.
-                if self.state.auto_labeling is None:
-                    self.state.auto_labeling = AutoLabelingState()
-                if not self.state.auto_labeling.labeling_path:
-                    self.state.auto_labeling.labeling_path = "auto"
-                    self.state.save()
-                result = unwrap_tool_output(
-                    await mcp_client.call_tool(fn_name, fn_args)
-                )
-                content = result
+                # Guard: dataset must be confirmed before listing models
+                if not self.state.dataset_confirmed or not self.state.dataset_name:
+                    result = (
+                        "DATASET_NOT_CONFIRMED: A dataset must be confirmed before "
+                        "selecting a model. Please call set_selected_dataset first."
+                    )
+                    content = result
+                else:
+                    # Listing models implies auto generated labeling path — infer it.
+                    if self.state.auto_labeling is None:
+                        self.state.auto_labeling = AutoLabelingState()
+                    if not self.state.auto_labeling.labeling_path:
+                        self.state.auto_labeling.labeling_path = "auto"
+                        self.state.save()
+                    result = unwrap_tool_output(
+                        await mcp_client.call_tool(fn_name, fn_args)
+                    )
+                    content = result
 
             elif fn_name == "configure_auto_labeling":
                 result = await self._handle_configure_auto_labeling(fn_args, mcp_client)
@@ -372,18 +409,42 @@ class ChatPipeline:
         if not ok:
             return msg
 
+        dataset_name = fn_args["dataset_name"]
+
         raw = await mcp_client.call_tool("set_selected_dataset", {
-            "dataset_name": fn_args["dataset_name"]
+            "dataset_name": dataset_name
         })
         tool_output = unwrap_tool_output(raw)
 
+        if "DATASET_NOT_FOUND" in tool_output:
+            # Dataset may have just been ingested and not yet visible in the
+            # FiftyOne registry cache. Retry up to 3 times with increasing
+            # waits before giving up — handles the race condition silently.
+            logging.warning(
+                f"[PIPELINE] Dataset '{dataset_name}' not found — retrying up to 3 times"
+            )
+            for attempt, wait in enumerate([2, 4, 6], start=1):
+                await asyncio.sleep(wait)
+                raw = await mcp_client.call_tool("set_selected_dataset", {
+                    "dataset_name": dataset_name
+                })
+                tool_output = unwrap_tool_output(raw)
+                if "DATASET_NOT_FOUND" not in tool_output:
+                    logging.warning(
+                        f"[PIPELINE] Dataset '{dataset_name}' found on retry {attempt}"
+                    )
+                    break
+                logging.warning(
+                    f"[PIPELINE] Dataset '{dataset_name}' still not found after retry {attempt}"
+                )
+
         if "DATASET_NOT_FOUND" not in tool_output:
-            self.state.dataset_name = fn_args["dataset_name"]
+            self.state.dataset_name = dataset_name
             self.state.dataset_confirmed = True
             self.state.save()
             # System message injected in _build_reply after all tool results
             # are appended — injecting here would break OpenAI message ordering.
-            self._confirmed_dataset = fn_args["dataset_name"]
+            self._confirmed_dataset = dataset_name
         else:
             self.state.dataset_confirmed = False
 
@@ -774,10 +835,15 @@ class ChatPipeline:
         """
         # Inject CURRENT_DATASET after all tool results are in messages —
         # injecting earlier would violate OpenAI's message ordering rules.
-        if self._confirmed_dataset:
+        # Also re-inject on every request where dataset is confirmed so the
+        # LLM doesn't lose track of it as message history grows.
+        confirmed_name = self._confirmed_dataset or (
+            self.state.dataset_name if self.state.dataset_confirmed else None
+        )
+        if confirmed_name:
             messages.append({
                 "role": "system",
-                "content": f"CURRENT_DATASET: {self._confirmed_dataset}"
+                "content": f"CURRENT_DATASET: {confirmed_name}"
             })
             self._confirmed_dataset = None
 
@@ -785,6 +851,16 @@ class ChatPipeline:
             fn_name = result["name"]
             fn_args = result.get("fn_args", {})
             tool_output = unwrap_tool_output(result.get("result", ""))
+
+            if fn_name == "export_to_cvat" and any(
+                sentinel in tool_output for sentinel in [
+                    "CVAT_TASK_LIMIT_REACHED", "CVAT_FORBIDDEN",
+                    "CVAT_AUTH_ERROR", "CVAT_NOT_FOUND", "CVAT_CONNECTION_ERROR"
+                ]
+            ):
+                # Strip the sentinel prefix and return clean message
+                clean = tool_output.split(":", 1)[1].strip() if ":" in tool_output else tool_output
+                return clean
 
             if fn_name == "run_auto_labeling":
                 return await self._finalize_auto_labeling(tool_output)

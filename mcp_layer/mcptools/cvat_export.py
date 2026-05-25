@@ -142,7 +142,39 @@ def export_to_cvat(dataset_name: str, with_predictions: bool = False) -> str:
             return msg
 
     except Exception as e:
-        return f"CVAT upload failed: {e}\n{traceback.format_exc()}"
+        err_str = str(e)
+        tb = traceback.format_exc()
+
+        # Parse known CVAT API errors into clean user-facing messages
+        if "403" in err_str or "Forbidden" in err_str:
+            if "maximum number of tasks" in err_str or "maximum number of tasks" in tb:
+                return (
+                    "CVAT_TASK_LIMIT_REACHED: Your CVAT account has reached the maximum number of tasks. "
+                    "Please delete some existing tasks at app.cvat.ai to free up space, then try again."
+                )
+            return (
+                "CVAT_FORBIDDEN: Access denied by CVAT. "
+                "Please check your CVAT_ACCESS_TOKEN in .env is valid and has not expired."
+            )
+        if "401" in err_str or "Unauthorized" in err_str:
+            return (
+                "CVAT_AUTH_ERROR: CVAT authentication failed. "
+                "Please check your CVAT_ACCESS_TOKEN in .env."
+            )
+        if "404" in err_str or "Not Found" in err_str:
+            return (
+                "CVAT_NOT_FOUND: The CVAT task or resource was not found. "
+                "It may have been deleted. Please try exporting again."
+            )
+        if "ConnectionError" in tb or "ConnectTimeout" in tb:
+            return (
+                "CVAT_CONNECTION_ERROR: Could not reach CVAT at the configured URL. "
+                f"Please check CVAT_URL in .env (currently: {CVAT_URL})."
+            )
+
+        # Unknown error — return without traceback
+        logging.warning(f"[CVAT] export_to_cvat failed: {tb}")
+        return f"CVAT upload failed: {err_str}"
 
 
 @mcp.tool()

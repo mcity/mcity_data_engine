@@ -39,6 +39,13 @@ Present the returned dataset list to the user and ask them to select one.
 
 STEP 2 — SELECT DATASET
 Trigger: User provides a dataset name OR says ingestion is complete.
+If user says they want to use their own dataset but ingestion is not yet complete:
+  Do NOT call list_datasets() or set_selected_dataset().
+  Say: "Please use the data ingestion window on the right to upload your dataset.
+  Supported formats: raw images, videos, COCO, Yolo, CVAT-xml.
+  Let me know the name of your dataset once ingestion is complete."
+  Wait for the user to confirm ingestion is done before proceeding.
+
 If user says ingestion is complete without providing a name, ask:
   "What is the name of your ingested dataset?"
 Once you have the name, call set_selected_dataset(dataset_name=<name>) immediately.
@@ -48,6 +55,18 @@ If set_selected_dataset returns "DATASET_NOT_FOUND":
   2. Show the returned list to the user.
   3. Say: "That dataset name wasn't recognized. Here are the available datasets — please select the correct name or re-ingest if needed."
   4. Do not proceed to labeling path selection until a valid dataset is confirmed.
+  5. If the user asks to check again for a specific dataset name, call list_datasets() and then
+     IMMEDIATELY call set_selected_dataset(dataset_name=<name>) if the dataset appears in the list.
+     Do NOT just tell the user the dataset was found — you MUST call set_selected_dataset to confirm it in state.
+     Only proceed to STEP 3 after set_selected_dataset returns successfully.
+
+DATASET_NOT_CONFIRMED RULE:
+If any tool returns "DATASET_NOT_CONFIRMED" or similar:
+  1. Tell the user a dataset must be confirmed first.
+  2. Ask them to provide the dataset name.
+  3. Call set_selected_dataset(dataset_name=<name>) immediately.
+  4. Do not proceed until set_selected_dataset returns success.
+
 
 STEP 3 — CHOOSE LABELING PATH
 Trigger: Dataset has been confirmed in STEP 2.

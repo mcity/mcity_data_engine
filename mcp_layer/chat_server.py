@@ -62,7 +62,15 @@ async def chat(request: Request):
     messages.append({"role": "user", "content": message})
 
     # Always require a tool call — model must call a real tool or send_reply
-    assistant_message = await llm.chat(messages, tools=tools, tool_choice="required")
+    try:
+        assistant_message = await llm.chat(messages, tools=tools, tool_choice="required")
+    except Exception as e:
+        err = str(e).lower()
+        if "timeout" in err or "connecttimeout" in err or "apitimeout" in err:
+            logging.warning(f"[CHAT] LLM request timed out: {e}")
+            return {"reply": "The request timed out reaching the AI service. Please try again in a moment."}
+        logging.warning(f"[CHAT] LLM request failed: {e}")
+        return {"reply": "Something went wrong connecting to the AI service. Please try again."}
 
     if not (hasattr(assistant_message, "tool_calls") and assistant_message.tool_calls):
         reply = assistant_message.content or ""
