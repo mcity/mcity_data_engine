@@ -531,6 +531,11 @@ tools = [
                         "with_predictions": {
                             "type": "boolean",
                             "description": "If true, exports model predictions for Auto Generated Labeling. If false, exports images only for Manual Labeling."
+                        },
+                        "classes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Label names to pre-configure in CVAT for the Manual Labeling path (e.g. ['car', 'pedestrian', 'cyclist']). Only used when with_predictions=False. Ask the user for these before calling export."
                         }
                     },
                     "required": ["dataset_name"]
@@ -548,6 +553,78 @@ tools = [
                         "dataset_name": {
                             "type": "string",
                             "description": "Name of the original FiftyOne dataset that was uploaded to CVAT."
+                        }
+                    },
+                    "required": ["dataset_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_labeling_backend",
+                "description": "Check which annotation backends (CVAT, Label Studio) are configured in .env and return the active backend. Call this at Step 3 before asking the user about Manual vs Auto labeling path. Use the returned message to inform the user which backend will be used, or to ask them to choose if both are available.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "set_labeling_backend",
+                "description": "Set the active annotation backend for this session. Call this only when the user explicitly chooses a backend (i.e. both CVAT and Label Studio are available). Do NOT call this if only one backend is configured — it is selected automatically.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "backend": {
+                            "type": "string",
+                            "enum": ["cvat", "label_studio"],
+                            "description": "The annotation backend to use. 'cvat' for CVAT, 'label_studio' for Label Studio."
+                        }
+                    },
+                    "required": ["backend"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "export_to_label_studio",
+                "description": "Export a FiftyOne dataset to Label Studio for annotation. Use ONLY when the active backend is Label Studio. For Manual Labeling use with_predictions=False. For Auto Generated Labeling, this is called automatically after run_auto_labeling — do NOT call it yourself.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_name": {
+                            "type": "string",
+                            "description": "Name of the FiftyOne dataset to export."
+                        },
+                        "with_predictions": {
+                            "type": "boolean",
+                            "description": "If true, attaches model predictions for Auto Generated Labeling. If false, uploads images only for Manual Labeling."
+                        },
+                        "classes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Label names to pre-configure in Label Studio for the Manual Labeling path (e.g. ['car', 'pedestrian', 'cyclist']). Only used when with_predictions=False. Ask the user for these before calling export."
+                        }
+                    },
+                    "required": ["dataset_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "import_from_label_studio",
+                "description": "Download completed annotations from Label Studio for a previously exported dataset and save as a new FiftyOne dataset named <dataset_name>_labeled.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_name": {
+                            "type": "string",
+                            "description": "Name of the original FiftyOne dataset that was exported to Label Studio."
                         }
                     },
                     "required": ["dataset_name"]

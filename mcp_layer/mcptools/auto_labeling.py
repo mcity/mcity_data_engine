@@ -121,19 +121,14 @@ def configure_auto_labeling(selected_source: str, selected_model: str) -> str:
                     modified.append(line)
                     continue
 
-                # Match any line with quotes
                 match = re.search(r'^\s*#?\s*"([^"]+)"', stripped)
                 if match:
                     config_name = match.group(1)
-
-                    # Direct string comparison (no .py involved)
                     if config_name == selected_model:
-                        # Uncomment this line - preserve indentation
                         indent = len(line) - len(line.lstrip())
                         uncommented = line.lstrip().lstrip('#').lstrip()
                         modified.append(' ' * indent + uncommented)
                     else:
-                        # Comment out this line - preserve indentation
                         if not stripped.startswith("#"):
                             indent = len(line) - len(line.lstrip())
                             modified.append(' ' * indent + '# ' + stripped)
@@ -143,8 +138,16 @@ def configure_auto_labeling(selected_source: str, selected_model: str) -> str:
 
         modified.append(line)
 
+    # Validate against list_model_sources_and_models()
+    valid = list_model_sources_and_models()
+    if selected_model not in valid.get(selected_source, []):
+        return (
+            f"Invalid model '{selected_model}' for source '{selected_source}'. "
+            f"Available: {valid.get(selected_source, [])}"
+        )
     CONFIG_PATH.write_text('\n'.join(modified) + "\n")
     return f"Config updated to use `{selected_model}` from `{selected_source}`."
+
 
 @mcp.tool()
 def set_auto_labeling_hyperparams(
@@ -163,7 +166,6 @@ def set_auto_labeling_hyperparams(
     modified = []
     in_auto_labeling = False
 
-    # Only include keys that are not None
     updated_keys = {}
     if mode is not None:
         updated_keys["\"mode\""] = str(mode)
@@ -226,13 +228,15 @@ def list_model_sources_and_models() -> dict:
             "co_deformable_detr_r50_1x_coco.py",
             "co_dino_5scale_vit_large_coco.py"
         ],
-       "roboflow": ["rfdetr_nano", "rfdetr_small", "rfdetr_medium", "rfdetr_large", "rfdetr_xlarge", "rfdetr_2xlarge"]
+        "roboflow": ["rfdetr_nano", "rfdetr_small", "rfdetr_medium", "rfdetr_large", "rfdetr_xlarge", "rfdetr_2xlarge"]
     }
 
 
 @mcp.tool()
 async def run_auto_labeling() -> str:
     """Run auto_labeling workflow and return training or inference summary."""
+    import os as _os
+
     try:
         process = await asyncio.create_subprocess_exec(
             "python", "-u", str(MAIN_PATH),
@@ -245,35 +249,26 @@ async def run_auto_labeling() -> str:
         output = stdout_data.decode("utf-8", errors="ignore") if stdout_data else ""
         error_output = stderr_data.decode("utf-8", errors="ignore") if stderr_data else ""
 
-        # Combine all logs for parsing
         combined_output = output + "\n" + error_output
 
-        # Check if inference was run
         if "Evaluating detections..." in combined_output:
-            # Extract classification report (precision, recall, f1-score block)
             res_lines = []
             capture = False
 
             for line in output.splitlines():
-
                 if "              precision    recall  f1-score   support" in line:
                     capture = True
-                    res_lines.append(line)  # Include the triggering line
-                    continue  # Avoid falling through to the elif
+                    res_lines.append(line)
+                    continue
                 elif capture and line.startswith("You have launched a remote App on port 5151"):
                     break
                 elif capture:
                     res_lines.append(line)
 
-            print(res_lines)
-
             report = "\n".join(res_lines).strip() if res_lines else "No inference results found."
-
-            print(report)
         else:
             report = "Training completed successfully.\nThe model is ready to be tested using inference on the validation set."
 
-        # Save logs
         log_path = "output/logs/last_auto_labeling_log.txt"
         Path(log_path).parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "w", encoding="utf-8") as f:

@@ -1,11 +1,8 @@
 # mcp_layer/chat_pipeline.py
 
-import ast
 import asyncio
 import json
 import logging
-import importlib
-import re
 from pathlib import Path
 
 from fastmcp import Client
@@ -20,8 +17,6 @@ from validate_workflow_state import (
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "config.py"
 
-
-# Output normalization
 
 def unwrap_tool_output(raw) -> str:
     """Normalize any LLM/MCP output type to a plain string."""
@@ -47,32 +42,29 @@ def unwrap_tool_output(raw) -> str:
     return str(raw).strip()
 
 
-# ChatPipeline
-
 class ChatPipeline:
     """
-    Owns all processing between the HTTP endpoint and the MCP tools:
-    - WorkflowState loaded fresh each request as single source of truth
-    - Tool dispatch, pre-call precondition enforcement, immediate message appending
-    - Post-call reply building
+    Owns all processing between the HTTP endpoint and the MCP tools.
 
-    Design invariant: every tool call is appended to `messages` immediately
-    after it executes in `_dispatch`. This makes it structurally impossible
-    for OpenAI to receive an assistant message with tool_call_ids that have
-    no corresponding tool result messages.
+    Responsibilities:
+    - Load WorkflowState fresh each request (single source of truth).
+    - Dispatch tool calls, enforce preconditions, append results to messages.
+    - Build the post-call reply.
+
+    Invariant: every tool result is appended to `messages` immediately after
+    execution in `_dispatch`, so the OpenAI message history never has an
+    assistant tool_call_id without a matching tool result.
     """
 
     def __init__(self, mcp_transport: SSETransport, llm):
         self.transport = mcp_transport
         self.llm = llm
 
-        # WorkflowState is loaded fresh at start of run() — single source of truth
-        # for all workflow/dataset/step state across requests.
+        # Loaded fresh at the start of run() on every request.
         self.state: WorkflowState = WorkflowState()
 
-        # Per-request hyperparam caches — these are not persisted to config.py
-        # by WorkflowState (they live in the WORKFLOWS section of config.py,
-        # written directly by the mcptools). They remain as in-request accumulators.
+        # Per-request hyperparam caches. Not persisted to WorkflowState;
+        # the MCP tools write them directly to the WORKFLOWS section of config.py.
         self.hyperparam_cache = {
             "mode": ["train", "inference"],
             "epochs": 10,
@@ -99,24 +91,27 @@ class ChatPipeline:
             "max_bbox_size": 0.1,
         }
 
-        # Set by _handle_set_selected_dataset when dataset is confirmed.
-        # Consumed by _build_reply to inject CURRENT_DATASET system message
-        # after all tool results are appended (OpenAI ordering requirement).
+        # Set by _handle_set_selected_dataset once a dataset is confirmed.
+        # Consumed by _build_reply to inject a CURRENT_DATASET system message
+        # after all tool results are appended (required by OpenAI ordering rules).
         self._confirmed_dataset: str | None = None
 
-    # Public entry point
+        # Set by _auto_detect_backend (called inside _handle_set_selected_dataset
+        # for auto_labeling). Consumed by _build_reply to inject a LABELING_BACKEND
+        # system message — same deferred pattern as _confirmed_dataset, which
+        # prevents the model from calling send_reply to announce a backend check.
+        self._detected_backend: dict | None = None
 
     async def run(self, tool_calls: list, messages: list) -> tuple[list, str | None]:
         """
         Process all tool calls for one request.
 
-        Loads WorkflowState fresh from config.py at the start of every request
-        so state changes from previous requests are always visible.
+        Loads WorkflowState fresh from config.py so state changes from previous
+        requests are always visible.
 
         Returns:
             (tool_results, early_reply)
         """
-        # Load fresh state at start of every request
         self.state = WorkflowState.load()
 
         tool_results = []
@@ -134,7 +129,6 @@ class ChatPipeline:
                 except json.JSONDecodeError:
                     fn_args = {}
 
-                # Validate tool arguments against registered input contract before dispatch
                 ok, err, fn_args = validate_tool_input(fn_name, fn_args)
                 if not ok:
                     messages.append({
@@ -163,8 +157,8 @@ class ChatPipeline:
                 })
 
         # If set_selected_dataset and select/switch_workflow fired in the same
-        # batch, the workflow reset in _handle_select_or_switch_workflow wipes
-        # dataset_confirmed. Re-apply it now if both succeeded.
+        # batch, the workflow reset wipes dataset_confirmed. Re-apply it if both
+        # succeeded.
         workflow_reset_this_batch = any(
             r["name"] in ("select_workflow", "switch_workflow")
             for r in tool_results
@@ -193,12 +187,10 @@ class ChatPipeline:
         early_reply = await self._build_reply(tool_results, messages)
         return tool_results, early_reply
 
-    # Dispatch — execute tool, enforce preconditions, append to messages
-
     async def _dispatch(self, fn_name, fn_args, call, mcp_client, messages) -> str:
         """
         Execute a single tool call with precondition checks and state updates.
-        Always appends result to messages before returning.
+        Always appends the result to messages before returning.
         """
         try:
             if fn_name == "send_reply":
@@ -216,7 +208,6 @@ class ChatPipeline:
                 content = result
 
             elif fn_name == "list_model_sources_and_models":
-                # Guard: dataset must be confirmed before listing models
                 if not self.state.dataset_confirmed or not self.state.dataset_name:
                     result = (
                         "DATASET_NOT_CONFIRMED: A dataset must be confirmed before "
@@ -224,7 +215,7 @@ class ChatPipeline:
                     )
                     content = result
                 else:
-                    # Listing models implies auto generated labeling path — infer it.
+                    # Infer auto labeling path when listing models.
                     if self.state.auto_labeling is None:
                         self.state.auto_labeling = AutoLabelingState()
                     if not self.state.auto_labeling.labeling_path:
@@ -233,6 +224,10 @@ class ChatPipeline:
                     result = unwrap_tool_output(
                         await mcp_client.call_tool(fn_name, fn_args)
                     )
+                    # Mark models as listed so configure_auto_labeling can verify
+                    # the user selected from real options, not a hallucinated name.
+                    self.state.auto_labeling.models_listed = True
+                    self.state.save()
                     content = result
 
             elif fn_name == "configure_auto_labeling":
@@ -245,7 +240,6 @@ class ChatPipeline:
                 )
                 content = result
 
-            # --- Class mapping ---
             elif fn_name == "configure_class_mapping_model":
                 result = await self._handle_configure_class_mapping_model(fn_args, mcp_client)
                 content = result
@@ -266,7 +260,6 @@ class ChatPipeline:
                 result = await self._handle_run_class_mapping(mcp_client)
                 content = result
 
-            # --- Anomaly detection ---
             elif fn_name == "configure_anomaly_detection_model":
                 result = await self._handle_configure_anomaly_detection_model(fn_args, mcp_client)
                 content = result
@@ -283,7 +276,6 @@ class ChatPipeline:
                 result = await self._handle_run_anomaly_detection(mcp_client)
                 content = result
 
-            # --- Embedding selection ---
             elif fn_name == "configure_embedding_selection_model":
                 result = await self._handle_configure_embedding_selection_model(fn_args, mcp_client)
                 content = result
@@ -296,7 +288,6 @@ class ChatPipeline:
                 result = await self._handle_run_embedding_selection(mcp_client)
                 content = result
 
-            # --- Zero-shot auto-labeling ---
             elif fn_name == "configure_auto_labeling_zero_shot_models":
                 result = await self._handle_configure_zero_shot_models(fn_args, mcp_client)
                 content = result
@@ -313,7 +304,6 @@ class ChatPipeline:
                 result = await self._handle_run_zero_shot(mcp_client)
                 content = result
 
-            # --- Ensemble selection ---
             elif fn_name == "set_ensemble_selection_parameters":
                 result = await self._handle_set_ensemble_selection_parameters(fn_args, mcp_client)
                 content = result
@@ -338,6 +328,46 @@ class ChatPipeline:
                 result = await self._handle_import_from_cvat(fn_args, mcp_client)
                 content = result
 
+            elif fn_name == "get_labeling_backend":
+                result = unwrap_tool_output(
+                    await mcp_client.call_tool(fn_name, fn_args)
+                )
+                # Determine active backend from env vars and write to state.
+                # unwrap_tool_output may produce a Python repr (single-quoted dict)
+                # rather than valid JSON, so we read env vars directly instead.
+                try:
+                    import ast as _ast, os as _os
+                    cvat_ok = bool(_os.getenv("CVAT_ACCESS_TOKEN", "").strip())
+                    ls_ok   = bool(_os.getenv("LS_TOKEN", "").strip())
+                    if cvat_ok and ls_ok:
+                        active = "cvat"
+                    elif ls_ok:
+                        active = "label_studio"
+                    elif cvat_ok:
+                        active = "cvat"
+                    else:
+                        active = "none"
+                    if active in ("cvat", "label_studio"):
+                        if self.state.auto_labeling is None:
+                            self.state.auto_labeling = AutoLabelingState()
+                        self.state.auto_labeling.labeling_backend = active
+                        self.state.save()
+                except Exception:
+                    pass
+                content = result
+
+            elif fn_name == "set_labeling_backend":
+                result = await self._handle_set_labeling_backend(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "export_to_label_studio":
+                result = await self._handle_export_to_label_studio(fn_args, mcp_client)
+                content = result
+
+            elif fn_name == "import_from_label_studio":
+                result = await self._handle_import_from_label_studio(fn_args, mcp_client)
+                content = result
+
             elif fn_name == "launch_voxel51_session":
                 result = await self._handle_launch_voxel51(fn_args, mcp_client)
                 content = result
@@ -355,7 +385,6 @@ class ChatPipeline:
             result = str(e)
             content = result
 
-        # Always append immediately — message history is never left incomplete
         messages.append({
             "role": "tool",
             "tool_call_id": call.id,
@@ -375,17 +404,13 @@ class ChatPipeline:
         self, fn_name: str, fn_args: dict, mcp_client
     ) -> str:
         """
-        Reset state completely for the new workflow, then call the MCP tool.
-        Handles both select_workflow and switch_workflow identically.
-        Checks WORKFLOW_DEPENDENCIES before allowing the workflow to start.
+        Reset state for the new workflow, check dependencies, then call the
+        MCP tool. Handles select_workflow and switch_workflow identically.
         """
         workflow_name = fn_args.get("workflow_name", "")
 
-        # Check workflow dependencies — e.g. ensemble_selection requires zero_shot first
         deps = WORKFLOW_DEPENDENCIES.get(workflow_name, [])
         if deps:
-            # Determine which workflows have been completed this session
-            # A workflow substate exists and has been used if its substate is non-None
             completed = [
                 wf for wf in [
                     "auto_labeling", "class_mapping", "anomaly_detection",
@@ -397,7 +422,6 @@ class ChatPipeline:
             if not ok:
                 return msg
 
-        # Full reset — all prior state cleared, new workflow initialised
         self.state = self.state.reset_for_workflow(workflow_name)
         result = unwrap_tool_output(
             await mcp_client.call_tool(fn_name, fn_args)
@@ -417,9 +441,8 @@ class ChatPipeline:
         tool_output = unwrap_tool_output(raw)
 
         if "DATASET_NOT_FOUND" in tool_output:
-            # Dataset may have just been ingested and not yet visible in the
-            # FiftyOne registry cache. Retry up to 3 times with increasing
-            # waits before giving up — handles the race condition silently.
+            # Dataset may not yet be visible in the FiftyOne registry cache after
+            # recent ingestion. Retry up to 3 times with increasing backoff.
             logging.warning(
                 f"[PIPELINE] Dataset '{dataset_name}' not found — retrying up to 3 times"
             )
@@ -442,13 +465,74 @@ class ChatPipeline:
             self.state.dataset_name = dataset_name
             self.state.dataset_confirmed = True
             self.state.save()
-            # System message injected in _build_reply after all tool results
-            # are appended — injecting here would break OpenAI message ordering.
+            # Defer CURRENT_DATASET injection to _build_reply to satisfy
+            # OpenAI's message ordering rules.
             self._confirmed_dataset = dataset_name
+
+            # For auto_labeling, auto-detect the backend here so the model
+            # never needs a separate send_reply turn to announce the check.
+            if self.state.workflow_name == "auto_labeling":
+                await self._auto_detect_backend(mcp_client)
         else:
             self.state.dataset_confirmed = False
 
         return tool_output
+
+    async def _auto_detect_backend(self, mcp_client) -> None:
+        """
+        Detect the annotation backend from env vars directly (no MCP round-trip).
+
+        Avoids MCP because get_labeling_backend() returns a Python dict which
+        unwrap_tool_output renders as a single-quoted repr string that json.loads
+        cannot parse, causing silent failure and no backend being written to state.
+
+        Writes the result to state and caches it for _build_reply to inject as a
+        LABELING_BACKEND system message.
+        """
+        try:
+            import os as _os
+            cvat_ok = bool(_os.getenv("CVAT_ACCESS_TOKEN", "").strip())
+            ls_ok   = bool(_os.getenv("LS_TOKEN", "").strip())
+
+            if cvat_ok and ls_ok:
+                active  = "cvat"   # CVAT is default when both are configured
+                message = (
+                    "Both CVAT and Label Studio credentials are configured. "
+                    "CVAT is the default. You can use either — which would you prefer?"
+                )
+            elif ls_ok:
+                active  = "label_studio"
+                message = "Label Studio credentials found. Using Label Studio for annotation."
+            elif cvat_ok:
+                active  = "cvat"
+                message = "CVAT credentials found. Using CVAT for annotation."
+            else:
+                active  = "none"
+                message = (
+                    "No annotation backend credentials found in .env. "
+                    "Please add CVAT_ACCESS_TOKEN or LS_TOKEN before continuing."
+                )
+
+            backend_info = {
+                "cvat_available":  cvat_ok,
+                "ls_available":    ls_ok,
+                "active_backend":  active,
+                "message":         message,
+            }
+
+            # Write to state, overriding the default "cvat" set by AutoLabelingState,
+            # which would otherwise cause incorrect export calls.
+            if active in ("cvat", "label_studio"):
+                if self.state.auto_labeling is None:
+                    self.state.auto_labeling = AutoLabelingState()
+                self.state.auto_labeling.labeling_backend = active
+                self.state.save()
+                logging.warning(f"[PIPELINE] Backend auto-detected and written to state: {active}")
+
+            self._detected_backend = backend_info
+        except Exception as e:
+            logging.warning(f"[PIPELINE] _auto_detect_backend failed: {e}")
+            self._detected_backend = None
 
     async def _handle_configure_auto_labeling(
         self, fn_args: dict, mcp_client
@@ -456,7 +540,10 @@ class ChatPipeline:
         if self.state.auto_labeling is None:
             self.state.auto_labeling = AutoLabelingState()
 
-        # Configuring a model implies auto generated labeling path — infer it.
+        ok, msg = self.state.auto_labeling.can_configure_auto_labeling()
+        if not ok:
+            return msg
+
         if not self.state.auto_labeling.labeling_path:
             self.state.auto_labeling.labeling_path = "auto"
             self.state.save()
@@ -465,10 +552,8 @@ class ChatPipeline:
             await mcp_client.call_tool("configure_auto_labeling", fn_args)
         )
         self.state.auto_labeling.model_configured = True
-        # Hyperparams are confirmed by default after model configuration.
-        # If the user changes values, set_auto_labeling_hyperparams will
-        # be called and hyperparams_confirmed stays True. If the user
-        # accepts defaults, no tool is called — but confirmation is implicit.
+        # Hyperparams default to confirmed after model configuration.
+        # set_auto_labeling_hyperparams will keep this True if called later.
         self.state.auto_labeling.hyperparams_confirmed = True
         self.state.save()
         return result
@@ -492,7 +577,7 @@ class ChatPipeline:
         self.state.save()
         return result
 
-    # --- Class mapping handlers ---
+    # Class mapping
 
     async def _handle_configure_class_mapping_model(
         self, fn_args: dict, mcp_client
@@ -552,7 +637,7 @@ class ChatPipeline:
             return msg
         return unwrap_tool_output(await mcp_client.call_tool("run_class_mapping", {}))
 
-    # --- Anomaly detection handlers ---
+    # Anomaly detection
 
     async def _handle_configure_anomaly_detection_model(
         self, fn_args: dict, mcp_client
@@ -608,7 +693,7 @@ class ChatPipeline:
             await mcp_client.call_tool("run_anomaly_detection", {})
         )
 
-    # --- Embedding selection handlers ---
+    # Embedding selection
 
     async def _handle_configure_embedding_selection_model(
         self, fn_args: dict, mcp_client
@@ -652,7 +737,7 @@ class ChatPipeline:
             await mcp_client.call_tool("run_embedding_selection", {})
         )
 
-    # --- Zero-shot auto-labeling handlers ---
+    # Zero-shot auto-labeling
 
     async def _handle_configure_zero_shot_models(
         self, fn_args: dict, mcp_client
@@ -708,7 +793,7 @@ class ChatPipeline:
             await mcp_client.call_tool("run_zero_shot_auto_labeling", {})
         )
 
-    # --- Ensemble selection handlers ---
+    # Ensemble selection
 
     async def _handle_set_ensemble_selection_parameters(
         self, fn_args: dict, mcp_client
@@ -753,13 +838,27 @@ class ChatPipeline:
         )
 
     async def _handle_export_to_cvat(self, fn_args: dict, mcp_client) -> str:
+        if self.state.auto_labeling and not self.state.auto_labeling.labeling_backend:
+            return (
+                "BACKEND_NOT_SET: The annotation backend has not been determined yet. "
+                "Please wait — the system will detect your configured backend first."
+            )
         with_predictions = fn_args.get("with_predictions", False)
 
         if self.state.workflow_name == "auto_labeling":
             if self.state.auto_labeling is None:
                 self.state.auto_labeling = AutoLabelingState()
 
-            # If labeling path not yet set, infer it from with_predictions
+            # On the auto path, export is handled automatically after labeling completes.
+            if (
+                self.state.auto_labeling.labeling_path == "auto"
+                and not with_predictions
+            ):
+                return (
+                    "Export is handled automatically after auto-labeling completes. "
+                    "Please run the auto-labeling workflow first."
+                )
+
             if not self.state.auto_labeling.labeling_path:
                 inferred = "manual" if not with_predictions else "auto"
                 self.state.auto_labeling.labeling_path = inferred
@@ -769,11 +868,23 @@ class ChatPipeline:
             if not ok:
                 return msg
 
+        import os as _os
+        if not _os.getenv("CVAT_ACCESS_TOKEN", "").strip():
+            return (
+                "No CVAT credentials found. "
+                "Please add CVAT_ACCESS_TOKEN to your .env file and restart the server."
+            )
+
+        if not with_predictions and fn_args.get("classes"):
+            if self.state.auto_labeling is None:
+                self.state.auto_labeling = AutoLabelingState()
+            self.state.auto_labeling.manual_classes = fn_args["classes"]
+            self.state.save()
+
         result = unwrap_tool_output(
             await mcp_client.call_tool("export_to_cvat", fn_args)
         )
 
-        # Extract and persist task_id from the result string
         if self.state.auto_labeling and "Task ID:" in result:
             try:
                 task_id = int(result.split("Task ID:")[1].split()[0].strip())
@@ -808,6 +919,111 @@ class ChatPipeline:
             await mcp_client.call_tool("import_from_cvat", fn_args)
         )
 
+    async def _handle_set_labeling_backend(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        """Validate credentials for the chosen backend, update state, and persist."""
+        result = unwrap_tool_output(
+            await mcp_client.call_tool("set_labeling_backend", fn_args)
+        )
+        if "LS_BACKEND_ERROR" not in result:
+            backend = fn_args.get("backend", "cvat")
+            if self.state.auto_labeling is None:
+                self.state.auto_labeling = AutoLabelingState()
+            self.state.auto_labeling.labeling_backend = backend
+            self.state.save()
+        return result
+
+    async def _handle_export_to_label_studio(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        """Mirror of _handle_export_to_cvat for Label Studio."""
+        if self.state.auto_labeling and not self.state.auto_labeling.labeling_backend:
+            return (
+                "BACKEND_NOT_SET: The annotation backend has not been determined yet. "
+                "Please wait — the system will detect your configured backend first."
+            )
+        with_predictions = fn_args.get("with_predictions", False)
+
+        if self.state.workflow_name == "auto_labeling":
+            if self.state.auto_labeling is None:
+                self.state.auto_labeling = AutoLabelingState()
+
+            if (
+                self.state.auto_labeling.labeling_path == "auto"
+                and not with_predictions
+            ):
+                return (
+                    "Export is handled automatically after auto-labeling completes. "
+                    "Please run the auto-labeling workflow first."
+                )
+
+            if not self.state.auto_labeling.labeling_path:
+                self.state.auto_labeling.labeling_path = (
+                    "manual" if not with_predictions else "auto"
+                )
+                self.state.save()
+
+            ok, msg = self.state.auto_labeling.can_export_to_label_studio(
+                with_predictions
+            )
+            if not ok:
+                return msg
+
+        import os as _os
+        if not _os.getenv("LS_TOKEN", "").strip():
+            return (
+                "No Label Studio credentials found. "
+                "Please add LS_TOKEN to your .env file and restart the server."
+            )
+
+        if not with_predictions and fn_args.get("classes"):
+            if self.state.auto_labeling is None:
+                self.state.auto_labeling = AutoLabelingState()
+            self.state.auto_labeling.manual_classes = fn_args["classes"]
+            self.state.save()
+
+        result = unwrap_tool_output(
+            await mcp_client.call_tool("export_to_label_studio", fn_args)
+        )
+
+        # Read ls_task_ids back from registry and persist to state.
+        if self.state.auto_labeling and "Project ID" in result:
+            try:
+                from pathlib import Path as _Path
+                import json as _json
+                tasks_file = _Path(__file__).resolve().parents[1] / "output" / "ls_tasks.json"
+                if tasks_file.exists():
+                    registry = _json.loads(tasks_file.read_text())
+                    dataset_name = fn_args.get("dataset_name", "")
+                    if dataset_name in registry:
+                        self.state.auto_labeling.ls_task_ids = (
+                            registry[dataset_name].get("task_ids", [])
+                        )
+                        self.state.save()
+            except Exception:
+                pass
+
+        return result
+
+    async def _handle_import_from_label_studio(
+        self, fn_args: dict, mcp_client
+    ) -> str:
+        """
+        Mirror of _handle_import_from_cvat for Label Studio.
+
+        The finalizer (_finalize_import_from_label_studio) is applied in
+        _build_reply, not here, to avoid double-wrapping.
+        """
+        if self.state.auto_labeling:
+            ok, msg = self.state.auto_labeling.can_import_from_label_studio()
+            if not ok:
+                return msg
+
+        return unwrap_tool_output(
+            await mcp_client.call_tool("import_from_label_studio", fn_args)
+        )
+
     async def _handle_launch_voxel51(self, fn_args: dict, mcp_client) -> str:
         dataset_name = fn_args.get("dataset_name", "").strip()
         if not dataset_name:
@@ -826,17 +1042,14 @@ class ChatPipeline:
             await mcp_client.call_tool("launch_voxel51_session", fn_args)
         )
 
-    # Reply building — no message mutation except CURRENT_DATASET injection
-
     async def _build_reply(self, tool_results: list, messages: list) -> str | None:
         """
-        Inject any deferred system messages, then scan tool results for
-        early-return tools. Returns a reply string or None for final LLM pass.
+        Inject deferred system messages, then scan tool results for early-return
+        tools. Returns a reply string, or None to fall through to the final LLM pass.
         """
-        # Inject CURRENT_DATASET after all tool results are in messages —
-        # injecting earlier would violate OpenAI's message ordering rules.
-        # Also re-inject on every request where dataset is confirmed so the
-        # LLM doesn't lose track of it as message history grows.
+        # Inject CURRENT_DATASET after all tool results are in messages.
+        # Re-inject on every request where the dataset is confirmed so the
+        # model doesn't lose track across a long message history.
         confirmed_name = self._confirmed_dataset or (
             self.state.dataset_name if self.state.dataset_confirmed else None
         )
@@ -846,6 +1059,38 @@ class ChatPipeline:
                 "content": f"CURRENT_DATASET: {confirmed_name}"
             })
             self._confirmed_dataset = None
+
+        # Inject LABELING_BACKEND after CURRENT_DATASET so the model knows which
+        # backend to use in Step 3b without needing to call get_labeling_backend.
+        if self._detected_backend:
+            active    = self._detected_backend.get("active_backend", "")
+            cvat_ok   = self._detected_backend.get("cvat_available", False)
+            ls_ok     = self._detected_backend.get("ls_available", False)
+            msg_text  = self._detected_backend.get("message", "")
+            both      = cvat_ok and ls_ok
+
+            if both:
+                # Both backends configured — must ask user to choose before Step 3b.
+                instruction = (
+                    "Backend detection is complete. Both backends are available. "
+                    "Ask the user which backend they prefer (CVAT or Label Studio), "
+                    "call set_labeling_backend(backend=<choice>), "
+                    "THEN proceed to Step 3b (Manual vs Auto Labeling). "
+                    "Do NOT skip the backend choice step."
+                )
+            else:
+                # Only one backend available — skip straight to Step 3b.
+                instruction = (
+                    f"Backend detection is complete — active backend is {active}. "
+                    f"Skip Step 3a and proceed directly to Step 3b "
+                    f"(ask the user Manual vs Auto Labeling)."
+                )
+
+            messages.append({
+                "role": "system",
+                "content": f"LABELING_BACKEND: {active}. {msg_text} {instruction}",
+            })
+            self._detected_backend = None
 
         for result in tool_results:
             fn_name = result["name"]
@@ -858,9 +1103,27 @@ class ChatPipeline:
                     "CVAT_AUTH_ERROR", "CVAT_NOT_FOUND", "CVAT_CONNECTION_ERROR"
                 ]
             ):
-                # Strip the sentinel prefix and return clean message
                 clean = tool_output.split(":", 1)[1].strip() if ":" in tool_output else tool_output
                 return clean
+
+            if fn_name in (
+                "export_to_label_studio", "export_to_cvat",
+                "set_labeling_backend", "get_labeling_backend"
+            ) and any(
+                sentinel in tool_output for sentinel in [
+                    "LS_AUTH_ERROR", "LS_CONNECTION_ERROR", "LS_BACKEND_ERROR",
+                    "BACKEND_NOT_SET"
+                ]
+            ):
+                clean = tool_output.split(":", 1)[1].strip() if ":" in tool_output else tool_output
+                return clean
+
+            if fn_name == "import_from_label_studio" and "LS_NO_ANNOTATIONS" in tool_output:
+                clean = tool_output.split(":", 1)[1].strip() if ":" in tool_output else tool_output
+                return clean
+
+            if fn_name == "import_from_label_studio":
+                return self._finalize_import_from_label_studio(fn_args, tool_output)
 
             if fn_name == "run_auto_labeling":
                 return await self._finalize_auto_labeling(tool_output)
@@ -881,9 +1144,7 @@ class ChatPipeline:
                 return self._format_ensemble_reply(tool_output)
 
             if fn_name == "run_embedding_selection":
-                # Embedding selection has no special formatter — falls through
-                # to final LLM summarization
-                pass
+                pass  # Falls through to final LLM summarization.
 
             if fn_name == "set_selected_dataset" and "DATASET_NOT_FOUND" in tool_output:
                 return await self._dataset_not_found_reply()
@@ -893,7 +1154,6 @@ class ChatPipeline:
     # Reply formatters
 
     async def _finalize_auto_labeling(self, tool_output: str) -> str:
-        # Block if precondition was not met (guard returned an error string)
         if any(phrase in tool_output for phrase in [
             "No dataset has been confirmed",
             "model source and model must be configured",
@@ -901,7 +1161,6 @@ class ChatPipeline:
         ]):
             return tool_output
 
-        # Mark auto-labeling complete and persist
         if self.state.auto_labeling:
             self.state.auto_labeling.auto_labeling_complete = True
             self.state.save()
@@ -910,36 +1169,87 @@ class ChatPipeline:
         dataset_name = self.state.dataset_name
 
         if dataset_name:
+            backend = (
+                self.state.auto_labeling.labeling_backend
+                if self.state.auto_labeling
+                else "cvat"
+            ) or "cvat"
+
             async with Client(self.transport) as export_client:
                 try:
-                    export_result = await export_client.call_tool(
-                        "export_to_cvat",
-                        {"dataset_name": dataset_name, "with_predictions": True}
-                    )
-                    export_msg = unwrap_tool_output(export_result)
-                    # Extract and persist task_id
-                    if self.state.auto_labeling and "Task ID:" in export_msg:
-                        try:
-                            task_id = int(
-                                export_msg.split("Task ID:")[1].split()[0].strip()
-                            )
-                            self.state.auto_labeling.cvat_task_id = task_id
-                            self.state.save()
-                        except Exception:
-                            pass
-                    reply += (
-                        f"\n\n{export_msg}"
-                        f"\n\nPlease review and correct the predictions in CVAT. "
-                        f"Let me know when you're done and I'll import the labels back."
-                    )
+                    if backend == "label_studio":
+                        export_result = await export_client.call_tool(
+                            "export_to_label_studio",
+                            {"dataset_name": dataset_name, "with_predictions": True}
+                        )
+                        export_msg = unwrap_tool_output(export_result)
+                        if self.state.auto_labeling and "Project ID" in export_msg:
+                            try:
+                                from pathlib import Path as _Path
+                                import json as _json
+                                tasks_file = (
+                                    _Path(__file__).resolve().parents[1]
+                                    / "output" / "ls_tasks.json"
+                                )
+                                if tasks_file.exists():
+                                    reg = _json.loads(tasks_file.read_text())
+                                    if dataset_name in reg:
+                                        self.state.auto_labeling.ls_task_ids = (
+                                            reg[dataset_name].get("task_ids", [])
+                                        )
+                                        self.state.save()
+                            except Exception:
+                                pass
+                        reply += (
+                            f"\n\n{export_msg}"
+                            f"\n\nPlease review and correct the predictions in Label Studio. "
+                            f"Let me know when you're done and I'll import the labels back."
+                        )
+                    else:
+                        export_result = await export_client.call_tool(
+                            "export_to_cvat",
+                            {"dataset_name": dataset_name, "with_predictions": True}
+                        )
+                        export_msg = unwrap_tool_output(export_result)
+                        if self.state.auto_labeling and "Task ID:" in export_msg:
+                            try:
+                                task_id = int(
+                                    export_msg.split("Task ID:")[1].split()[0].strip()
+                                )
+                                self.state.auto_labeling.cvat_task_id = task_id
+                                self.state.save()
+                            except Exception:
+                                pass
+                        reply += (
+                            f"\n\n{export_msg}"
+                            f"\n\nPlease review and correct the predictions in CVAT. "
+                            f"Let me know when you're done and I'll import the labels back."
+                        )
                 except Exception as e:
-                    reply += f"\n\nNote: CVAT export failed: {str(e)}"
+                    reply += f"\n\nNote: {backend} export failed: {str(e)}"
         else:
-            reply += "\n\nNote: Could not determine dataset name for CVAT export."
+            reply += "\n\nNote: Could not determine dataset name for export."
 
         return reply
 
     def _finalize_import_from_cvat(self, fn_args: dict, tool_output: str) -> str:
+        base_dataset = fn_args.get("dataset_name", "").removesuffix("_labeled")
+        labeled_name = f"{base_dataset}_labeled" if base_dataset else ""
+        try:
+            self.state.labeled_dataset_name = labeled_name
+            if self.state.auto_labeling:
+                self.state.auto_labeling.labels_imported = True
+            self.state.save()
+        except Exception:
+            pass
+        return (
+            f"{tool_output.strip()}\n\n"
+            f"Would you like to visualize the labeled dataset in Voxel51?"
+        )
+
+    def _finalize_import_from_label_studio(
+        self, fn_args: dict, tool_output: str
+    ) -> str:
         base_dataset = fn_args.get("dataset_name", "").removesuffix("_labeled")
         labeled_name = f"{base_dataset}_labeled" if base_dataset else ""
         try:

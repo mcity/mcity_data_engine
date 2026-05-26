@@ -20,12 +20,8 @@ from tool_schema import tools
 
 load_dotenv()
 
-# LLM client
-
 llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
 llm = {"openai": OpenAIClient, "groq": GroqClient, "gemini": GeminiClient}[llm_provider]()
-
-# FastAPI app
 
 app = FastAPI()
 app.add_middleware(
@@ -35,18 +31,55 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MCP transport
-
 host = resolve_host()
 MCP_TRANSPORT = SSETransport(url=f"http://{host}:8000/sse")
-
-# System prompt
 
 SYSTEM_PROMPT = (
     Path(__file__).resolve().parent / "prompts" / "system_prompt.txt"
 ).read_text()
 
-# Chat endpoint
+
+def _clear_persisted_backend() -> None:
+    """
+    Clear labeling_backend from persisted state on startup.
+
+    The backend is re-detected from .env at dataset confirmation each session.
+    Without this, a stale backend written by a previous session would be used
+    if credentials change between server restarts.
+    """
+    try:
+        import ast as _ast
+        import importlib
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        import config.config as _cc
+        importlib.reload(_cc)
+        raw = dict(_cc.WORKFLOW_STATE)
+        al = raw.get("auto_labeling")
+        if isinstance(al, dict) and al.get("labeling_backend"):
+            al["labeling_backend"] = ""
+            config_path = Path(__file__).resolve().parents[1] / "config" / "config.py"
+            src = config_path.read_text()
+            tree = _ast.parse(src)
+            lines = src.splitlines()
+            for node in _ast.walk(tree):
+                if isinstance(node, _ast.Assign):
+                    for t in node.targets:
+                        if isinstance(t, _ast.Name) and t.id == "WORKFLOW_STATE":
+                            lines[node.lineno - 1:node.end_lineno] = [
+                                f"WORKFLOW_STATE = {repr(raw)}"
+                            ]
+                            config_path.write_text("\n".join(lines) + "\n")
+                            logging.warning(
+                                "[STARTUP] Cleared persisted labeling_backend "
+                                "from WORKFLOW_STATE — will re-detect from .env "
+                                "on next session."
+                            )
+                            return
+    except Exception as e:
+        logging.warning(f"[STARTUP] Could not clear labeling_backend: {e}")
+
+_clear_persisted_backend()
+
 
 @app.post("/chat")
 async def chat(request: Request):
@@ -54,14 +87,13 @@ async def chat(request: Request):
     message = data.get("message", "")
     history = data.get("history", [])
 
-    # Build message history
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     for user_msg, assistant_msg in history:
         messages.append({"role": "user", "content": user_msg})
         messages.append({"role": "assistant", "content": assistant_msg})
     messages.append({"role": "user", "content": message})
 
-    # Always require a tool call — model must call a real tool or send_reply
+    # tool_choice="required" forces the model to call a real tool or send_reply.
     try:
         assistant_message = await llm.chat(messages, tools=tools, tool_choice="required")
     except Exception as e:
@@ -79,7 +111,7 @@ async def chat(request: Request):
 
     tool_calls = assistant_message.tool_calls
 
-    # send_reply only — return immediately, no MCP needed
+    # Single send_reply — return immediately without going through the pipeline.
     if len(tool_calls) == 1 and tool_calls[0].function.name == "send_reply":
         try:
             args = json.loads(tool_calls[0].function.arguments)
@@ -87,7 +119,7 @@ async def chat(request: Request):
         except Exception:
             return {"reply": "Something went wrong. Please try again."}
 
-    # Append assistant turn before tool results
+    # Append assistant turn before tool results to satisfy OpenAI message ordering.
     messages.append({
         "role": "assistant",
         "content": assistant_message.content or "",
@@ -104,15 +136,14 @@ async def chat(request: Request):
         ],
     })
 
-    # Run the pipeline
     pipeline = ChatPipeline(mcp_transport=MCP_TRANSPORT, llm=llm)
     tool_results, early_reply = await pipeline.run(tool_calls, messages)
 
-    # Early return — pipeline produced a ready reply
     if early_reply is not None:
         return {"reply": early_reply}
 
-    # Remind model to show dataset list if workflow selected but no dataset yet
+    # If a workflow was selected but no dataset confirmed, remind the model to
+    # show the dataset list from tool results rather than recalling from memory.
     tools_called = [r["name"] for r in tool_results]
     if (
         pipeline.state.workflow_name
@@ -128,7 +159,6 @@ async def chat(request: Request):
             ),
         })
 
-    # Final LLM call to summarize tool results into a user-facing reply
     logging.warning(f"[CHAT] Final llm.chat, message count={len(messages)}")
     final_msg = await llm.chat(messages, tools=None, tool_choice=None)
     logging.warning(

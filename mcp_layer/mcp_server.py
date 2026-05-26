@@ -9,7 +9,8 @@ from mcptools import (
     ensemble_selection,
     data_ingest,
     v51,
-    cvat_export
+    cvat_export,
+    label_studio_export
 )
 
 if __name__ == "__main__":

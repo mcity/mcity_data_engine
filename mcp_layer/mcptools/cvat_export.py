@@ -18,9 +18,13 @@ from mcptools import mcp
 load_dotenv()
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-CVAT_URL = os.getenv("CVAT_URL", "https://app.cvat.ai")
-CVAT_TOKEN = os.getenv("CVAT_ACCESS_TOKEN")
+CVAT_URL        = os.getenv("CVAT_URL", "https://app.cvat.ai")
 CVAT_TASKS_FILE = ROOT_DIR / "output" / "cvat_tasks.json"
+
+def _get_cvat_token() -> str | None:
+    """Read token fresh each call so credential changes take effect without restart."""
+    load_dotenv(override=True)
+    return os.getenv("CVAT_ACCESS_TOKEN")
 
 
 def _load_task_registry() -> dict:
@@ -37,7 +41,12 @@ def _save_task_registry(registry: dict):
 
 
 @mcp.tool()
-def export_to_cvat(dataset_name: str, with_predictions: bool = False) -> str:
+def export_to_cvat(
+    dataset_name: str,
+    with_predictions: bool = False,
+    classes: list = None,
+) -> str:
+    CVAT_TOKEN = _get_cvat_token()
     if not CVAT_TOKEN:
         return "CVAT_ACCESS_TOKEN not set in .env"
 
@@ -51,7 +60,8 @@ def export_to_cvat(dataset_name: str, with_predictions: bool = False) -> str:
         schema = dataset.get_field_schema()
 
         label_field = None
-        classes = []
+        # Use caller-supplied classes (manual path) or derive from predictions (auto path)
+        classes = list(classes) if classes else []
         if with_predictions:
             pred_fields = [f for f in schema.keys() if f.startswith("pred_od_")]
             # Prediction field may not be committed to MongoDB yet — wait for it
@@ -126,6 +136,7 @@ def export_to_cvat(dataset_name: str, with_predictions: bool = False) -> str:
                 "task_id": task_id,
                 "uploaded_at": str(Path(__file__).stat().st_mtime),
                 "with_predictions": with_predictions,
+                "manual_classes": classes if not with_predictions else [],
             }
             _save_task_registry(registry)
 
@@ -137,6 +148,8 @@ def export_to_cvat(dataset_name: str, with_predictions: bool = False) -> str:
             )
             if with_predictions and label_field:
                 msg += f"\nPredictions uploaded with labels: {classes}"
+            elif classes:
+                msg += f"\nLabels configured: {classes}"
 
             logging.info(msg)
             return msg
@@ -179,6 +192,7 @@ def export_to_cvat(dataset_name: str, with_predictions: bool = False) -> str:
 
 @mcp.tool()
 def import_from_cvat(dataset_name: str) -> str:
+    CVAT_TOKEN = _get_cvat_token()
     if not CVAT_TOKEN:
         return "CVAT_ACCESS_TOKEN not set in .env"
 

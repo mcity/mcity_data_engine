@@ -4,11 +4,11 @@ Pydantic layer over WORKFLOW_STATE in config.py.
 
 Provides:
   - Typed schema for session state (WorkflowState + per-workflow substates)
-  - Typed tool input contracts (ToolInput* models) — validated in chat_pipeline.py
-    before any MCP tool call, catching hallucinated fields and wrong types
-  - can_run_* precondition methods — block run tools if required config is missing
+  - Typed tool input contracts validated in chat_pipeline.py before any MCP
+    tool call, catching hallucinated fields and wrong types
+  - can_run_* precondition methods that block run tools if required config is missing
   - can_export_to_cvat / can_import_from_cvat on AutoLabelingState
-  - Workflow dependency rules — ensemble_selection requires zero_shot first
+  - Workflow dependency rules (ensemble_selection requires zero_shot first)
   - Persistence: load() reads from config.py, save() writes back
   - Migration: handles old flat WORKFLOW_STATE dict format gracefully
 """
@@ -38,15 +38,15 @@ WORKFLOW_STATE_DEFAULT = {
     "ensemble_selection": None,
 }
 
-# Workflows that require another workflow to have run first
+# Workflows that require another workflow to have run first.
 WORKFLOW_DEPENDENCIES: dict[str, list[str]] = {
     "ensemble_selection": ["auto_labeling_zero_shot"],
 }
 
 
 # Tool input contracts
+# extra="forbid" rejects any field the LLM hallucinates that isn't in the schema.
 # Validated in chat_pipeline._dispatch() before calling the MCP tool.
-# extra="forbid" rejects any field the LLM hallucinates that isn't in schema.
 
 class SetAutoLabelingHyperparamsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -93,7 +93,22 @@ class SetAnomalyDetectionDataSourceInput(BaseModel):
     rare_class: str = Field(min_length=1)
 
 
-# Map tool name -> input model for validation in _dispatch
+class SetLabelingBackendInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    backend: Literal["cvat", "label_studio"]
+
+
+class ConfigureAutoLabelingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Source is validated here as a Literal; model name validation is done inside
+    # configure_auto_labeling() against list_model_sources_and_models(), keeping
+    # the model list in one place (auto_labeling.py).
+    selected_source: Literal[
+        "ultralytics", "hf_models_objectdetection", "custom_codetr", "roboflow"
+    ]
+    selected_model: str = Field(min_length=1)
+
+
 TOOL_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "set_auto_labeling_hyperparams": SetAutoLabelingHyperparamsInput,
     "set_anomaly_detection_hyperparams": SetAnomalyDetectionHyperparamsInput,
@@ -101,6 +116,8 @@ TOOL_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "set_ensemble_selection_parameters": SetEnsembleSelectionParametersInput,
     "set_auto_labeling_zero_shot_threshold": SetZeroShotThresholdInput,
     "set_anomaly_detection_data_source": SetAnomalyDetectionDataSourceInput,
+    "configure_auto_labeling": ConfigureAutoLabelingInput,
+    "set_labeling_backend": SetLabelingBackendInput,
 }
 
 
@@ -108,10 +125,9 @@ def validate_tool_input(fn_name: str, fn_args: dict) -> tuple[bool, str, dict]:
     """
     Validate tool arguments against the registered input model.
 
-    Returns:
-        (ok, error_message, cleaned_args)
-        - ok=True: cleaned_args has been coerced and validated
-        - ok=False: error_message explains what's wrong, cleaned_args is unchanged
+    Returns (ok, error_message, cleaned_args).
+    On success, cleaned_args contains only non-None validated fields.
+    On failure, error_message explains the problem and cleaned_args is unchanged.
     """
     model_cls = TOOL_INPUT_MODELS.get(fn_name)
     if model_cls is None:
@@ -119,7 +135,6 @@ def validate_tool_input(fn_name: str, fn_args: dict) -> tuple[bool, str, dict]:
 
     try:
         validated = model_cls.model_validate(fn_args)
-        # Return only non-None fields so MCP tool receives clean args
         cleaned = {k: v for k, v in validated.model_dump().items() if v is not None}
         return True, "", cleaned
     except Exception as e:
@@ -131,11 +146,24 @@ def validate_tool_input(fn_name: str, fn_args: dict) -> tuple[bool, str, dict]:
 class AutoLabelingState(BaseModel):
     model_config = ConfigDict(extra="forbid")
     labeling_path: Literal["manual", "auto", ""] = ""
+    labeling_backend: Literal["cvat", "label_studio", ""] = "cvat"
+    manual_classes: list[str] = []
+    models_listed: bool = False         # True after list_model_sources_and_models is called
     model_configured: bool = False
     hyperparams_confirmed: bool = False
     auto_labeling_complete: bool = False
-    cvat_task_id: int = 0       # 0 = not yet exported to CVAT
+    cvat_task_id: int = 0           # 0 = not yet exported to CVAT
+    ls_task_ids: list[int] = []     # empty = not yet exported to Label Studio
     labels_imported: bool = False
+
+    def can_configure_auto_labeling(self) -> tuple[bool, str]:
+        if not self.models_listed:
+            return False, (
+                "The available models must be listed before configuring. "
+                "Please call list_model_sources_and_models first so the user "
+                "can select from the actual available models."
+            )
+        return True, ""
 
     def can_run_auto_labeling(
         self, dataset_confirmed: bool, dataset_name: str
@@ -157,6 +185,11 @@ class AutoLabelingState(BaseModel):
                 "Hyperparameters must be confirmed before running auto-labeling. "
                 "Please confirm or update the hyperparameters first."
             )
+        if self.labeling_path == "manual":
+            return False, (
+                "Auto-labeling cannot run on the manual labeling path. "
+                "Please export to the annotation tool and annotate manually."
+            )
         return True, ""
 
     def can_export_to_cvat(self, with_predictions: bool) -> tuple[bool, str]:
@@ -172,6 +205,22 @@ class AutoLabelingState(BaseModel):
             return False, (
                 "The dataset must be exported to CVAT before importing annotations. "
                 "Please export to CVAT first."
+            )
+        return True, ""
+
+    def can_export_to_label_studio(self, with_predictions: bool) -> tuple[bool, str]:
+        if with_predictions and not self.auto_labeling_complete:
+            return False, (
+                "Auto-labeling must complete before exporting predictions to Label Studio. "
+                "Please run auto-labeling first."
+            )
+        return True, ""
+
+    def can_import_from_label_studio(self) -> tuple[bool, str]:
+        if not self.ls_task_ids:
+            return False, (
+                "The dataset must be exported to Label Studio before importing annotations. "
+                "Please export to Label Studio first."
             )
         return True, ""
 
@@ -198,7 +247,7 @@ class ClassMappingState(BaseModel):
 class AnomalyDetectionState(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model_configured: bool = False
-    data_source_set: bool = False   # location + rare_class
+    data_source_set: bool = False   # location + rare_class confirmed
 
     def can_run_anomaly_detection(self, dataset_confirmed: bool) -> tuple[bool, str]:
         if not dataset_confirmed:
@@ -252,8 +301,6 @@ class EnsembleSelectionState(BaseModel):
         return True, ""
 
 
-# Top-level WorkflowState
-
 VALID_WORKFLOW = Literal[
     "auto_labeling",
     "class_mapping",
@@ -268,13 +315,13 @@ VALID_WORKFLOW = Literal[
 class WorkflowState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Shared fields — apply to all workflows
+    # Shared fields across all workflows.
     workflow_name: VALID_WORKFLOW = ""
     dataset_name: str = ""
     dataset_confirmed: bool = False
     labeled_dataset_name: str = ""
 
-    # Per-workflow substates — only one is non-None at a time
+    # Per-workflow substates. Only one is non-None at a time.
     auto_labeling: Optional[AutoLabelingState] = None
     class_mapping: Optional[ClassMappingState] = None
     anomaly_detection: Optional[AnomalyDetectionState] = None
@@ -301,10 +348,7 @@ class WorkflowState(BaseModel):
     def check_workflow_dependencies(
         self, workflow_name: str, completed_workflows: list[str]
     ) -> tuple[bool, str]:
-        """
-        Check that required prerequisite workflows have been completed.
-        completed_workflows: list of workflow names the user has run this session.
-        """
+        """Return (ok, error) based on whether prerequisite workflows have been completed."""
         deps = WORKFLOW_DEPENDENCIES.get(workflow_name, [])
         missing = [d for d in deps if d not in completed_workflows]
         if missing:
@@ -332,7 +376,8 @@ class WorkflowState(BaseModel):
     @classmethod
     def _migrate(cls, raw: dict) -> dict:
         """
-        Migrate from old flat WORKFLOW_STATE dict to new nested schema.
+        Migrate from old flat WORKFLOW_STATE dict to the nested schema.
+
         Handles:
           - workflow_name: None -> ""
           - auto_labeling_complete, cvat_task_id: top-level -> auto_labeling subdict
@@ -359,6 +404,14 @@ class WorkflowState(BaseModel):
         else:
             for old_key in old_al_fields:
                 raw.pop(old_key, None)
+
+        # Backfill fields added after initial AutoLabelingState releases.
+        al = raw.get("auto_labeling")
+        if isinstance(al, dict):
+            al.setdefault("labeling_backend", "cvat")
+            al.setdefault("ls_task_ids", [])
+            al.setdefault("manual_classes", [])
+            al.setdefault("models_listed", False)
 
         known = {
             "workflow_name", "dataset_name", "dataset_confirmed",
