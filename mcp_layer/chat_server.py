@@ -15,13 +15,28 @@ sys.path.append(os.path.dirname(__file__))
 
 from chat_pipeline import ChatPipeline, unwrap_tool_output
 from host_utils import resolve_host
-from llm_clients import GeminiClient, GroqClient, OpenAIClient
+from llm_clients import ClaudeClient, GeminiClient, GroqClient, OpenAIClient
 from tool_schema import tools
 
 load_dotenv()
 
+_LLM_PROVIDERS = {
+    "openai": OpenAIClient,
+    "groq": GroqClient,
+    "gemini": GeminiClient,
+    "claude": ClaudeClient,
+    "anthropic": ClaudeClient,  # alias
+}
+
 llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
-llm = {"openai": OpenAIClient, "groq": GroqClient, "gemini": GeminiClient}[llm_provider]()
+if llm_provider not in _LLM_PROVIDERS:
+    logging.warning(
+        f"[STARTUP] Unknown LLM_PROVIDER '{llm_provider}'. "
+        f"Valid values: {list(_LLM_PROVIDERS)}. Falling back to 'openai'."
+    )
+    llm_provider = "openai"
+
+llm = _LLM_PROVIDERS[llm_provider]()
 
 app = FastAPI()
 app.add_middleware(
@@ -39,47 +54,78 @@ SYSTEM_PROMPT = (
 ).read_text()
 
 
-def _clear_persisted_backend() -> None:
+def filter_tools_for_state(all_tools: list, state) -> list:
     """
-    Clear labeling_backend from persisted state on startup.
+    Return only the tools valid for the current workflow step.
 
-    The backend is re-detected from .env at dataset confirmation each session.
-    Without this, a stale backend written by a previous session would be used
-    if credentials change between server restarts.
+    Derives the valid set from WorkflowState.valid_tool_names(), which encodes
+    step sequencing using the same Pydantic state previously used only for
+    post-call validation. This makes wrong-sequence tool calls structurally
+    impossible rather than textually discouraged.
+
+    Fails open: if state is None or valid_tool_names() returns None, the full
+    tool list is returned unchanged.
+    """
+    if state is None:
+        return all_tools
+    valid_names = state.valid_tool_names()
+    if valid_names is None:
+        return all_tools
+    return [t for t in all_tools if t["function"]["name"] in valid_names]
+
+
+def _build_state_hint() -> str:
+    """
+    Return a compact SESSION_STATE string injected before every user message.
+
+    Only tells the LLM where it is in the flow so it can phrase responses
+    correctly. With tool filtering handling step sequencing structurally,
+    this no longer needs next_action clauses or do-not-call lists.
     """
     try:
-        import ast as _ast
-        import importlib
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from validate_workflow_state import WorkflowState
+        state = WorkflowState.load()
+        if not state.workflow_name:
+            return ""
+        parts = [f"workflow={state.workflow_name}"]
+        if state.dataset_confirmed and state.dataset_name:
+            parts.append(f"dataset={state.dataset_name}")
+        else:
+            parts.append("dataset=not confirmed")
+        al = state.auto_labeling
+        if al:
+            if al.labeling_backend:
+                parts.append(f"backend={al.labeling_backend}")
+            if al.labeling_path:
+                parts.append(f"labeling_path={al.labeling_path}")
+            if al.model_configured:
+                parts.append("model=configured")
+            if al.auto_labeling_complete:
+                parts.append("auto_labeling=complete")
+        return "SESSION_STATE: " + " | ".join(parts)
+    except Exception:
+        return ""
+
+
+def _reset_state_on_startup() -> None:
+    """
+    Reset WORKFLOW_STATE to defaults on every server start.
+
+    config.py persists state across restarts, but each server start is a new
+    session. Without this, the agent greets returning users with stale context
+    from the previous session. Mid-session resets are handled by switch_workflow.
+    """
+    try:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-        import config.config as _cc
-        importlib.reload(_cc)
-        raw = dict(_cc.WORKFLOW_STATE)
-        al = raw.get("auto_labeling")
-        if isinstance(al, dict) and al.get("labeling_backend"):
-            al["labeling_backend"] = ""
-            config_path = Path(__file__).resolve().parents[1] / "config" / "config.py"
-            src = config_path.read_text()
-            tree = _ast.parse(src)
-            lines = src.splitlines()
-            for node in _ast.walk(tree):
-                if isinstance(node, _ast.Assign):
-                    for t in node.targets:
-                        if isinstance(t, _ast.Name) and t.id == "WORKFLOW_STATE":
-                            lines[node.lineno - 1:node.end_lineno] = [
-                                f"WORKFLOW_STATE = {repr(raw)}"
-                            ]
-                            config_path.write_text("\n".join(lines) + "\n")
-                            logging.warning(
-                                "[STARTUP] Cleared persisted labeling_backend "
-                                "from WORKFLOW_STATE — will re-detect from .env "
-                                "on next session."
-                            )
-                            return
+        from validate_workflow_state import WorkflowState
+        WorkflowState().save()
+        logging.warning("[STARTUP] Reset WORKFLOW_STATE to defaults.")
     except Exception as e:
-        logging.warning(f"[STARTUP] Could not clear labeling_backend: {e}")
+        logging.warning(f"[STARTUP] Could not reset WORKFLOW_STATE: {e}")
 
-_clear_persisted_backend()
-
+_reset_state_on_startup()
 
 @app.post("/chat")
 async def chat(request: Request):
@@ -87,15 +133,45 @@ async def chat(request: Request):
     message = data.get("message", "")
     history = data.get("history", [])
 
+    # Trim to the most recent 8 turns. SESSION_STATE carries workflow position,
+    # so long history adds tokens without adding useful context. 8 turns covers
+    # the full manual-labeling flow with one turn of headroom.
+    MAX_HISTORY_TURNS = 8
+    if len(history) > MAX_HISTORY_TURNS:
+        history = history[-MAX_HISTORY_TURNS:]
+
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     for user_msg, assistant_msg in history:
         messages.append({"role": "user", "content": user_msg})
         messages.append({"role": "assistant", "content": assistant_msg})
+
+    # Inject workflow position immediately before the user's message. The
+    # conversation history only carries final text replies, so without this the
+    # LLM may re-call tools that already ran (e.g. select_workflow when the user
+    # is replying to a dataset list prompt with a dataset name).
+    state_hint = _build_state_hint()
+    if state_hint:
+        messages.append({"role": "system", "content": state_hint})
+
     messages.append({"role": "user", "content": message})
+
+    # Filter to tools valid for the current workflow step. The LLM structurally
+    # cannot call out-of-sequence tools because they aren't in its tool list.
+    try:
+        from validate_workflow_state import WorkflowState as _WS
+        _state = _WS.load()
+    except Exception:
+        _state = None
+    active_tools = filter_tools_for_state(tools, _state)
+
+    logging.warning(
+        f"[CHAT] Active tools ({len(active_tools)}): "
+        f"{[t['function']['name'] for t in active_tools]}"
+    )
 
     # tool_choice="required" forces the model to call a real tool or send_reply.
     try:
-        assistant_message = await llm.chat(messages, tools=tools, tool_choice="required")
+        assistant_message = await llm.chat(messages, tools=active_tools, tool_choice="required")
     except Exception as e:
         err = str(e).lower()
         if "timeout" in err or "connecttimeout" in err or "apitimeout" in err:

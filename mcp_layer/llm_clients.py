@@ -1,8 +1,35 @@
+import json
+import logging
 import os
 from typing import List, Optional
+
 from openai import AsyncOpenAI
 from groq import AsyncGroq
 import google.generativeai as genai
+
+
+class _FakeFunction:
+    __slots__ = ("name", "arguments")
+
+    def __init__(self, name: str, arguments: str):
+        self.name = name
+        self.arguments = arguments
+
+
+class _FakeToolCall:
+    __slots__ = ("id", "function")
+
+    def __init__(self, id: str, name: str, arguments: str):
+        self.id = id
+        self.function = _FakeFunction(name, arguments)
+
+
+class _FakeMessage:
+    __slots__ = ("content", "tool_calls")
+
+    def __init__(self, content: Optional[str], tool_calls: list):
+        self.content = content
+        self.tool_calls = tool_calls
 
 
 class BaseLLMClient:
@@ -55,11 +82,7 @@ class OpenAIClient(BaseLLMClient):
         self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
     async def chat(self, messages, tools=None, tool_choice=None):
-        kwargs = dict(
-            model=self.model,
-            messages=messages,
-            temperature=0.1,
-        )
+        kwargs = dict(model=self.model, messages=messages, temperature=0.1)
         if tools:
             kwargs["tools"] = tools
         if tool_choice:
@@ -69,7 +92,7 @@ class OpenAIClient(BaseLLMClient):
 
     async def _summarize(self, prompt: str) -> str:
         response = await self.chat([{"role": "user", "content": prompt}])
-        return response.content
+        return getattr(response, "content", "") or ""
 
 
 class GroqClient(BaseLLMClient):
@@ -78,11 +101,7 @@ class GroqClient(BaseLLMClient):
         self.model = os.getenv("GROQ_MODEL", "llama3-70b-8192")
 
     async def chat(self, messages, tools=None, tool_choice=None):
-        kwargs = dict(
-            model=self.model,
-            messages=messages,
-            temperature=0.1,
-        )
+        kwargs = dict(model=self.model, messages=messages, temperature=0.1)
         if tools:
             kwargs["tools"] = tools
         if tool_choice:
@@ -92,7 +111,7 @@ class GroqClient(BaseLLMClient):
 
     async def _summarize(self, prompt: str) -> str:
         response = await self.chat([{"role": "user", "content": prompt}])
-        return response.content
+        return getattr(response, "content", "") or ""
 
 
 class GeminiClient(BaseLLMClient):
@@ -101,16 +120,16 @@ class GeminiClient(BaseLLMClient):
         self.model = genai.GenerativeModel(model_name="gemini-1.5-flash")
 
     async def chat(self, messages, tools=None, tool_choice=None):
-        # Gemini does not support tool_choice — ignored
+        # Gemini does not support tool_choice — ignored.
         parts = [{"role": m["role"], "parts": [m["content"]]} for m in messages]
         try:
             response = await self.model.generate_content_async(
                 parts,
                 generation_config={"temperature": 0.1},
             )
-            return {"content": response.text.strip(), "tool_calls": []}
+            return _FakeMessage(content=response.text.strip(), tool_calls=[])
         except Exception as e:
-            return {"content": f"[Gemini error] {str(e)}", "tool_calls": []}
+            return _FakeMessage(content=f"[Gemini error] {str(e)}", tool_calls=[])
 
     async def _summarize(self, prompt: str) -> str:
         try:
@@ -121,3 +140,194 @@ class GeminiClient(BaseLLMClient):
             return response.text.strip()
         except Exception as e:
             return f"[Gemini summarization error] {str(e)}"
+
+
+class ClaudeClient(BaseLLMClient):
+    def __init__(self):
+        from anthropic import AsyncAnthropic
+        self.client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        self.model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+
+    async def chat(self, messages, tools=None, tool_choice=None):
+        system, anthropic_messages = self._to_anthropic_messages(messages)
+
+        if not anthropic_messages:
+            anthropic_messages = [{"role": "user", "content": "Hello"}]
+
+        kwargs = {
+            "model": self.model,
+            "max_tokens": 4096,
+            "messages": anthropic_messages,
+            "temperature": 0.1,
+        }
+
+        if system:
+            # Cache the system prompt across requests. It's ~300 lines, identical
+            # every turn, and the highest-value cache target. Ephemeral cache lasts
+            # 5 minutes; reads cost 0.1x vs 1x for uncached.
+            kwargs["system"] = [
+                {
+                    "type": "text",
+                    "text": system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+
+        if tools:
+            converted = self._convert_tools(tools)
+            # Cache the tool list by marking the last entry. Tools are static
+            # (defined in tool_schema.py at startup), so caching is always safe.
+            if converted:
+                converted[-1]["cache_control"] = {"type": "ephemeral"}
+            kwargs["tools"] = converted
+            kwargs["tool_choice"] = {"type": "any"} if tool_choice == "required" else {"type": "auto"}
+
+        try:
+            response = await self.client.messages.create(**kwargs)
+        except Exception as e:
+            logging.warning(f"[CLAUDE] API error: {e}")
+            raise
+
+        return self._to_fake_message(response)
+
+    async def _summarize(self, prompt: str) -> str:
+        response = await self.chat([{"role": "user", "content": prompt}])
+        return response.content or ""
+
+    @staticmethod
+    def _convert_tools(tools: list) -> list:
+        result = []
+        for t in tools:
+            fn = t.get("function", {})
+            result.append({
+                "name": fn.get("name", ""),
+                "description": fn.get("description", ""),
+                "input_schema": fn.get("parameters", {"type": "object", "properties": {}}),
+            })
+        return result
+
+    @staticmethod
+    def _to_anthropic_messages(openai_messages: list) -> tuple[str, list]:
+        """
+        Convert OpenAI-style messages to (system_str, anthropic_messages).
+
+        - role:"system" entries (including mid-conversation injections like
+          CURRENT_DATASET reminders) are collected and joined as the Anthropic
+          system parameter.
+        - role:"tool" entries are grouped into the preceding role:"user" message
+          as type:"tool_result" content blocks. Multiple results from one
+          assistant turn end up in one user message, which Anthropic requires.
+        - role:"assistant" entries with tool_calls are converted to
+          type:"tool_use" content blocks.
+        - Consecutive role:"user" entries are merged to satisfy Anthropic's
+          strict user/assistant alternation requirement.
+        """
+        system_parts: list[str] = []
+        result: list[dict] = []
+
+        for msg in openai_messages:
+            role = msg.get("role", "")
+
+            if role == "system":
+                text = (msg.get("content", "") or "").strip()
+                if text:
+                    system_parts.append(text)
+                continue
+
+            if role == "tool":
+                block = {
+                    "type": "tool_result",
+                    "tool_use_id": msg.get("tool_call_id", ""),
+                    "content": str(msg.get("content", "")),
+                }
+                if result and result[-1]["role"] == "user":
+                    prev = result[-1]["content"]
+                    if isinstance(prev, list):
+                        prev.append(block)
+                    else:
+                        result[-1]["content"] = ([{"type": "text", "text": prev}] if prev else []) + [block]
+                else:
+                    result.append({"role": "user", "content": [block]})
+                continue
+
+            if role == "assistant":
+                tool_calls_raw = msg.get("tool_calls") or []
+                blocks: list[dict] = []
+
+                text = msg.get("content") or ""
+                if text:
+                    blocks.append({"type": "text", "text": text})
+
+                for tc in tool_calls_raw:
+                    if isinstance(tc, dict):
+                        tc_id = tc.get("id", "")
+                        fn = tc.get("function") or {}
+                        fn_name = fn.get("name", "") if isinstance(fn, dict) else ""
+                        fn_args_str = fn.get("arguments", "{}") if isinstance(fn, dict) else "{}"
+                    else:
+                        tc_id = getattr(tc, "id", "")
+                        fn_obj = getattr(tc, "function", None)
+                        fn_name = getattr(fn_obj, "name", "") if fn_obj else ""
+                        fn_args_str = getattr(fn_obj, "arguments", "{}") if fn_obj else "{}"
+
+                    try:
+                        inp = json.loads(fn_args_str)
+                    except Exception:
+                        inp = {}
+
+                    blocks.append({
+                        "type": "tool_use",
+                        "id": tc_id,
+                        "name": fn_name,
+                        "input": inp,
+                    })
+
+                if not blocks:
+                    blocks = [{"type": "text", "text": " "}]
+
+                result.append({"role": "assistant", "content": blocks})
+                continue
+
+            if role == "user":
+                content = msg.get("content", "") or ""
+                if result and result[-1]["role"] == "user":
+                    prev = result[-1]["content"]
+                    if isinstance(prev, list):
+                        if content:
+                            prev.append({"type": "text", "text": content})
+                    else:
+                        if content:
+                            result[-1]["content"] = (prev + "\n" + content).strip()
+                else:
+                    result.append({"role": "user", "content": content})
+                continue
+
+        while result and result[0]["role"] != "user":
+            result.pop(0)
+
+        result = [
+            m for m in result
+            if m.get("content") not in (None, "", [], [{"type": "text", "text": ""}])
+        ]
+
+        return "\n\n".join(system_parts), result
+
+    @staticmethod
+    def _to_fake_message(response) -> "_FakeMessage":
+        text_parts: list[str] = []
+        tool_calls: list[_FakeToolCall] = []
+
+        for block in response.content:
+            if block.type == "text":
+                if block.text:
+                    text_parts.append(block.text)
+            elif block.type == "tool_use":
+                tool_calls.append(
+                    _FakeToolCall(
+                        id=block.id,
+                        name=block.name,
+                        arguments=json.dumps(block.input),
+                    )
+                )
+
+        return _FakeMessage(content="".join(text_parts) or None, tool_calls=tool_calls)

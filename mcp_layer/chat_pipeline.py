@@ -378,6 +378,20 @@ class ChatPipeline:
                     await mcp_client.call_tool(fn_name, fn_args)
                 )
                 logging.warning(f"[PIPELINE] MCP tool {fn_name} returned")
+
+                # Reformat list_datasets JSON array to a numbered plain-text list
+                # so the LLM receives readable data rather than raw JSON.
+                if fn_name == "list_datasets":
+                    import json as _json
+                    try:
+                        datasets = _json.loads(result)
+                        if isinstance(datasets, list):
+                            result = "\n".join(
+                                f"{i + 1}. {name}" for i, name in enumerate(datasets)
+                            )
+                    except Exception:
+                        pass
+
                 content = result
 
         except Exception as e:
@@ -1146,6 +1160,11 @@ class ChatPipeline:
             if fn_name == "run_embedding_selection":
                 pass  # Falls through to final LLM summarization.
 
+            if fn_name in ("select_workflow", "switch_workflow"):
+                all_fn_names = [r["name"] for r in tool_results]
+                if "list_datasets" not in all_fn_names:
+                    return await self._fetch_and_return_dataset_list()
+
             if fn_name == "set_selected_dataset" and "DATASET_NOT_FOUND" in tool_output:
                 return await self._dataset_not_found_reply()
 
@@ -1328,3 +1347,45 @@ class ChatPipeline:
                 )
             except Exception as e:
                 return f"Dataset not found and couldn't fetch the list: {e}"
+
+    async def _inject_dataset_list(self, messages: list) -> None:
+        """Replaced by _fetch_and_return_dataset_list — kept as no-op for safety."""
+        pass
+
+    async def _fetch_and_return_dataset_list(self) -> str:
+        """
+        Called when select_workflow or switch_workflow completes without
+        list_datasets being called in the same turn.
+
+        Fetches and returns the dataset list directly rather than injecting it
+        as a system message. Claude merges system messages into background context
+        and does not reproduce them as response content, so returning the list
+        here ensures it actually reaches the user.
+
+        The final LLM summarization pass runs with tools=None, which would
+        otherwise produce an intent-without-action response such as
+        "Let me fetch the datasets..." with no list to show.
+        """
+        import json as _json
+        async with Client(self.transport) as mcp_client:
+            try:
+                raw = unwrap_tool_output(
+                    await mcp_client.call_tool("list_datasets", {})
+                )
+            except Exception as e:
+                return f"Workflow switched. Could not fetch datasets: {e}"
+        try:
+            datasets = _json.loads(raw)
+            if isinstance(datasets, list):
+                raw = "\n".join(
+                    f"{i + 1}. {name}" for i, name in enumerate(datasets)
+                )
+        except Exception:
+            pass
+        return (
+            f"Here are the available datasets:\n\n{raw}\n\n"
+            "Which dataset would you like to use? If you'd like to use your own "
+            "dataset, please use the **data ingestion window** on the right to "
+            "upload it first (supported formats: raw images, videos, COCO, YOLO, "
+            "CVAT-xml)."
+        )

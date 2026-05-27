@@ -180,11 +180,6 @@ class AutoLabelingState(BaseModel):
                 "A model source and model must be configured before running "
                 "auto-labeling. Please select a model first."
             )
-        if not self.hyperparams_confirmed:
-            return False, (
-                "Hyperparameters must be confirmed before running auto-labeling. "
-                "Please confirm or update the hyperparameters first."
-            )
         if self.labeling_path == "manual":
             return False, (
                 "Auto-labeling cannot run on the manual labeling path. "
@@ -358,6 +353,153 @@ class WorkflowState(BaseModel):
                 f"{', '.join(missing_readable)} to be completed first."
             )
         return True, ""
+
+    def valid_tool_names(self) -> set[str] | None:
+        """
+        Return the set of tool names valid for the current workflow step.
+
+        Called by chat_server.filter_tools_for_state() before each llm.chat()
+        so the LLM structurally cannot call out-of-sequence tools. Returns None
+        when the state is unknown — falls back to the full tool list.
+
+        The can_* methods on substates handle post-call argument validation
+        (wrong shape, missing required fields). This method handles sequencing.
+        """
+        ALWAYS = {"send_reply", "switch_workflow", "reset_workflow_state"}
+
+        if not self.workflow_name:
+            return ALWAYS | {"select_workflow"}
+
+        if not self.dataset_confirmed:
+            # class_mapping skips dataset selection per the system prompt
+            if self.workflow_name == "class_mapping":
+                return self._class_mapping_tools(ALWAYS)
+            return ALWAYS | {"set_selected_dataset", "list_datasets"}
+
+        if self.workflow_name == "auto_labeling":
+            return self._auto_labeling_tools(ALWAYS)
+        if self.workflow_name == "class_mapping":
+            return self._class_mapping_tools(ALWAYS)
+        if self.workflow_name == "anomaly_detection":
+            return self._anomaly_detection_tools(ALWAYS)
+        if self.workflow_name == "embedding_selection":
+            return self._embedding_selection_tools(ALWAYS)
+        if self.workflow_name == "auto_labeling_zero_shot":
+            return self._zero_shot_tools(ALWAYS)
+        if self.workflow_name == "ensemble_selection":
+            return self._ensemble_tools(ALWAYS)
+
+        return None  # unknown workflow — no filtering, fail open
+
+    def _auto_labeling_tools(self, ALWAYS: set[str]) -> set[str]:
+        al = self.auto_labeling
+        if not al or not al.labeling_path:
+            return ALWAYS | {
+                "list_model_sources_and_models",
+                "export_to_cvat",
+                "export_to_label_studio",
+                "get_labeling_backend",
+                "set_labeling_backend",
+            }
+        if al.labeling_path == "manual":
+            if al.labels_imported:
+                return ALWAYS | {"launch_voxel51_session"}
+            if al.cvat_task_id > 0:
+                return ALWAYS | {"import_from_cvat"}
+            if al.ls_task_ids:
+                return ALWAYS | {"import_from_label_studio"}
+            return ALWAYS | {"export_to_cvat", "export_to_label_studio"}
+        if al.labeling_path == "auto":
+            if not al.models_listed:
+                return ALWAYS | {"list_model_sources_and_models"}
+            if not al.model_configured:
+                return ALWAYS | {"configure_auto_labeling"}
+            if not al.auto_labeling_complete:
+                # run_auto_labeling is always present once the model is configured
+                # so the user can skip hyperparam confirmation (defaults are valid).
+                return ALWAYS | {"set_auto_labeling_hyperparams", "run_auto_labeling"}
+            if al.labels_imported:
+                return ALWAYS | {"launch_voxel51_session"}
+            return ALWAYS | {"import_from_cvat", "import_from_label_studio"}
+        return ALWAYS
+
+    def _class_mapping_tools(self, ALWAYS: set[str]) -> set[str]:
+        cm = self.class_mapping
+        if not cm or not cm.model_configured:
+            return ALWAYS | {"list_class_mapping_models", "configure_class_mapping_model"}
+        if not cm.source_dataset_set:
+            return ALWAYS | {
+                "set_class_mapping_dataset_source",
+                "set_selected_dataset",
+                "launch_voxel51_session",
+            }
+        if not cm.target_dataset_set:
+            return ALWAYS | {"set_class_mapping_dataset_target", "launch_voxel51_session"}
+        if not cm.candidate_labels_set:
+            return ALWAYS | {
+                "set_class_mapping_candidate_labels",
+                "launch_voxel51_session",
+            }
+        return ALWAYS | {"run_class_mapping", "launch_voxel51_session"}
+
+    def _anomaly_detection_tools(self, ALWAYS: set[str]) -> set[str]:
+        ad = self.anomaly_detection
+        if not ad or not ad.model_configured:
+            return ALWAYS | {
+                "list_anomaly_detection_models",
+                "configure_anomaly_detection_model",
+                "launch_voxel51_session",
+            }
+        if not ad.data_source_set:
+            return ALWAYS | {
+                "set_anomaly_detection_data_source",
+                "launch_voxel51_session",
+            }
+        return ALWAYS | {
+            "set_anomaly_detection_hyperparams",
+            "run_anomaly_detection",
+            "launch_voxel51_session",
+        }
+
+    def _embedding_selection_tools(self, ALWAYS: set[str]) -> set[str]:
+        es = self.embedding_selection
+        if not es or not es.model_configured:
+            return ALWAYS | {
+                "list_embedding_selection_models",
+                "configure_embedding_selection_model",
+            }
+        return ALWAYS | {"set_embedding_selection_params", "run_embedding_selection"}
+
+    def _zero_shot_tools(self, ALWAYS: set[str]) -> set[str]:
+        zs = self.auto_labeling_zero_shot
+        if not zs or not zs.models_configured:
+            return ALWAYS | {
+                "list_zsal",
+                "configure_auto_labeling_zero_shot_models",
+            }
+        if not zs.classes_set:
+            return ALWAYS | {
+                "set_auto_labeling_zero_shot_threshold",
+                "set_auto_labeling_zero_shot_classes",
+            }
+        return ALWAYS | {
+            "set_auto_labeling_zero_shot_threshold",
+            "set_auto_labeling_zero_shot_classes",
+            "run_zero_shot_auto_labeling",
+        }
+
+    def _ensemble_tools(self, ALWAYS: set[str]) -> set[str]:
+        ens = self.ensemble_selection
+        if not ens or not ens.classes_set:
+            return ALWAYS | {
+                "set_ensemble_selection_parameters",
+                "set_ensemble_selection_classes",
+            }
+        return ALWAYS | {
+            "set_ensemble_selection_parameters",
+            "set_ensemble_selection_classes",
+            "run_ensemble_selection",
+        }
 
     @classmethod
     def load(cls) -> "WorkflowState":
