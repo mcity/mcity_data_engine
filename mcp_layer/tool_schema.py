@@ -25,13 +25,18 @@ tools = [
             "type": "function",
             "function": {
                 "name": "select_workflow",
-                "description": "Set the selected workflow (auto_labeling or class_mapping) in the config file.",
+                "description": (
+                    "Call this ONLY at the very start of a session when the user picks a workflow "
+                    "for the first time and no workflow is currently active. "
+                    "Do NOT call this if SESSION_STATE already shows a workflow — "
+                    "use switch_workflow instead if the user wants to change to a different workflow."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "workflow_name": {
                             "type": "string",
-                            "description": "The name of the workflow to activate (auto_labeling or class_mapping)"
+                            "description": "The workflow to activate: auto_labeling, class_mapping, anomaly_detection, embedding_selection, auto_labeling_zero_shot, or ensemble_selection."
                         }
                     },
                     "required": ["workflow_name"]
@@ -54,13 +59,19 @@ tools = [
             "type": "function",
             "function": {
                 "name": "switch_workflow",
-                "description": "Switch to a new workflow by updating SELECTED_WORKFLOW in config.py and resetting dataset/parameter selections.",
+                "description": (
+                    "Call this ONLY when the user explicitly asks to change to a DIFFERENT workflow "
+                    "mid-session (e.g. 'let me try anomaly detection instead', 'start over with class mapping'). "
+                    "Do NOT call this after a workflow completes, to restart the current workflow, "
+                    "or because the session reached a natural end — those are NOT switch triggers. "
+                    "This resets all dataset and parameter state."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "workflow_name": {
                             "type": "string",
-                            "description": "The name of the workflow to switch to (e.g., auto_labeling, class_mapping, anomaly_detection, etc.)"
+                            "description": "The different workflow to switch to: auto_labeling, class_mapping, anomaly_detection, embedding_selection, auto_labeling_zero_shot, or ensemble_selection."
                         }
                     },
                     "required": ["workflow_name"]

@@ -57,36 +57,32 @@ SYSTEM_PROMPT = (
 def filter_tools_for_state(all_tools: list, state) -> list:
     """
     Return only the tools valid for the current workflow step.
-
-    Derives the valid set from WorkflowState.valid_tool_names(), which encodes
-    step sequencing using the same Pydantic state previously used only for
-    post-call validation. This makes wrong-sequence tool calls structurally
-    impossible rather than textually discouraged.
-
-    Fails open: if state is None or valid_tool_names() returns None, the full
-    tool list is returned unchanged.
+    Fails open: returns the full tool list if state is None, valid_tool_names()
+    returns None, or any exception occurs.
     """
     if state is None:
         return all_tools
-    valid_names = state.valid_tool_names()
+    try:
+        valid_names = state.valid_tool_names()
+    except Exception:
+        logging.warning("[FILTER] valid_tool_names() raised — returning full tool list")
+        return all_tools
     if valid_names is None:
         return all_tools
     return [t for t in all_tools if t["function"]["name"] in valid_names]
 
 
-def _build_state_hint() -> str:
+def _build_state_hint(state=None) -> str:
     """
     Return a compact SESSION_STATE string injected before every user message.
-
-    Only tells the LLM where it is in the flow so it can phrase responses
-    correctly. With tool filtering handling step sequencing structurally,
-    this no longer needs next_action clauses or do-not-call lists.
+    Accepts an already-loaded WorkflowState to avoid a redundant config.py read.
     """
     try:
-        import sys as _sys
-        _sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-        from validate_workflow_state import WorkflowState
-        state = WorkflowState.load()
+        if state is None:
+            import sys as _sys
+            _sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+            from validate_workflow_state import WorkflowState
+            state = WorkflowState.load()
         if not state.workflow_name:
             return ""
         parts = [f"workflow={state.workflow_name}"]
@@ -104,6 +100,14 @@ def _build_state_hint() -> str:
                 parts.append("model=configured")
             if al.auto_labeling_complete:
                 parts.append("auto_labeling=complete")
+            if al.labels_imported:
+                # Terminal state. Call switch_workflow if user names a specific workflow;
+                # send_reply with the workflow list and ask if they don't.
+                parts.append(
+                    "workflow_complete — "
+                    "if user names a specific workflow: call switch_workflow with that name; "
+                    "if user does not name one: send_reply with the workflow list and ask which one"
+                )
         return "SESSION_STATE: " + " | ".join(parts)
     except Exception:
         return ""
@@ -112,10 +116,8 @@ def _build_state_hint() -> str:
 def _reset_state_on_startup() -> None:
     """
     Reset WORKFLOW_STATE to defaults on every server start.
-
     config.py persists state across restarts, but each server start is a new
-    session. Without this, the agent greets returning users with stale context
-    from the previous session. Mid-session resets are handled by switch_workflow.
+    session. Mid-session resets are handled by switch_workflow.
     """
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -134,8 +136,7 @@ async def chat(request: Request):
     history = data.get("history", [])
 
     # Trim to the most recent 8 turns. SESSION_STATE carries workflow position,
-    # so long history adds tokens without adding useful context. 8 turns covers
-    # the full manual-labeling flow with one turn of headroom.
+    # so long history adds tokens without useful context.
     MAX_HISTORY_TURNS = 8
     if len(history) > MAX_HISTORY_TURNS:
         history = history[-MAX_HISTORY_TURNS:]
@@ -145,25 +146,20 @@ async def chat(request: Request):
         messages.append({"role": "user", "content": user_msg})
         messages.append({"role": "assistant", "content": assistant_msg})
 
-    # Inject workflow position immediately before the user's message. The
-    # conversation history only carries final text replies, so without this the
-    # LLM may re-call tools that already ran (e.g. select_workflow when the user
-    # is replying to a dataset list prompt with a dataset name).
-    state_hint = _build_state_hint()
-    if state_hint:
-        messages.append({"role": "system", "content": state_hint})
-
-    messages.append({"role": "user", "content": message})
-
-    # Filter to tools valid for the current workflow step. The LLM structurally
-    # cannot call out-of-sequence tools because they aren't in its tool list.
+    # Load state once — used by both _build_state_hint and filter_tools_for_state.
     try:
         from validate_workflow_state import WorkflowState as _WS
         _state = _WS.load()
     except Exception:
         _state = None
-    active_tools = filter_tools_for_state(tools, _state)
 
+    state_hint = _build_state_hint(_state)
+    if state_hint:
+        messages.append({"role": "system", "content": state_hint})
+
+    messages.append({"role": "user", "content": message})
+
+    active_tools = filter_tools_for_state(tools, _state)
     logging.warning(
         f"[CHAT] Active tools ({len(active_tools)}): "
         f"{[t['function']['name'] for t in active_tools]}"
@@ -237,9 +233,7 @@ async def chat(request: Request):
 
     logging.warning(f"[CHAT] Final llm.chat, message count={len(messages)}")
     final_msg = await llm.chat(messages, tools=None, tool_choice=None)
-    logging.warning(
-        f"[CHAT] Final response: '{(getattr(final_msg, 'content', '') or '')[:100]}'"
-    )
+    logging.warning(f"[CHAT] Final response: '{(getattr(final_msg, 'content', '') or '')[:100]}'")
 
     try:
         reply = unwrap_tool_output(getattr(final_msg, "content", final_msg))

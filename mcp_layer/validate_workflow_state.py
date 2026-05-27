@@ -38,15 +38,10 @@ WORKFLOW_STATE_DEFAULT = {
     "ensemble_selection": None,
 }
 
-# Workflows that require another workflow to have run first.
 WORKFLOW_DEPENDENCIES: dict[str, list[str]] = {
     "ensemble_selection": ["auto_labeling_zero_shot"],
 }
 
-
-# Tool input contracts
-# extra="forbid" rejects any field the LLM hallucinates that isn't in the schema.
-# Validated in chat_pipeline._dispatch() before calling the MCP tool.
 
 class SetAutoLabelingHyperparamsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -100,9 +95,6 @@ class SetLabelingBackendInput(BaseModel):
 
 class ConfigureAutoLabelingInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    # Source is validated here as a Literal; model name validation is done inside
-    # configure_auto_labeling() against list_model_sources_and_models(), keeping
-    # the model list in one place (auto_labeling.py).
     selected_source: Literal[
         "ultralytics", "hf_models_objectdetection", "custom_codetr", "roboflow"
     ]
@@ -122,17 +114,9 @@ TOOL_INPUT_MODELS: dict[str, type[BaseModel]] = {
 
 
 def validate_tool_input(fn_name: str, fn_args: dict) -> tuple[bool, str, dict]:
-    """
-    Validate tool arguments against the registered input model.
-
-    Returns (ok, error_message, cleaned_args).
-    On success, cleaned_args contains only non-None validated fields.
-    On failure, error_message explains the problem and cleaned_args is unchanged.
-    """
     model_cls = TOOL_INPUT_MODELS.get(fn_name)
     if model_cls is None:
-        return True, "", fn_args  # no contract registered — pass through
-
+        return True, "", fn_args
     try:
         validated = model_cls.model_validate(fn_args)
         cleaned = {k: v for k, v in validated.model_dump().items() if v is not None}
@@ -141,19 +125,17 @@ def validate_tool_input(fn_name: str, fn_args: dict) -> tuple[bool, str, dict]:
         return False, f"Invalid arguments for {fn_name}: {e}", fn_args
 
 
-# Per-workflow substates
-
 class AutoLabelingState(BaseModel):
     model_config = ConfigDict(extra="forbid")
     labeling_path: Literal["manual", "auto", ""] = ""
     labeling_backend: Literal["cvat", "label_studio", ""] = "cvat"
     manual_classes: list[str] = []
-    models_listed: bool = False         # True after list_model_sources_and_models is called
+    models_listed: bool = False
     model_configured: bool = False
     hyperparams_confirmed: bool = False
     auto_labeling_complete: bool = False
-    cvat_task_id: int = 0           # 0 = not yet exported to CVAT
-    ls_task_ids: list[int] = []     # empty = not yet exported to Label Studio
+    cvat_task_id: int = 0
+    ls_task_ids: list[int] = []
     labels_imported: bool = False
 
     def can_configure_auto_labeling(self) -> tuple[bool, str]:
@@ -242,7 +224,7 @@ class ClassMappingState(BaseModel):
 class AnomalyDetectionState(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model_configured: bool = False
-    data_source_set: bool = False   # location + rare_class confirmed
+    data_source_set: bool = False
 
     def can_run_anomaly_detection(self, dataset_confirmed: bool) -> tuple[bool, str]:
         if not dataset_confirmed:
@@ -310,13 +292,11 @@ VALID_WORKFLOW = Literal[
 class WorkflowState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Shared fields across all workflows.
     workflow_name: VALID_WORKFLOW = ""
     dataset_name: str = ""
     dataset_confirmed: bool = False
     labeled_dataset_name: str = ""
 
-    # Per-workflow substates. Only one is non-None at a time.
     auto_labeling: Optional[AutoLabelingState] = None
     class_mapping: Optional[ClassMappingState] = None
     anomaly_detection: Optional[AnomalyDetectionState] = None
@@ -343,7 +323,6 @@ class WorkflowState(BaseModel):
     def check_workflow_dependencies(
         self, workflow_name: str, completed_workflows: list[str]
     ) -> tuple[bool, str]:
-        """Return (ok, error) based on whether prerequisite workflows have been completed."""
         deps = WORKFLOW_DEPENDENCIES.get(workflow_name, [])
         missing = [d for d in deps if d not in completed_workflows]
         if missing:
@@ -355,72 +334,76 @@ class WorkflowState(BaseModel):
         return True, ""
 
     def valid_tool_names(self) -> set[str] | None:
-        """
-        Return the set of tool names valid for the current workflow step.
-
-        Called by chat_server.filter_tools_for_state() before each llm.chat()
-        so the LLM structurally cannot call out-of-sequence tools. Returns None
-        when the state is unknown — falls back to the full tool list.
-
-        The can_* methods on substates handle post-call argument validation
-        (wrong shape, missing required fields). This method handles sequencing.
-        """
-        ALWAYS = {"send_reply", "switch_workflow", "reset_workflow_state"}
+        """Return the set of tools valid for the current workflow step, or None to fail open."""
+        ALWAYS = {"send_reply", "switch_workflow"}
 
         if not self.workflow_name:
             return ALWAYS | {"select_workflow"}
 
-        if not self.dataset_confirmed:
-            # class_mapping skips dataset selection per the system prompt
-            if self.workflow_name == "class_mapping":
-                return self._class_mapping_tools(ALWAYS)
-            return ALWAYS | {"set_selected_dataset", "list_datasets"}
-
-        if self.workflow_name == "auto_labeling":
-            return self._auto_labeling_tools(ALWAYS)
         if self.workflow_name == "class_mapping":
             return self._class_mapping_tools(ALWAYS)
-        if self.workflow_name == "anomaly_detection":
-            return self._anomaly_detection_tools(ALWAYS)
-        if self.workflow_name == "embedding_selection":
-            return self._embedding_selection_tools(ALWAYS)
-        if self.workflow_name == "auto_labeling_zero_shot":
-            return self._zero_shot_tools(ALWAYS)
-        if self.workflow_name == "ensemble_selection":
-            return self._ensemble_tools(ALWAYS)
 
-        return None  # unknown workflow — no filtering, fail open
+        if not self.dataset_confirmed:
+            return ALWAYS | {"set_selected_dataset", "list_datasets"}
+
+        routers = {
+            "auto_labeling":           self._auto_labeling_tools,
+            "anomaly_detection":       self._anomaly_detection_tools,
+            "embedding_selection":     self._embedding_selection_tools,
+            "auto_labeling_zero_shot": self._zero_shot_tools,
+            "ensemble_selection":      self._ensemble_tools,
+        }
+        router = routers.get(self.workflow_name)
+        if router:
+            return router(ALWAYS)
+
+        return None
 
     def _auto_labeling_tools(self, ALWAYS: set[str]) -> set[str]:
         al = self.auto_labeling
+        backend = (al.labeling_backend if al else "") or ""
+        ls = backend == "label_studio"
+
         if not al or not al.labeling_path:
+            if backend in ("cvat", "label_studio"):
+                export_tool = "export_to_label_studio" if ls else "export_to_cvat"
+                return ALWAYS | {
+                    "list_model_sources_and_models",
+                    export_tool,
+                    "set_labeling_backend",
+                }
             return ALWAYS | {
                 "list_model_sources_and_models",
-                "export_to_cvat",
-                "export_to_label_studio",
-                "get_labeling_backend",
-                "set_labeling_backend",
+                "export_to_cvat", "export_to_label_studio",
+                "get_labeling_backend", "set_labeling_backend",
             }
+
         if al.labeling_path == "manual":
             if al.labels_imported:
                 return ALWAYS | {"launch_voxel51_session"}
-            if al.cvat_task_id > 0:
-                return ALWAYS | {"import_from_cvat"}
-            if al.ls_task_ids:
-                return ALWAYS | {"import_from_label_studio"}
-            return ALWAYS | {"export_to_cvat", "export_to_label_studio"}
+            if ls:
+                return ALWAYS | (
+                    {"import_from_label_studio"} if al.ls_task_ids
+                    else {"export_to_label_studio"}
+                )
+            return ALWAYS | (
+                {"import_from_cvat"} if al.cvat_task_id > 0
+                else {"export_to_cvat"}
+            )
+
         if al.labeling_path == "auto":
             if not al.models_listed:
                 return ALWAYS | {"list_model_sources_and_models"}
             if not al.model_configured:
                 return ALWAYS | {"configure_auto_labeling"}
             if not al.auto_labeling_complete:
-                # run_auto_labeling is always present once the model is configured
-                # so the user can skip hyperparam confirmation (defaults are valid).
                 return ALWAYS | {"set_auto_labeling_hyperparams", "run_auto_labeling"}
             if al.labels_imported:
                 return ALWAYS | {"launch_voxel51_session"}
-            return ALWAYS | {"import_from_cvat", "import_from_label_studio"}
+            import_tool = "import_from_label_studio" if ls else "import_from_cvat"
+            return ALWAYS | {import_tool}
+
+        logging.warning(f"[STATE] _auto_labeling_tools: unexpected labeling_path={al.labeling_path!r}")
         return ALWAYS
 
     def _class_mapping_tools(self, ALWAYS: set[str]) -> set[str]:
@@ -436,10 +419,7 @@ class WorkflowState(BaseModel):
         if not cm.target_dataset_set:
             return ALWAYS | {"set_class_mapping_dataset_target", "launch_voxel51_session"}
         if not cm.candidate_labels_set:
-            return ALWAYS | {
-                "set_class_mapping_candidate_labels",
-                "launch_voxel51_session",
-            }
+            return ALWAYS | {"set_class_mapping_candidate_labels", "launch_voxel51_session"}
         return ALWAYS | {"run_class_mapping", "launch_voxel51_session"}
 
     def _anomaly_detection_tools(self, ALWAYS: set[str]) -> set[str]:
@@ -451,10 +431,7 @@ class WorkflowState(BaseModel):
                 "launch_voxel51_session",
             }
         if not ad.data_source_set:
-            return ALWAYS | {
-                "set_anomaly_detection_data_source",
-                "launch_voxel51_session",
-            }
+            return ALWAYS | {"set_anomaly_detection_data_source", "launch_voxel51_session"}
         return ALWAYS | {
             "set_anomaly_detection_hyperparams",
             "run_anomaly_detection",
@@ -473,58 +450,38 @@ class WorkflowState(BaseModel):
     def _zero_shot_tools(self, ALWAYS: set[str]) -> set[str]:
         zs = self.auto_labeling_zero_shot
         if not zs or not zs.models_configured:
-            return ALWAYS | {
-                "list_zsal",
-                "configure_auto_labeling_zero_shot_models",
-            }
-        if not zs.classes_set:
-            return ALWAYS | {
-                "set_auto_labeling_zero_shot_threshold",
-                "set_auto_labeling_zero_shot_classes",
-            }
-        return ALWAYS | {
+            return ALWAYS | {"list_zsal", "configure_auto_labeling_zero_shot_models"}
+        config_tools = {
             "set_auto_labeling_zero_shot_threshold",
             "set_auto_labeling_zero_shot_classes",
-            "run_zero_shot_auto_labeling",
         }
+        if not zs.classes_set:
+            return ALWAYS | config_tools
+        return ALWAYS | config_tools | {"run_zero_shot_auto_labeling"}
 
     def _ensemble_tools(self, ALWAYS: set[str]) -> set[str]:
         ens = self.ensemble_selection
-        if not ens or not ens.classes_set:
-            return ALWAYS | {
-                "set_ensemble_selection_parameters",
-                "set_ensemble_selection_classes",
-            }
-        return ALWAYS | {
+        config_tools = {
             "set_ensemble_selection_parameters",
             "set_ensemble_selection_classes",
-            "run_ensemble_selection",
         }
+        if not ens or not ens.classes_set:
+            return ALWAYS | config_tools
+        return ALWAYS | config_tools | {"run_ensemble_selection"}
 
     @classmethod
     def load(cls) -> "WorkflowState":
-        """Read WORKFLOW_STATE from config.py and return a validated WorkflowState."""
         try:
             importlib.reload(_cc)
             raw = dict(_cc.WORKFLOW_STATE)
             raw = cls._migrate(raw)
             return cls.model_validate(raw)
         except Exception as e:
-            logging.warning(
-                f"[STATE] Failed to load WorkflowState: {e} — using defaults"
-            )
+            logging.warning(f"[STATE] Failed to load WorkflowState: {e} — using defaults")
             return cls()
 
     @classmethod
     def _migrate(cls, raw: dict) -> dict:
-        """
-        Migrate from old flat WORKFLOW_STATE dict to the nested schema.
-
-        Handles:
-          - workflow_name: None -> ""
-          - auto_labeling_complete, cvat_task_id: top-level -> auto_labeling subdict
-          - Unknown keys dropped cleanly
-        """
         if raw.get("workflow_name") is None:
             raw["workflow_name"] = ""
 
@@ -547,7 +504,6 @@ class WorkflowState(BaseModel):
             for old_key in old_al_fields:
                 raw.pop(old_key, None)
 
-        # Backfill fields added after initial AutoLabelingState releases.
         al = raw.get("auto_labeling")
         if isinstance(al, dict):
             al.setdefault("labeling_backend", "cvat")
@@ -568,7 +524,6 @@ class WorkflowState(BaseModel):
         return raw
 
     def save(self) -> None:
-        """Write current state back to config.py as WORKFLOW_STATE dict."""
         try:
             src = CONFIG_PATH.read_text()
             tree = ast.parse(src)
@@ -577,15 +532,10 @@ class WorkflowState(BaseModel):
             for node in ast.walk(tree):
                 if isinstance(node, ast.Assign):
                     for target in node.targets:
-                        if (
-                            isinstance(target, ast.Name)
-                            and target.id == "WORKFLOW_STATE"
-                        ):
+                        if isinstance(target, ast.Name) and target.id == "WORKFLOW_STATE":
                             start = node.lineno - 1
                             end = node.end_lineno
-                            lines[start:end] = [
-                                f"WORKFLOW_STATE = {repr(state_dict)}"
-                            ]
+                            lines[start:end] = [f"WORKFLOW_STATE = {repr(state_dict)}"]
                             CONFIG_PATH.write_text("\n".join(lines) + "\n")
                             return
         except Exception as e:
@@ -593,13 +543,11 @@ class WorkflowState(BaseModel):
 
     @classmethod
     def reset(cls) -> "WorkflowState":
-        """Return a default WorkflowState and persist it."""
         fresh = cls()
         fresh.save()
         return fresh
 
     def reset_for_workflow(self, workflow_name: str) -> "WorkflowState":
-        """Full reset for a new or switched workflow."""
         fresh = WorkflowState(workflow_name=workflow_name)
         substate_map = {
             "auto_labeling": ("auto_labeling", AutoLabelingState),
@@ -616,5 +564,4 @@ class WorkflowState(BaseModel):
         return fresh
 
     def current_substate(self):
-        """Return the active workflow substate, or None."""
         return getattr(self, self.workflow_name, None) if self.workflow_name else None

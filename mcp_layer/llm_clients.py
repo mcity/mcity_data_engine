@@ -85,6 +85,9 @@ class OpenAIClient(BaseLLMClient):
         kwargs = dict(model=self.model, messages=messages, temperature=0.1)
         if tools:
             kwargs["tools"] = tools
+            # GPT-4o sometimes emits parallel tool calls with missing required fields
+            # when tool_choice="required". Disabling parallel calls prevents this.
+            kwargs["parallel_tool_calls"] = False
         if tool_choice:
             kwargs["tool_choice"] = tool_choice
         response = await self.client.chat.completions.create(**kwargs)
@@ -123,20 +126,14 @@ class GeminiClient(BaseLLMClient):
         # Gemini does not support tool_choice — ignored.
         parts = [{"role": m["role"], "parts": [m["content"]]} for m in messages]
         try:
-            response = await self.model.generate_content_async(
-                parts,
-                generation_config={"temperature": 0.1},
-            )
+            response = await self.model.generate_content_async(parts, generation_config={"temperature": 0.1})
             return _FakeMessage(content=response.text.strip(), tool_calls=[])
         except Exception as e:
             return _FakeMessage(content=f"[Gemini error] {str(e)}", tool_calls=[])
 
     async def _summarize(self, prompt: str) -> str:
         try:
-            response = await self.model.generate_content_async(
-                prompt,
-                generation_config={"temperature": 0.1},
-            )
+            response = await self.model.generate_content_async(prompt, generation_config={"temperature": 0.1})
             return response.text.strip()
         except Exception as e:
             return f"[Gemini summarization error] {str(e)}"
@@ -162,21 +159,13 @@ class ClaudeClient(BaseLLMClient):
         }
 
         if system:
-            # Cache the system prompt across requests. It's ~300 lines, identical
-            # every turn, and the highest-value cache target. Ephemeral cache lasts
-            # 5 minutes; reads cost 0.1x vs 1x for uncached.
-            kwargs["system"] = [
-                {
-                    "type": "text",
-                    "text": system,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ]
+            # Cache the system prompt — ~300 lines, identical every turn.
+            # Ephemeral cache lasts 5 minutes; reads cost 0.1x vs 1x uncached.
+            kwargs["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
 
         if tools:
             converted = self._convert_tools(tools)
-            # Cache the tool list by marking the last entry. Tools are static
-            # (defined in tool_schema.py at startup), so caching is always safe.
+            # Cache the tool list by marking the last entry. Tools are static at startup.
             if converted:
                 converted[-1]["cache_control"] = {"type": "ephemeral"}
             kwargs["tools"] = converted
@@ -211,16 +200,11 @@ class ClaudeClient(BaseLLMClient):
         """
         Convert OpenAI-style messages to (system_str, anthropic_messages).
 
-        - role:"system" entries (including mid-conversation injections like
-          CURRENT_DATASET reminders) are collected and joined as the Anthropic
-          system parameter.
-        - role:"tool" entries are grouped into the preceding role:"user" message
-          as type:"tool_result" content blocks. Multiple results from one
-          assistant turn end up in one user message, which Anthropic requires.
-        - role:"assistant" entries with tool_calls are converted to
-          type:"tool_use" content blocks.
-        - Consecutive role:"user" entries are merged to satisfy Anthropic's
-          strict user/assistant alternation requirement.
+        role:"system" entries are collected and joined as the Anthropic system parameter.
+        role:"tool" entries are grouped into the preceding role:"user" message as
+        type:"tool_result" blocks (Anthropic requires multiple results in one user message).
+        role:"assistant" entries with tool_calls become type:"tool_use" blocks.
+        Consecutive role:"user" entries are merged to satisfy Anthropic's alternation rules.
         """
         system_parts: list[str] = []
         result: list[dict] = []
@@ -275,12 +259,7 @@ class ClaudeClient(BaseLLMClient):
                     except Exception:
                         inp = {}
 
-                    blocks.append({
-                        "type": "tool_use",
-                        "id": tc_id,
-                        "name": fn_name,
-                        "input": inp,
-                    })
+                    blocks.append({"type": "tool_use", "id": tc_id, "name": fn_name, "input": inp})
 
                 if not blocks:
                     blocks = [{"type": "text", "text": " "}]
@@ -322,12 +301,6 @@ class ClaudeClient(BaseLLMClient):
                 if block.text:
                     text_parts.append(block.text)
             elif block.type == "tool_use":
-                tool_calls.append(
-                    _FakeToolCall(
-                        id=block.id,
-                        name=block.name,
-                        arguments=json.dumps(block.input),
-                    )
-                )
+                tool_calls.append(_FakeToolCall(id=block.id, name=block.name, arguments=json.dumps(block.input)))
 
         return _FakeMessage(content="".join(text_parts) or None, tool_calls=tool_calls)
