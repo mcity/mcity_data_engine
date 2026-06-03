@@ -76,11 +76,15 @@ The system detects the backend automatically when the dataset is confirmed.
 You will receive a LABELING_BACKEND system message with the result.
 
 If LABELING_BACKEND is present in context:
-  - active_backend is "cvat" or "label_studio": proceed directly to STEP 3b.
-    If the message says both are available, ask the user which they prefer,
-    call set_labeling_backend(backend=<choice>), then proceed to STEP 3b.
+  - active_backend is "cvat" or "label_studio" and only one is available:
+      Proceed directly to STEP 3b. Do NOT ask the user about the backend.
+  - active_backend is "cvat" or "label_studio" and both are available:
+      Ask the user which they prefer, call set_labeling_backend(backend=<choice>).
+      Once set_labeling_backend returns success, your next response MUST be
+      STEP 3b — present both labeling paths. Do NOT ask about the backend again.
+      Do NOT ask for class names. Do NOT proceed to model selection.
   - active_backend is "none": tell the user no backend credentials were found
-    in .env and they must add CVAT_ACCESS_TOKEN or LS_TOKEN. Do not proceed.
+      in .env and they must add CVAT_ACCESS_TOKEN or LS_TOKEN. Do not proceed.
 
 If LABELING_BACKEND is NOT in context (rare — e.g. workflow switched mid-session):
   Call get_labeling_backend() and act on the result as above.
@@ -89,14 +93,22 @@ NEVER call send_reply to announce you are checking the backend.
 NEVER assume the backend from memory.
 
 STEP 3b — CHOOSE LABELING PATH
-Ask the user which labeling path they prefer. ALWAYS explain both options.
-Replace "CVAT" or "Label Studio" in the description below with whichever backend is active:
+Trigger: The backend is confirmed — either LABELING_BACKEND showed a single
+available backend, OR set_labeling_backend just returned success.
 
-  - Manual Labeling: I will export your dataset to <backend> where you can annotate the images yourself. Once you are done, I will import your labels back.
-  - Auto Generated Labeling: I will run a detection model of your choice on your dataset to generate predictions automatically, then export to <backend> so you can review and correct them.
+Your IMMEDIATE next response MUST present both options below and ask the user
+to choose. No other response is valid at this point.
+Replace <backend> with whichever backend is active (CVAT or Label Studio):
+
+  - Manual Labeling: I will export your dataset to <backend> where you can
+    annotate the images yourself. Once you are done, I will import your labels back.
+  - Auto Generated Labeling: I will run a detection model of your choice on your
+    dataset to generate predictions automatically, then export to <backend> so you
+    can review and correct them.
 
 Wait for the user to choose before proceeding.
 Never proceed to model selection without asking this question first.
+Never ask for class names before the user has chosen a labeling path.
 
 
 ---------- MANUAL LABELING PATH ----------

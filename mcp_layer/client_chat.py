@@ -55,6 +55,13 @@ class _UIHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=UI_DIR, **kwargs)
 
+    def end_headers(self):
+        # Prevent the browser from caching the UI so code changes take effect immediately.
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
 
 def _serve_ui():
     with TCPServer(("", UI_PORT), _UIHandler) as httpd:

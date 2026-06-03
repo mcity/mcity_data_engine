@@ -110,7 +110,7 @@ tools = [
                     "properties": {
                         "selected_source": {
                             "type": "string",
-                            "description": "The model source to enable (ultralytics, hf_models_objectdetection, or custom_codetr)"
+                            "description": "The model source to enable: ultralytics, hf_models_objectdetection, custom_codetr, or roboflow"
                         },
                         "selected_model": {
                             "type": "string",

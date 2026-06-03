@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 from pathlib import Path
 
 from fastmcp import Client
@@ -16,6 +17,44 @@ from validate_workflow_state import (
 )
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "config.py"
+MAIN_PATH   = Path(__file__).resolve().parents[1] / "main.py"
+
+# Human-readable status emitted to the UI before each tool call.
+TOOL_STATUS_MESSAGES: dict[str, str] = {
+    "select_workflow":                       "Setting up workflow...",
+    "switch_workflow":                       "Switching workflow...",
+    "set_selected_dataset":                  "Confirming dataset...",
+    "list_datasets":                         "Fetching available datasets...",
+    "list_model_sources_and_models":         "Fetching available models...",
+    "configure_auto_labeling":               "Configuring model selection...",
+    "set_auto_labeling_hyperparams":         "Updating hyperparameters...",
+    "run_auto_labeling":                     "Starting auto-labeling — this may take several minutes...",
+    "export_to_cvat":                        "Exporting dataset to CVAT...",
+    "import_from_cvat":                      "Importing annotations from CVAT...",
+    "export_to_label_studio":                "Exporting dataset to Label Studio...",
+    "import_from_label_studio":              "Importing annotations from Label Studio...",
+    "get_labeling_backend":                  "Detecting annotation backend...",
+    "set_labeling_backend":                  "Configuring annotation backend...",
+    "launch_voxel51_session":                "Launching Voxel51 visualization...",
+    "list_class_mapping_models":             "Fetching class mapping models...",
+    "configure_class_mapping_model":         "Configuring class mapping model...",
+    "run_class_mapping":                     "Running class mapping...",
+    "list_anomaly_detection_models":         "Fetching anomaly detection models...",
+    "configure_anomaly_detection_model":     "Configuring anomaly detection model...",
+    "run_anomaly_detection":                 "Running anomaly detection...",
+    "list_embedding_selection_models":       "Fetching embedding selection models...",
+    "configure_embedding_selection_model":   "Configuring embedding model...",
+    "run_embedding_selection":               "Running embedding selection...",
+    "list_zsal":                             "Fetching zero-shot models...",
+    "configure_auto_labeling_zero_shot_models": "Configuring zero-shot models...",
+    "run_zero_shot_auto_labeling":           "Running zero-shot auto-labeling...",
+    "set_ensemble_selection_parameters":     "Setting ensemble parameters...",
+    "set_ensemble_selection_classes":        "Setting ensemble classes...",
+    "run_ensemble_selection":                "Running ensemble selection...",
+}
+
+# Strip ANSI escape codes and bare CR from subprocess output.
+_ANSI_RE = re.compile(r'\x1b\[[0-9;]*[A-Za-z]|\r')
 
 
 def unwrap_tool_output(raw) -> str:
@@ -90,14 +129,22 @@ class ChatPipeline:
         self._confirmed_dataset: str | None = None
         self._detected_backend: dict | None = None
 
-    async def run(self, tool_calls: list, messages: list) -> tuple[list, str | None]:
+        # Set by run() when the caller wants streaming progress events.
+        # Signature: async (event_type: str, data: dict) -> None
+        self._progress_cb = None
+
+    async def run(self, tool_calls: list, messages: list, progress_cb=None) -> tuple[list, str | None]:
         """
         Process all tool calls for one request. Loads WorkflowState fresh from
         config.py so state changes from previous requests are always visible.
 
+        progress_cb — optional async callable(event_type: str, data: dict) used
+        by the /chat/stream endpoint to push status/log/progress events to the UI.
+
         Returns (tool_results, early_reply).
         """
         self.state = WorkflowState.load()
+        self._progress_cb = progress_cb
 
         tool_results = []
         logging.warning(
@@ -131,7 +178,7 @@ class ChatPipeline:
                     logging.warning(f"[PIPELINE] Tool input validation failed for {fn_name}: {err}")
                     continue
 
-                result = await self._dispatch(fn_name, fn_args, call, mcp_client, messages)
+                result = await self._dispatch(fn_name, fn_args, call, mcp_client, messages, progress_cb)
                 tool_results.append({
                     "tool_call_id": call.id,
                     "name": fn_name,
@@ -169,11 +216,15 @@ class ChatPipeline:
         early_reply = await self._build_reply(tool_results, messages)
         return tool_results, early_reply
 
-    async def _dispatch(self, fn_name, fn_args, call, mcp_client, messages) -> str:
+    async def _dispatch(self, fn_name, fn_args, call, mcp_client, messages, progress_cb=None) -> str:
         """
         Execute a single tool call with precondition checks and state updates.
         Always appends the result to messages before returning.
         """
+        if progress_cb and fn_name != "send_reply":
+            status = TOOL_STATUS_MESSAGES.get(fn_name, f"Running {fn_name.replace('_', ' ')}...")
+            await progress_cb("status", {"message": status})
+
         try:
             if fn_name == "send_reply":
                 content = fn_args.get("message", "")
@@ -296,7 +347,10 @@ class ChatPipeline:
                 content = result
 
             elif fn_name == "run_auto_labeling":
-                result = await self._handle_run_auto_labeling(fn_args, mcp_client)
+                if progress_cb:
+                    result = await self._handle_run_auto_labeling_streaming(fn_args, progress_cb)
+                else:
+                    result = await self._handle_run_auto_labeling(fn_args, mcp_client)
                 content = result
 
             elif fn_name == "import_from_cvat":
@@ -745,6 +799,83 @@ class ChatPipeline:
 
         return result
 
+    async def _handle_run_auto_labeling_streaming(self, fn_args: dict, progress_cb) -> str:
+        """
+        Streaming variant of run_auto_labeling: runs main.py directly (bypassing MCP)
+        and feeds stdout/stderr line-by-line to progress_cb as log + progress events.
+        Falls back to the same precondition guard as the non-streaming path.
+        """
+        if self.state.auto_labeling is None:
+            self.state.auto_labeling = AutoLabelingState()
+
+        ok, msg = self.state.auto_labeling.can_run_auto_labeling(
+            self.state.dataset_confirmed, self.state.dataset_name,
+        )
+        if not ok:
+            return msg
+
+        process = await asyncio.create_subprocess_exec(
+            "python", "-u", str(MAIN_PATH),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(MAIN_PATH.parent),
+        )
+
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+
+        async def _read(stream, buf: list[str]) -> None:
+            while True:
+                raw = await stream.readline()
+                if not raw:
+                    break
+                text = _ANSI_RE.sub("", raw.decode("utf-8", errors="ignore")).rstrip()
+                if not text.strip():
+                    continue
+                buf.append(text)
+                await progress_cb("log", {"line": text})
+
+
+        await asyncio.gather(_read(process.stdout, stdout_lines), _read(process.stderr, stderr_lines))
+        await process.wait()
+
+        output       = "\n".join(stdout_lines)
+        error_output = "\n".join(stderr_lines)
+        combined     = output + "\n" + error_output
+
+        if "Evaluating detections..." in combined:
+            res_lines, capture = [], False
+            for line in stdout_lines:
+                if "              precision    recall  f1-score   support" in line:
+                    capture = True
+                    res_lines.append(line)
+                elif capture and line.startswith("You have launched a remote App on port 5151"):
+                    break
+                elif capture:
+                    res_lines.append(line)
+            report = "\n".join(res_lines).strip() or "No inference results found."
+        else:
+            report = "Training completed successfully.\nThe model is ready to be tested using inference on the validation set."
+
+        log_path = "output/logs/last_auto_labeling_log.txt"
+        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(log_path).write_text(
+            f"=== STDOUT ===\n{output}\n\n=== STDERR ===\n{error_output}\n\n=== EXIT CODE ===\n{process.returncode}",
+            encoding="utf-8",
+        )
+
+        if process.returncode == 0:
+            return (
+                f"Auto-labeling workflow completed.\n\n"
+                f"**Result Summary:**\n```\n{report}\n```\n"
+                f"Full logs saved to `{log_path}`"
+            )
+        return (
+            f"Auto-labeling failed with exit code {process.returncode}.\n"
+            f"Error details:\n```\n{error_output[-3000:]}\n```\n"
+            f"Full logs saved to `{log_path}`"
+        )
+
     async def _handle_run_auto_labeling(self, fn_args: dict, mcp_client) -> str:
         if self.state.auto_labeling is None:
             self.state.auto_labeling = AutoLabelingState()
@@ -984,6 +1115,10 @@ class ChatPipeline:
 
         if dataset_name:
             backend = (self.state.auto_labeling.labeling_backend if self.state.auto_labeling else "cvat") or "cvat"
+
+            if self._progress_cb:
+                backend_label = "Label Studio" if backend == "label_studio" else "CVAT"
+                await self._progress_cb("status", {"message": f"Exporting predictions to {backend_label}..."})
 
             async with Client(self.transport) as export_client:
                 try:

@@ -1,5 +1,6 @@
 # mcp_layer/chat_server.py
 
+import asyncio
 import json
 import logging
 import os
@@ -9,6 +10,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastmcp.client.transports import SSETransport
 
 sys.path.append(os.path.dirname(__file__))
@@ -96,6 +98,8 @@ def _build_state_hint(state=None) -> str:
                 parts.append(f"backend={al.labeling_backend}")
             if al.labeling_path:
                 parts.append(f"labeling_path={al.labeling_path}")
+            if al.models_listed and not al.model_configured:
+                parts.append("models_listed=True — user has seen the model list, awaiting model selection via configure_auto_labeling")
             if al.model_configured:
                 parts.append("model=configured")
             if al.auto_labeling_complete:
@@ -244,6 +248,148 @@ async def chat(request: Request):
     except Exception as e:
         logging.warning(f"[CHAT] Exception building final reply: {e}")
         return {"reply": "I've completed the action. What would you like to do next?"}
+
+
+@app.post("/chat/stream")
+async def chat_stream(request: Request):
+    """
+    Streaming variant of /chat.  Returns text/event-stream so the UI can show
+    live tool-status messages, epoch progress bars, and log lines while the
+    pipeline is running, instead of a blank 'Agent is typing…' indicator.
+
+    Event types:
+      status   — {"message": str}            tool about to execute
+      log      — {"line": str}               raw subprocess stdout/stderr line
+      progress — {"current", "total", "pct"} epoch progress (run_auto_labeling only)
+      reply    — {"message": str}            final agent reply (terminal event)
+      error    — {"message": str}            unrecoverable error
+    """
+    data    = await request.json()
+    message = data.get("message", "")
+    history = data.get("history", [])
+
+    MAX_HISTORY_TURNS = 8
+    if len(history) > MAX_HISTORY_TURNS:
+        history = history[-MAX_HISTORY_TURNS:]
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for user_msg, assistant_msg in history:
+        messages.append({"role": "user",      "content": user_msg})
+        messages.append({"role": "assistant", "content": assistant_msg})
+
+    try:
+        from validate_workflow_state import WorkflowState as _WS
+        _state = _WS.load()
+    except Exception:
+        _state = None
+
+    state_hint = _build_state_hint(_state)
+    if state_hint:
+        messages.append({"role": "system", "content": state_hint})
+    messages.append({"role": "user", "content": message})
+
+    active_tools = filter_tools_for_state(tools, _state)
+
+    event_queue: asyncio.Queue = asyncio.Queue()
+
+    async def progress_cb(event_type: str, evt_data: dict) -> None:
+        await event_queue.put((event_type, evt_data))
+
+    async def run_pipeline() -> None:
+        try:
+            try:
+                assistant_message = await llm.chat(messages, tools=active_tools, tool_choice="required")
+            except Exception as e:
+                err = str(e).lower()
+                msg = (
+                    "The request timed out reaching the AI service. Please try again."
+                    if "timeout" in err or "connecttimeout" in err
+                    else "Something went wrong connecting to the AI service. Please try again."
+                )
+                await event_queue.put(("error", {"message": msg}))
+                return
+
+            if not (hasattr(assistant_message, "tool_calls") and assistant_message.tool_calls):
+                reply = assistant_message.content or ""
+                await event_queue.put(("reply", {"message": reply}))
+                return
+
+            tool_calls = assistant_message.tool_calls
+
+            # Single send_reply — short-circuit without opening the pipeline.
+            if len(tool_calls) == 1 and tool_calls[0].function.name == "send_reply":
+                try:
+                    args  = json.loads(tool_calls[0].function.arguments)
+                    reply = args.get("message", "")
+                except Exception:
+                    reply = "Something went wrong. Please try again."
+                await event_queue.put(("reply", {"message": reply}))
+                return
+
+            messages.append({
+                "role":       "assistant",
+                "content":    assistant_message.content or "",
+                "tool_calls": [
+                    {
+                        "id":       c.id,
+                        "type":     "function",
+                        "function": {"name": c.function.name, "arguments": c.function.arguments},
+                    }
+                    for c in tool_calls
+                ],
+            })
+
+            pipeline = ChatPipeline(mcp_transport=MCP_TRANSPORT, llm=llm)
+            tool_results, early_reply = await pipeline.run(tool_calls, messages, progress_cb=progress_cb)
+
+            if early_reply is not None:
+                await event_queue.put(("reply", {"message": early_reply}))
+                return
+
+            tools_called = [r["name"] for r in tool_results]
+            if (
+                pipeline.state.workflow_name
+                and not pipeline.state.dataset_confirmed
+                and "list_datasets" not in tools_called
+            ):
+                messages.append({
+                    "role":    "system",
+                    "content": (
+                        "Reminder: the user has selected a workflow but has not yet "
+                        "confirmed a dataset. Show the user the dataset list returned "
+                        "by list_datasets above. Do NOT list datasets from memory."
+                    ),
+                })
+
+            final_msg = await llm.chat(messages, tools=None, tool_choice=None)
+            reply = unwrap_tool_output(getattr(final_msg, "content", final_msg))
+            if not reply:
+                reply = "I've completed the action. What would you like to do next?"
+            await event_queue.put(("reply", {"message": reply}))
+
+        except Exception as e:
+            logging.warning(f"[STREAM] run_pipeline exception: {e}")
+            await event_queue.put(("error", {"message": "An unexpected error occurred. Please try again."}))
+        finally:
+            await event_queue.put(None)  # sentinel — always signal done
+
+    async def generate():
+        task = asyncio.create_task(run_pipeline())
+        try:
+            while True:
+                item = await event_queue.get()
+                if item is None:
+                    break
+                event_type, evt_data = item
+                yield f"event: {event_type}\ndata: {json.dumps(evt_data)}\n\n"
+        finally:
+            await task
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 if __name__ == "__main__":

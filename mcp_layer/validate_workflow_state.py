@@ -225,6 +225,7 @@ class AnomalyDetectionState(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model_configured: bool = False
     data_source_set: bool = False
+    hyperparams_confirmed: bool = False
 
     def can_run_anomaly_detection(self, dataset_confirmed: bool) -> tuple[bool, str]:
         if not dataset_confirmed:
@@ -242,6 +243,7 @@ class AnomalyDetectionState(BaseModel):
 class EmbeddingSelectionState(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model_configured: bool = False
+    params_set: bool = False
 
     def can_run_embedding_selection(self, dataset_confirmed: bool) -> tuple[bool, str]:
         if not dataset_confirmed:
@@ -254,6 +256,7 @@ class EmbeddingSelectionState(BaseModel):
 class ZeroShotAutoLabelingState(BaseModel):
     model_config = ConfigDict(extra="forbid")
     models_configured: bool = False
+    threshold_set: bool = False
     classes_set: bool = False
 
     def can_run_zero_shot(self, dataset_confirmed: bool) -> tuple[bool, str]:
@@ -268,6 +271,7 @@ class ZeroShotAutoLabelingState(BaseModel):
 
 class EnsembleSelectionState(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    params_set: bool = False
     classes_set: bool = False
 
     def can_run_ensemble_selection(self, dataset_confirmed: bool) -> tuple[bool, str]:
