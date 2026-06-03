@@ -128,7 +128,7 @@ def validate_tool_input(fn_name: str, fn_args: dict) -> tuple[bool, str, dict]:
 class AutoLabelingState(BaseModel):
     model_config = ConfigDict(extra="forbid")
     labeling_path: Literal["manual", "auto", ""] = ""
-    labeling_backend: Literal["cvat", "label_studio", ""] = "cvat"
+    labeling_backend: Literal["cvat", "label_studio", ""] = ""
     manual_classes: list[str] = []
     models_listed: bool = False
     model_configured: bool = False
@@ -510,7 +510,7 @@ class WorkflowState(BaseModel):
 
         al = raw.get("auto_labeling")
         if isinstance(al, dict):
-            al.setdefault("labeling_backend", "cvat")
+            al.setdefault("labeling_backend", "")
             al.setdefault("ls_task_ids", [])
             al.setdefault("manual_classes", [])
             al.setdefault("models_listed", False)

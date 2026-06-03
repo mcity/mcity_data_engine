@@ -154,7 +154,7 @@ def set_auto_labeling_hyperparams(
     mode: list = None,
     epochs: int = None,
     early_stop_patience: int = None,
-    early_stop_threshold: int = None,
+    early_stop_threshold: float = None,
     learning_rate: float = None,
     weight_decay: float = None,
     max_grad_norm: float = None,

@@ -56,6 +56,13 @@ SYSTEM_PROMPT = (
 ).read_text()
 
 
+def _attach_source(message: str, source: str | None) -> str:
+    """Append a [source: ...] tag when the LLM supplied one, leave message untouched otherwise."""
+    if source and source.strip():
+        return f"{message.strip()}\n[source: {source.strip()}]"
+    return message
+
+
 def filter_tools_for_state(all_tools: list, state) -> list:
     """
     Return only the tools valid for the current workflow step.
@@ -91,7 +98,11 @@ def _build_state_hint(state=None) -> str:
         if state.dataset_confirmed and state.dataset_name:
             parts.append(f"dataset={state.dataset_name}")
         else:
-            parts.append("dataset=not confirmed")
+            parts.append(
+                "dataset=not confirmed — "
+                "NEXT STEP: wait for the user to name a dataset, then call set_selected_dataset immediately. "
+                "Do NOT call switch_workflow or select_workflow again."
+            )
         al = state.auto_labeling
         if al:
             if al.labeling_backend:
@@ -99,7 +110,12 @@ def _build_state_hint(state=None) -> str:
             if al.labeling_path:
                 parts.append(f"labeling_path={al.labeling_path}")
             if al.models_listed and not al.model_configured:
-                parts.append("models_listed=True — user has seen the model list, awaiting model selection via configure_auto_labeling")
+                parts.append(
+                    "models_listed=True — user has seen the model list. "
+                    "WAIT: do NOT call configure_auto_labeling until the user explicitly names a model. "
+                    "If user describes their use case or asks for advice, use send_reply to recommend options "
+                    "and end with 'Which model would you like to use?' — then wait for their reply."
+                )
             if al.model_configured:
                 parts.append("model=configured")
             if al.auto_labeling_complete:
@@ -191,7 +207,7 @@ async def chat(request: Request):
     if len(tool_calls) == 1 and tool_calls[0].function.name == "send_reply":
         try:
             args = json.loads(tool_calls[0].function.arguments)
-            return {"reply": args.get("message", "")}
+            return {"reply": _attach_source(args.get("message", ""), args.get("source"))}
         except Exception:
             return {"reply": "Something went wrong. Please try again."}
 
@@ -320,7 +336,7 @@ async def chat_stream(request: Request):
             if len(tool_calls) == 1 and tool_calls[0].function.name == "send_reply":
                 try:
                     args  = json.loads(tool_calls[0].function.arguments)
-                    reply = args.get("message", "")
+                    reply = _attach_source(args.get("message", ""), args.get("source"))
                 except Exception:
                     reply = "Something went wrong. Please try again."
                 await event_queue.put(("reply", {"message": reply}))

@@ -150,6 +150,28 @@ border-radius:10px;border:1px solid #1d273f;font-family: ui-monospace, SFMono-Re
 .log-line.error{color:#fca5a5}
 .log-line.agent{color:#a7f3d0}
 
+/* ── Source footnote ─────────────────────────────────────── */
+.msg-source {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.75;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.msg-source-icon { flex-shrink: 0; }
+.source-tag { flex: 1; }
+.source-reliability {
+  font-size: 10px;
+  font-style: italic;
+  white-space: nowrap;
+}
+.source-reliability.verified { color: #22c55e; }
+.source-reliability.caution  { color: #f97316; }
 /* ── Streaming status bubble ─────────────────────────────── */
 .status-bubble { min-width: 200px; }
 .status-text {
@@ -262,6 +284,16 @@ const chatTxt = document.getElementById("chatStatusText");
 
 let history = [];
 
+// Extract [source: ...] tag from the end of a message, return {body, source}.
+function extractSource(text) {
+    const match = text.match(/\n?\[source:\s*([^\]]+)\]\s*$/i);
+    if (!match) return { body: text, source: null };
+    return {
+        body:   text.slice(0, match.index).trimEnd(),
+        source: match[1].trim(),
+    };
+}
+
 function renderText(text) {
     // Markdown links → <a>
     let out = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, url) => {
@@ -279,12 +311,43 @@ function renderText(text) {
     return out;
 }
 
+// Classify a source string as "verified" (from the repo / live tools)
+// or "caution" (LLM training knowledge).
+function classifySource(source) {
+    const s = source.toLowerCase();
+    if (
+        s.startsWith("tool result") ||
+        s.includes("project configuration") ||
+        s.includes("mcity data engine")
+    ) {
+        return { level: "verified", note: "✓ sourced from project" };
+    }
+    return { level: "caution", note: "⚠ LLM knowledge — proceed with reasonable caution" };
+}
+
 function addMsg(role, text) {
     const line   = document.createElement("div");
     line.className = `msg ${role}`;
     const bubble = document.createElement("div");
     bubble.className = "bubble";
-    bubble.innerHTML = renderText(text);
+
+    if (role === "agent") {
+        const { body, source } = extractSource(text);
+        bubble.innerHTML = renderText(body);
+        if (source) {
+            const { level, note } = classifySource(source);
+            const fn = document.createElement("div");
+            fn.className = "msg-source";
+            fn.innerHTML =
+                `<span class="msg-source-icon">📚</span>` +
+                `<span class="source-tag">${source}</span>` +
+                `<span class="source-reliability ${level}">${note}</span>`;
+            bubble.appendChild(fn);
+        }
+    } else {
+        bubble.innerHTML = renderText(text);
+    }
+
     line.appendChild(bubble);
     chatEl.appendChild(line);
     chatEl.scrollTop = chatEl.scrollHeight;

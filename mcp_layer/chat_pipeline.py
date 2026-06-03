@@ -227,7 +227,9 @@ class ChatPipeline:
 
         try:
             if fn_name == "send_reply":
-                content = fn_args.get("message", "")
+                msg = fn_args.get("message", "")
+                src = fn_args.get("source", "")
+                content = f"{msg.strip()}\n[source: {src.strip()}]" if src and src.strip() else msg
                 result = content
 
             elif fn_name in ("select_workflow", "switch_workflow"):
@@ -492,10 +494,13 @@ class ChatPipeline:
             ls_ok   = bool(_os.getenv("LS_TOKEN", "").strip())
 
             if cvat_ok and ls_ok:
-                active  = "cvat"   # CVAT is default when both are configured
+                # Both available — user must choose. Do NOT pre-set a backend in state;
+                # writing "cvat" here would make it look like the user already confirmed CVAT,
+                # causing the LLM to skip the backend-choice question.
+                active  = "both"
                 message = (
                     "Both CVAT and Label Studio credentials are configured. "
-                    "CVAT is the default. You can use either — which would you prefer?"
+                    "Which would you prefer to use?"
                 )
             elif ls_ok:
                 active  = "label_studio"
@@ -524,6 +529,8 @@ class ChatPipeline:
                 self.state.auto_labeling.labeling_backend = active
                 self.state.save()
                 logging.warning(f"[PIPELINE] Backend auto-detected and written to state: {active}")
+            else:
+                logging.warning(f"[PIPELINE] Backend detection: {active} — not writing to state until user confirms")
 
             self._detected_backend = backend_info
         except Exception as e:
@@ -1014,16 +1021,16 @@ class ChatPipeline:
             both     = cvat_ok and ls_ok
 
             if both:
-                # Both backends configured — must ask user to choose before Step 3b.
+                # Both backends available — no backend is confirmed yet.
+                # The user MUST choose before any labeling path is presented.
                 instruction = (
-                    "Backend detection is complete. Both backends are available. "
-                    "Ask the user which backend they prefer (CVAT or Label Studio), "
-                    "call set_labeling_backend(backend=<choice>), "
-                    "THEN proceed to Step 3b (Manual vs Auto Labeling). "
-                    "Do NOT skip the backend choice step."
+                    "Backend detection is complete. Both backends are available but NEITHER is confirmed. "
+                    "You MUST ask the user which backend they prefer (CVAT or Label Studio) "
+                    "and call set_labeling_backend(backend=<choice>) before proceeding. "
+                    "Do NOT present labeling paths yet. Do NOT assume CVAT is chosen."
                 )
             else:
-                # Only one backend available — skip straight to Step 3b.
+                # Exactly one backend configured — confirmed, skip straight to Step 3b.
                 instruction = (
                     f"Backend detection is complete — active backend is {active}. "
                     f"Skip Step 3a and proceed directly to Step 3b "
@@ -1058,6 +1065,44 @@ class ChatPipeline:
                 ]
             ):
                 return tool_output.split(":", 1)[1].strip() if ":" in tool_output else tool_output
+
+            # Model list: return directly so the LLM's subsequent turns are purely advisory
+            # (no operational "present the list" framing competing with informational responses).
+            if fn_name == "list_model_sources_and_models":
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "MODEL_LIST_SHOWN: The model list has been presented. "
+                        "Do NOT call configure_auto_labeling until the user explicitly names a model."
+                    ),
+                })
+                if "DATASET_NOT_CONFIRMED" not in tool_output:
+                    return self._format_model_list(tool_output)
+
+            # Hyperparams: return defaults directly so the LLM's subsequent turns are purely
+            # advisory — no "present defaults" operational framing competing with source attribution.
+            if fn_name == "configure_auto_labeling" and "Invalid model" not in tool_output:
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "HYPERPARAM_STEP: Model configuration is complete and defaults have been shown. "
+                        "Do NOT call set_auto_labeling_hyperparams until the user explicitly requests "
+                        "changes or confirms they want to apply specific values."
+                    ),
+                })
+                d = self.hyperparam_cache
+                return (
+                    f"The model has been configured successfully. "
+                    f"Here are the default hyperparameters:\n\n"
+                    f"- mode: {d['mode']}\n"
+                    f"- epochs: {d['epochs']}\n"
+                    f"- early_stop_patience: {d['early_stop_patience']}\n"
+                    f"- early_stop_threshold: {d['early_stop_threshold']}\n"
+                    f"- learning_rate: {d['learning_rate']}\n"
+                    f"- weight_decay: {d['weight_decay']}\n"
+                    f"- max_grad_norm: {d['max_grad_norm']}\n\n"
+                    f"Would you like to modify any of these hyperparameters before we start?"
+                )
 
             if fn_name == "import_from_label_studio" and "LS_NO_ANNOTATIONS" in tool_output:
                 return tool_output.split(":", 1)[1].strip() if ":" in tool_output else tool_output
@@ -1097,6 +1142,28 @@ class ChatPipeline:
         return None
 
     # Reply formatters
+
+    _MODEL_SOURCE_LABELS = {
+        "ultralytics":               "Ultralytics",
+        "hf_models_objectdetection": "Hugging Face Models for Object Detection",
+        "custom_codetr":             "Custom Code Models",
+        "roboflow":                  "Roboflow",
+    }
+
+    def _format_model_list(self, tool_output: str) -> str:
+        try:
+            models = json.loads(tool_output)
+            lines = []
+            counter = 1
+            for source_key, model_list in models.items():
+                label = self._MODEL_SOURCE_LABELS.get(source_key, source_key)
+                lines.append(f"\n**{label}:**")
+                for model in model_list:
+                    lines.append(f"{counter}. {model}")
+                    counter += 1
+            return "\n".join(lines) + "\n\nWhich model would you like to use?"
+        except Exception:
+            return f"{tool_output}\n\nWhich model would you like to use?"
 
     async def _finalize_auto_labeling(self, tool_output: str) -> str:
         if any(phrase in tool_output for phrase in [
@@ -1198,7 +1265,7 @@ class ChatPipeline:
         if "precision" in tool_output and "recall" in tool_output and "f1-score" in tool_output:
             summary = await self.llm.summarize_classification_report(tool_output)
             return (
-                f"{summary}\n\n"
+                f"{summary}\n[source: tool result — run_auto_labeling]\n\n"
                 f"Full Classification Report:\n"
                 f"```\n{tool_output.strip()}\n```"
                 f"Would you like to launch Voxel51 to explore the results?"
@@ -1207,11 +1274,17 @@ class ChatPipeline:
 
     async def _format_class_mapping_reply(self, tool_output: str) -> str:
         summary = await self.llm.summarize_class_mapping_output(tool_output)
-        return f"{summary}\n\nClass Mapping Output:\n```\n{tool_output.strip()}\n```"
+        return (
+            f"{summary}\n[source: tool result — run_class_mapping]\n\n"
+            f"Class Mapping Output:\n```\n{tool_output.strip()}\n```"
+        )
 
     async def _format_anomaly_detection_reply(self, tool_output: str) -> str:
         summary = await self.llm.summarize_anomaly_detection_output(tool_output)
-        return f"{summary}\n\nAnomaly Detection Output:\n```\n{tool_output.strip()}\n```"
+        return (
+            f"{summary}\n[source: tool result — run_anomaly_detection]\n\n"
+            f"Anomaly Detection Output:\n```\n{tool_output.strip()}\n```"
+        )
 
     def _format_zero_shot_reply(self, tool_output: str) -> str:
         return (
