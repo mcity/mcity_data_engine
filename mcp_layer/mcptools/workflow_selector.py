@@ -34,7 +34,7 @@ def select_workflow(workflow_name: str) -> str:
             modified.append(f'SELECTED_WORKFLOW = ["{workflow_name}"]')
         else:
             modified.append(line)
-    CONFIG_PATH.write_text("\n".join(modified) + "\n")
+    CONFIG_PATH.write_text("\n".join(modified).rstrip("\n") + "\n")
     return f"Workflow selected: `{workflow_name}`."
 
 
@@ -81,7 +81,7 @@ def set_selected_dataset(dataset_name: str) -> str:
                 continue
         modified.append(line)
 
-    CONFIG_PATH.write_text("\n".join(modified) + "\n")
+    CONFIG_PATH.write_text("\n".join(modified).rstrip("\n") + "\n")
 
     if not dataset_name.startswith("custom"):
         load_dataset({"name": dataset_name, "n_samples": None, "custom_view": None})
@@ -102,7 +102,7 @@ def switch_workflow(workflow_name: str) -> str:
             modified.append(f'SELECTED_WORKFLOW = ["{workflow_name}"]')
         else:
             modified.append(line)
-    CONFIG_PATH.write_text("\n".join(modified) + "\n")
+    CONFIG_PATH.write_text("\n".join(modified).rstrip("\n") + "\n")
     return f"Switched to workflow: `{workflow_name}`."
 
 
@@ -137,7 +137,7 @@ def reset_workflow_state() -> str:
             result_lines.append(line)
         i += 1
 
-    CONFIG_PATH.write_text("\n".join(result_lines) + "\n")
+    CONFIG_PATH.write_text("\n".join(result_lines).rstrip("\n") + "\n")
     return "Workflow, dataset, and session state have been reset. You may now start a new workflow."
 
 

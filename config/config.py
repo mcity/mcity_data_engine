@@ -82,7 +82,7 @@ WORKFLOWS = {
         },
     },
     "auto_labeling": {
-        "mode": ['inference'], #['train','inference']
+        "mode": ['inference'],
         "model_source": [
         # "hf_models_objectdetection",
         # "ultralytics",

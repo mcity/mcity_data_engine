@@ -181,7 +181,7 @@ tools = [
                         "mode": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Pipeline mode(s): train, inference, or both."
+                            "description": "Pipeline mode(s): inference."
                         },
                         "epochs": {"type": "integer", "description": "Number of training epochs."},
                         "early_stop_patience": {"type": "integer", "description": "Patience for early stopping."},

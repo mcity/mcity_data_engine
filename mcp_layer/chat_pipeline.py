@@ -99,7 +99,7 @@ class ChatPipeline:
         # Per-request hyperparam caches. Not persisted to WorkflowState;
         # the MCP tools write them directly to the WORKFLOWS section of config.py.
         self.hyperparam_cache = {
-            "mode": ["train", "inference"],
+            "mode": ["inference"],
             "epochs": 10,
             "early_stop_patience": 5,
             "early_stop_threshold": 0,
@@ -428,6 +428,13 @@ class ChatPipeline:
     ) -> str:
         """Reset state for the new workflow, check dependencies, then call the MCP tool."""
         workflow_name = fn_args.get("workflow_name", "")
+
+        if fn_name == "switch_workflow":
+            # Full reset to blank initial state — LLM re-presents the workflow list
+            # and calls select_workflow to begin the new workflow from scratch.
+            self.state = WorkflowState()
+            self.state.save()
+            return unwrap_tool_output(await mcp_client.call_tool(fn_name, fn_args))
 
         deps = WORKFLOW_DEPENDENCIES.get(workflow_name, [])
         if deps:

@@ -79,7 +79,7 @@ def configure_anomaly_detection_model(selected_model: str) -> str:
     if not found:
         return f"Model `{selected_model}` not found in `anomalib_image_models`. Valid options: Padim, EfficientAd, Draem, Cfa."
 
-    CONFIG_PATH.write_text('\n'.join(modified) + "\n")
+    CONFIG_PATH.write_text('\n'.join(modified).rstrip('\n') + '\n')
     return f"Anomaly Detection model updated to `{selected_model}`."
 
 
@@ -134,7 +134,7 @@ def set_anomaly_detection_data_source(location: str, rare_class: str) -> str:
 
         modified.append(line)
 
-    CONFIG_PATH.write_text('\n'.join(modified) + "\n")
+    CONFIG_PATH.write_text('\n'.join(modified).rstrip('\n') + '\n')
     return f"Set anomaly_detection data_preparation to location: `{location}`, rare_class: `{rare_class}`"
 
 @mcp.tool()
@@ -173,7 +173,7 @@ def set_anomaly_detection_hyperparams(
 
         modified.append(line)
 
-    CONFIG_PATH.write_text('\n'.join(modified) + "\n")
+    CONFIG_PATH.write_text('\n'.join(modified).rstrip('\n') + '\n')
     return "Anomaly detection hyperparameters updated successfully."
 
 @mcp.tool()

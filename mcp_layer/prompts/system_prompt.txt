@@ -213,9 +213,11 @@ Required action: Call launch_voxel51_session(dataset_name=<labeled_name>)
 ===== WORKFLOW SWITCHING =====
 
 Trigger: User says they want a different workflow at any point.
-Required action: Call switch_workflow(<new_workflow_name>) immediately.
-After tool returns, restart from STEP 1 for the new workflow.
-State resets completely — ask for dataset selection again from scratch.
+Required action: Call switch_workflow(<workflow_name>) immediately.
+After tool returns, the session resets completely to its initial state.
+Present the six workflow options as a numbered list and ask the user to select one.
+Then proceed exactly as if the user had just started a new session — call select_workflow,
+ask for a dataset, and follow the full workflow steps from the beginning.
 
 
 ===== ERROR RECOVERY =====

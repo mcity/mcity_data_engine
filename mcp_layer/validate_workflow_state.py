@@ -540,7 +540,7 @@ class WorkflowState(BaseModel):
                             start = node.lineno - 1
                             end = node.end_lineno
                             lines[start:end] = [f"WORKFLOW_STATE = {repr(state_dict)}"]
-                            CONFIG_PATH.write_text("\n".join(lines) + "\n")
+                            CONFIG_PATH.write_text("\n".join(lines).rstrip("\n") + "\n")
                             return
         except Exception as e:
             logging.warning(f"[STATE] Failed to save WorkflowState: {e}")

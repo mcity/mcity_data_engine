@@ -46,7 +46,7 @@ def set_ensemble_selection_parameters(
 
         modified.append(line)
 
-    CONFIG_PATH.write_text("\n".join(modified) + "\n")
+    CONFIG_PATH.write_text("\n".join(modified).rstrip("\n") + "\n")
     return "Ensemble Selection Parameters updated successfully."
 
 @mcp.tool()
@@ -86,7 +86,7 @@ def set_ensemble_selection_classes(positive_classes: list) -> str:
 
         modified.append(line)
 
-    CONFIG_PATH.write_text("\n".join(modified) + "\n")
+    CONFIG_PATH.write_text("\n".join(modified).rstrip("\n") + "\n")
     return f"Set `positive_classes` to: {positive_classes}"
 
 @mcp.tool()

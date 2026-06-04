@@ -145,7 +145,7 @@ def configure_auto_labeling(selected_source: str, selected_model: str) -> str:
             f"Invalid model '{selected_model}' for source '{selected_source}'. "
             f"Available: {valid.get(selected_source, [])}"
         )
-    CONFIG_PATH.write_text('\n'.join(modified) + "\n")
+    CONFIG_PATH.write_text('\n'.join(modified).rstrip('\n') + '\n')
     return f"Config updated to use `{selected_model}` from `{selected_source}`."
 
 
@@ -198,7 +198,7 @@ def set_auto_labeling_hyperparams(
 
         modified.append(line)
 
-    CONFIG_PATH.write_text("\n".join(modified) + "\n")
+    CONFIG_PATH.write_text("\n".join(modified).rstrip("\n") + "\n")
     return "Hyperparameters updated successfully."
 
 
