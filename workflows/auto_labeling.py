@@ -40,6 +40,7 @@ from transformers import (
     TrainingArguments,
 )
 from ultralytics import YOLO
+import rfdetr_plus  # must import before rfdetr to avoid circular import that blocks XLarge/2XLarge
 from rfdetr import RFDETRNano, RFDETRSmall, RFDETRMedium, RFDETRLarge, RFDETRXLarge, RFDETR2XLarge
 import supervision as sv
 import wandb
