@@ -181,10 +181,10 @@ Special thanks to these amazing people for contributing to the Mcity Data Engine
 If you use the Mcity Data Engine in your research, feel free to cite the project:
 
 ```bibtex
-@article{bogdoll2025mcitydataengineiterative,
+@InProceedings{bogdoll2025mcitydataengine,
       title={{Mcity Data Engine: Iterative Model Improvement Through Open-Vocabulary Data Selection}}, 
       author={Daniel Bogdoll and Rajanikant Patnaik Ananta and Abeyankar Giridharan and Isabel Moore and Gregory Stevens and Henry X. Liu},
       year={2025},
-      journal={arXiv:2504.21614} 
+      booktitle={IEEE International Conference on Intelligent Transportation Systems (ITSC)} 
 }
 ```
