@@ -6,7 +6,7 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "gs_catherine_glen1-sample-1",
+    "name": "gs_catherine_zina1",
     "n_samples": None,
     "custom_view": None,
 }
@@ -71,22 +71,23 @@ WORKFLOWS = {
         "mode": [ 'inference'], #['train','inference']
         "model_source": [
         # "hf_models_objectdetection",
-         #"ultralytics",
+        # "ultralytics",
         # "custom_codetr",
         "roboflow",
         ],
-        "n_worker_dataloader": 8,
-        "epochs": 12,
+        "n_worker_dataloader": 20,
+        "epochs": 15,
         "early_stop_patience": 2,
         "early_stop_threshold": 0,
         "learning_rate": 5e-05,
         "weight_decay": 0.0001,
         "max_grad_norm": 0.01,
         "inference_settings": {
-            "do_eval": True,
-            "inference_on_test": True,
+            "do_eval": False,
+            "inference_on_test": False,
             "model_hf": None,  # None (automatic selection) or overwrite with Hugging Face ID. Assumes same model as selected below.
             "detection_threshold": 0.2,
+            "pedestrian_class_name": "pedestrian",  # class name to use for pedestrian tracking
         },
         "hf_models_objectdetection": {  # HF Leaderboard: https://huggingface.co/spaces/hf-vision/object_detection_leaderboard
             # "microsoft/conditional-detr-resnet-50": {"batch_size": 4},
@@ -119,10 +120,28 @@ WORKFLOWS = {
             "configs": [
                 # "rfdetr_nano",
                 # "rfdetr_small",
-                # "rfdetr_medium",
+                 #"rfdetr_medium",
                 #"rfdetr_large",
 		#"rfdetr_xlarge",
 		"rfdetr_2xlarge",
+            ],
+            # Fallback HuggingFace repo to download best.pt from when no local model is found.
+            # Maps config name → HF repo ID. Set to None to skip HF fallback for that config.
+            "fallback_hf_repo": {
+                "rfdetr_2xlarge": "mcity-ai/rfdetr_2xlarge_mcity_31k",
+            },
+            # Class names for inference-only datasets that have no ground_truth or annotation files.
+            # Order must match the class IDs the model was trained with (0-indexed).
+            # Set to None to auto-detect from ground_truth field or exported annotation files.
+            "class_names": [
+                "bus",
+                "car",
+                "motorbike/cycler",
+                "pedestrian",
+                "pickup",
+                "trailer",
+                "truck",
+                "van",
             ],
             # RF-DETR specific parameters only
             "batch_size": 10,                     # Override default batch size
@@ -131,7 +150,7 @@ WORKFLOWS = {
             "resolution": None,                   # Image resolution, must be divisible by 56 (optional)
             "use_ema": True,                      # Exponential moving average
             "gradient_checkpointing": False,      # Memory optimization
-            "early_stopping_min_delta": 0.001,    # Minimum improvement for early stopping
+            "early_stopping_min_delta": 0.0001,    # Minimum improvement for early stopping
             "early_stopping_use_ema": True,       # Use EMA model for early stopping
         },
         "ultralytics": {
@@ -143,8 +162,8 @@ WORKFLOWS = {
                 #"yolo11x": {"batch_size": 1, "img_size": 960},
                 #"yolo12n": {"batch_size": 8, "img_size": 1280},
                 #"yolo12x": {"batch_size": 1, "img_size": 960},
-		"yolo26x": {"batch_size": 1, "img_size": 960},
-		"yolo26l": {"batch_size": 1, "img_size": 960},
+		#"yolo26x": {"batch_size": 1, "img_size": 960},
+		#"yolo26l": {"batch_size": 1, "img_size": 960},
 		"yolo26m": {"batch_size": 1, "img_size": 960},
             },
         },
@@ -317,7 +336,7 @@ GLOBAL_SEED = 0
 #: Hugging Face name or Organization
 HF_ROOT = "mcity-engineering"  # https://huggingface.co/mcity-data-engine
 #: Determins if model weights should be uploaded to Hugging Face
-HF_DO_UPLOAD = True
+HF_DO_UPLOAD = False
 
 """Weights and Biases Config"""
 #: Determines if tracking with Weights and Biases is activated

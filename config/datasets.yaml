@@ -68,3 +68,18 @@ datasets:
   - name: gs_catherine_glen1-sample-1
     loader_fct: load_mcity_31k
     hf_dataset_name: mcity-engineering/gs_catherine_glen1-sample-1
+  - name: barton-plymouth-sample-1
+    loader_fct: load_mcity_31k
+    hf_dataset_name: mcity-engineering/barton-plymouth-sample-1
+  - name: gs_catherine_glen1-sample-2
+    loader_fct: load_mcity_31k
+    hf_dataset_name: mcity-engineering/gs_catherine_glen1-sample-2
+  - name: mcity-person-kp_bb
+    loader_fct: load_mcity_31k
+    hf_dataset_name: mcity-engineering/mcity-person-keypoints
+  - name: gs_fuller_maiden2
+    loader_fct: load_mcity_31k
+    hf_dataset_name: mcity-engineering/gs_fuller_maiden2
+  - name: gs_catherine_zina1
+    loader_fct: load_mcity_31k
+    hf_dataset_name: mcity-engineering/gs_catherine_zina11

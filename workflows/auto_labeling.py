@@ -41,6 +41,7 @@ from transformers import (
 )
 from ultralytics import YOLO
 from rfdetr import RFDETRNano, RFDETRSmall, RFDETRMedium, RFDETRLarge, RFDETRXLarge, RFDETR2XLarge
+import supervision as sv
 import wandb
 from config.config import (
     ACCEPTED_SPLITS,
@@ -2228,7 +2229,7 @@ class CustomRFDETRObjectDetection:
             "rfdetr_small": RFDETRSmall,
             "rfdetr_medium": RFDETRMedium,
             "rfdetr_large": RFDETRLarge,
-	    "rfdetr_xlarge": RFDETRXLarge,
+	       "rfdetr_xlarge": RFDETRXLarge,
             "rfdetr_2xlarge": RFDETR2XLarge
         }
 
@@ -2280,8 +2281,8 @@ class CustomRFDETRObjectDetection:
                     break
 
             if model_path is None:
-                # Try downloading from auto-generated HF repo
-                logging.info(f"Local model not found. Attempting to download from {self.hf_repo_name}")
+                fallback_repo = inference_settings.get("fallback_hf_repo") or self.hf_repo_name
+                logging.info(f"Local model not found. Attempting to download from {fallback_repo}")
                 download_dir = os.path.join(
                     "output/models/rfdetr", self.dataset_name, model_name
                 )
@@ -2289,7 +2290,7 @@ class CustomRFDETRObjectDetection:
 
                 try:
                     model_path = hf_hub_download(
-                        repo_id=self.hf_repo_name,
+                        repo_id=fallback_repo,
                         filename="best.pt",
                         local_dir=download_dir,
                     )
@@ -2311,16 +2312,26 @@ class CustomRFDETRObjectDetection:
 
         ModelClass = MODEL_REGISTRY[model_name]
 
-        # Get class names from dataset
-        try:
-            class_names = self.dataset.distinct(f"{gt_field}.detections.label")
-            class_names = sorted(class_names)
+        # Resolve class names: config takes priority, then ground_truth, then warn
+        config_class_names = inference_settings.get("class_names")
+        class_names = None
+        num_classes = 8  # Default fallback
+
+        if config_class_names:
+            class_names = config_class_names
             num_classes = len(class_names)
-            logging.info(f"Found {num_classes} classes: {class_names}")
-        except Exception as e:
-            logging.warning(f"Could not extract class names from dataset: {e}")
-            num_classes = 8  # Default fallback
-            class_names = None
+            logging.info(f"Using {num_classes} class names from config: {class_names}")
+        else:
+            try:
+                class_names = self.dataset.distinct(f"{gt_field}.detections.label")
+                class_names = sorted(class_names)
+                num_classes = len(class_names)
+                logging.info(f"Found {num_classes} classes from ground_truth: {class_names}")
+            except Exception as e:
+                logging.warning(f"Could not extract class names from dataset: {e}")
+
+        if not class_names:
+            logging.warning(f"Class names unavailable; labels will fall back to 'class_<id>'. num_classes={num_classes}")
 
         # Load model with trained weights
         try:
@@ -2351,61 +2362,132 @@ class CustomRFDETRObjectDetection:
         # Prediction key
         pred_key = f"pred_od_{model_name}-{dataset_name}"
 
+        # Tracker config
+        pedestrian_class_name = inference_settings.get("pedestrian_class_name", "pedestrian")
+        if class_names and pedestrian_class_name in class_names:
+            pedestrian_class_id = class_names.index(pedestrian_class_name)
+        else:
+            pedestrian_class_id = inference_settings.get("pedestrian_class_id", 3)
+            logging.warning(f"'{pedestrian_class_name}' not found in class_names; falling back to pedestrian_class_id={pedestrian_class_id}")
+        tracker = sv.ByteTrack(
+            track_activation_threshold=inference_settings.get("tracker_activation_thresh", 0.20),
+            lost_track_buffer=inference_settings.get("tracker_lost_buffer", 30),
+            minimum_matching_threshold=inference_settings.get("tracker_match_thresh", 0.8),
+            frame_rate=inference_settings.get("tracker_frame_rate", 30),
+        )
+
         logging.info(f"Running inference on {len(dataset_view)} samples...")
         logging.info(f"Detection threshold: {detection_threshold}")
+        logging.info(f"Pedestrian tracker active for class_id={pedestrian_class_id}")
+
+        # Sort samples by filepath so tracker sees frames in sequence order.
+        # Reset the tracker whenever the parent directory changes (new scene/video).
+        samples_sorted = sorted(dataset_view.iter_samples(), key=lambda s: s.filepath)
 
         # Run inference on each sample
         try:
             processed_count = 0
+            tracker_filled_count = 0
+            current_sequence = None
 
-            for sample in tqdm(dataset_view.iter_samples(progress=True, autosave=True),
-                            total=len(dataset_view),
-                            desc="RF-DETR Inference"):
+            for sample in tqdm(samples_sorted, total=len(dataset_view), desc="RF-DETR Inference+Track"):
+
+                # Reset tracker at sequence boundaries (directory = one video sequence)
+                sequence_id = os.path.dirname(sample.filepath)
+                if sequence_id != current_sequence:
+                    if current_sequence is not None:
+                        tracker.reset()
+                    current_sequence = sequence_id
 
                 try:
-                    # Load image
                     image = Image.open(sample.filepath)
                     img_width, img_height = image.size
 
-                    # Run inference using RF-DETR's predict method
-                    detections = model.predict(
-                        image,
-                        threshold=detection_threshold
-                    )
+                    detections = model.predict(image, threshold=detection_threshold)
 
-                    # Convert supervision detections to FiftyOne format
+                    # --- Split pedestrian vs other detections ---
+                    if len(detections) > 0 and detections.class_id is not None:
+                        ped_mask = detections.class_id == pedestrian_class_id
+                        ped_sv = detections[ped_mask]
+                        other_sv = detections[~ped_mask]
+                    else:
+                        ped_sv = sv.Detections.empty()
+                        other_sv = detections if len(detections) > 0 else sv.Detections.empty()
+
+                    rfdetr_detected_peds = len(ped_sv) > 0
+
+                    # Update tracker with pedestrian detections from this frame
+                    tracked_peds = tracker.update_with_detections(ped_sv)
+
                     fo_detections = []
 
-                    if len(detections) > 0:
-                        for i in range(len(detections)):
-                            # Get detection data (RF-DETR returns supervision format)
-                            bbox = detections.xyxy[i]  # [x1, y1, x2, y2] in pixel coordinates
-                            confidence = detections.confidence[i] if detections.confidence is not None else 1.0
-                            class_id = detections.class_id[i] if detections.class_id is not None else 0
+                    # --- Non-pedestrian RF-DETR detections (pass through unchanged) ---
+                    for i in range(len(other_sv)):
+                        bbox = other_sv.xyxy[i]
+                        conf = float(other_sv.confidence[i]) if other_sv.confidence is not None else 1.0
+                        cid = int(other_sv.class_id[i]) if other_sv.class_id is not None else 0
+                        x1, y1, x2, y2 = bbox
+                        label = class_names[cid] if class_names and cid < len(class_names) else f"class_{cid}"
+                        fo_detections.append(fo.Detection(
+                            label=label,
+                            bounding_box=[x1 / img_width, y1 / img_height,
+                                          (x2 - x1) / img_width, (y2 - y1) / img_height],
+                            confidence=conf,
+                        ))
 
-                            # Convert to relative coordinates [x, y, width, height]
-                            x1, y1, x2, y2 = bbox
-                            rel_x = x1 / img_width
-                            rel_y = y1 / img_height
-                            rel_w = (x2 - x1) / img_width
-                            rel_h = (y2 - y1) / img_height
+                    # --- Pedestrian detections: write all raw detections, overlay track_id where tracker confirmed ---
+                    ped_label = class_names[pedestrian_class_id] if (
+                        class_names and pedestrian_class_id < len(class_names)
+                    ) else f"class_{pedestrian_class_id}"
 
-                            # Get class name
-                            if class_names and class_id < len(class_names):
-                                class_name = class_names[class_id]
-                            else:
-                                class_name = f"class_{class_id}"
+                    # Build a bbox→track_id map from confirmed tracker output
+                    track_id_map = {}
+                    for i in range(len(tracked_peds)):
+                        key = tuple(tracked_peds.xyxy[i].tolist())
+                        track_id_map[key] = int(tracked_peds.tracker_id[i]) if tracked_peds.tracker_id is not None else -1
 
-                            # Create FiftyOne detection
-                            fo_detection = fo.Detection(
-                                label=class_name,
-                                bounding_box=[rel_x, rel_y, rel_w, rel_h],
-                                confidence=float(confidence)
-                            )
-                            fo_detections.append(fo_detection)
+                    # Always write every pedestrian detection; attach track_id if tracker confirmed it
+                    for i in range(len(ped_sv)):
+                        bbox = ped_sv.xyxy[i]
+                        conf = float(ped_sv.confidence[i]) if ped_sv.confidence is not None else 1.0
+                        x1, y1, x2, y2 = bbox
+                        tid = track_id_map.get(tuple(bbox.tolist()), -1)
+                        fo_detections.append(fo.Detection(
+                            label=ped_label,
+                            bounding_box=[x1 / img_width, y1 / img_height,
+                                          (x2 - x1) / img_width, (y2 - y1) / img_height],
+                            confidence=conf,
+                            track_id=tid if tid != -1 else None,
+                            tracker_filled=False,
+                        ))
 
-                    # Save detections to sample
+                    # --- Gap-fill: RF-DETR missed pedestrians → use Kalman-predicted lost tracks ---
+                    if not rfdetr_detected_peds and hasattr(tracker, "lost_tracks"):
+                        for track in tracker.lost_tracks:
+                            try:
+                                x1, y1, x2, y2 = track.tlbr
+                                x1 = float(np.clip(x1, 0, img_width))
+                                y1 = float(np.clip(y1, 0, img_height))
+                                x2 = float(np.clip(x2, 0, img_width))
+                                y2 = float(np.clip(y2, 0, img_height))
+                                if x2 <= x1 or y2 <= y1:
+                                    continue
+                                conf = float(getattr(track, "score", 0.0))
+                                tid = int(getattr(track, "track_id", -1))
+                                fo_detections.append(fo.Detection(
+                                    label=ped_label,
+                                    bounding_box=[x1 / img_width, y1 / img_height,
+                                                  (x2 - x1) / img_width, (y2 - y1) / img_height],
+                                    confidence=conf,
+                                    track_id=tid,
+                                    tracker_filled=True,
+                                ))
+                                tracker_filled_count += 1
+                            except Exception as te:
+                                logging.debug(f"Skipping lost track: {te}")
+
                     sample[pred_key] = fo.Detections(detections=fo_detections)
+                    sample.save()
                     processed_count += 1
 
                 except Exception as e:
@@ -2413,6 +2495,7 @@ class CustomRFDETRObjectDetection:
                     continue
 
             logging.info(f"Inference completed on {processed_count}/{len(dataset_view)} samples")
+            logging.info(f"Tracker gap-filled {tracker_filled_count} pedestrian detections")
             logging.info(f"Predictions saved to field '{pred_key}'")
 
         except Exception as e:
