@@ -1,0 +1,4 @@
+# MSight localization dependencies
+msight-base
+msight-core
+msight-vision

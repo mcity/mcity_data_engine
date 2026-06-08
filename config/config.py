@@ -320,6 +320,13 @@ WORKFLOWS = {
     }
 }
 
+MSIGHT_CONFIG = {
+    "run_localization": True,
+    "detection_field": "pred_od_rfdetr_2xlarge-gs_catherine_zina1",
+    "loc_maps": "MSight/data/calibration_results_ashley_huron.npz",
+    "intrinsics": "MSight/data/ashley_huron_intrinsic.json",
+}
+
 """Global settings"""
 #: Non-persistent datasets are deleted from the database each time the database is shut down
 PERSISTENT = True
