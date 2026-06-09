@@ -549,7 +549,7 @@ def cleanup_memory(do_extensive_cleanup=False):
 def _run_msight_localization(dataset: fo.Dataset) -> None:
     """Run MSight localization when MSIGHT_CONFIG['run_localization'] is True.
 
-    Installs MSIGHT/requirements.txt if msight_base is not yet importable,
+    Installs MSight/requirements.txt if msight_base is not yet importable,
     then localizes the configured detection_field and writes lat/lon detections
     and keypoints back to the dataset.
     """
@@ -561,13 +561,13 @@ def _run_msight_localization(dataset: fo.Dataset) -> None:
     try:
         importlib.import_module("msight_base")
     except ModuleNotFoundError:
-        logging.info("msight_base not found — running MSIGHT/install.sh")
-        install_script = os.path.join(os.path.dirname(__file__), "MSIGHT", "install.sh")
+        logging.info("msight_base not found — running MSight/install.sh")
+        install_script = os.path.join(os.path.dirname(__file__), "MSight", "install.sh")
         result = subprocess.run(
             ["bash", install_script], capture_output=True, text=True
         )
         if result.returncode != 0:
-            logging.error(f"MSIGHT install failed:\n{result.stderr}")
+            logging.error(f"MSight install failed:\n{result.stderr}")
             return
         logging.info(result.stdout)
         importlib.invalidate_caches()
@@ -580,7 +580,7 @@ def _run_msight_localization(dataset: fo.Dataset) -> None:
             load_locmaps,
         )
     except ImportError as exc:
-        logging.error(f"Could not import MSIGHT localization modules: {exc}")
+        logging.error(f"Could not import MSight localization modules: {exc}")
         return
 
     detection_field = MSIGHT_CONFIG.get("detection_field")
