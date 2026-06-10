@@ -83,3 +83,6 @@ datasets:
   - name: gs_catherine_zina1
     loader_fct: load_mcity_31k
     hf_dataset_name: mcity-engineering/gs_catherine_zina11
+  - name: "gs_gen_zina_msight1"
+    loader_fct: "load_custom_dataset"
+    v51_type: "FiftyOneDataset"

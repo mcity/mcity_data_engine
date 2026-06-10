@@ -6,7 +6,7 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "gs_catherine_zina1",
+    "name": "gs_gen_zina_msight1",
     "n_samples": None,
     "custom_view": None,
 }
@@ -312,9 +312,9 @@ WORKFLOWS = {
         "thresholds": {"confidence": 0.2},
     },
     "data_ingest": {
-        "dataset_name": "custom2",
+        "dataset_name": "gs_gen_zina_msight",
         "annotation_format": "auto",  # Options: "auto", "coco", "voc", "yolo", "image_only", "video"
-        "dataset_dir": "/home/dataengine/Downloads/vid",
+        "dataset_dir": "/home/dataengine/Mcity/sip_s3_data/gs_gen_zina",
         "split_percentages": [0.7, 0.15, 0.15],  # Optional train/val/test
         "fps": 20, #Frames per second to convert a Video dataset to Fiftyone Image Dataset
     }
@@ -322,7 +322,7 @@ WORKFLOWS = {
 
 MSIGHT_CONFIG = {
     "run_localization": True,
-    "detection_field": "pred_od_rfdetr_2xlarge-"+SELECTED_DATASET.name,
+    "detection_field": "pred_od_rfdetr_2xlarge-"+SELECTED_DATASET['name'],
     "loc_maps": "MSight/data/calibration_results_ashley_huron.npz",
     "intrinsics": "MSight/data/ashley_huron_intrinsic.json",
 }
@@ -347,7 +347,7 @@ HF_DO_UPLOAD = False
 
 """Weights and Biases Config"""
 #: Determines if tracking with Weights and Biases is activated
-WANDB_ACTIVE = True
+WANDB_ACTIVE = False
 
 """Voxel51 Config"""
 #: Address for Voxel51 connection
