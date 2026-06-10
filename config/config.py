@@ -316,13 +316,13 @@ WORKFLOWS = {
         "annotation_format": "auto",  # Options: "auto", "coco", "voc", "yolo", "image_only", "video"
         "dataset_dir": "/home/dataengine/Downloads/vid",
         "split_percentages": [0.7, 0.15, 0.15],  # Optional train/val/test
-        "fps": 2, #Frames per second to convert a Video dataset to Fiftyone Image Dataset
+        "fps": 20, #Frames per second to convert a Video dataset to Fiftyone Image Dataset
     }
 }
 
 MSIGHT_CONFIG = {
     "run_localization": True,
-    "detection_field": "pred_od_rfdetr_2xlarge-gs_catherine_zina1",
+    "detection_field": "pred_od_rfdetr_2xlarge-"+SELECTED_DATASET.name,
     "loc_maps": "MSight/data/calibration_results_ashley_huron.npz",
     "intrinsics": "MSight/data/ashley_huron_intrinsic.json",
 }
