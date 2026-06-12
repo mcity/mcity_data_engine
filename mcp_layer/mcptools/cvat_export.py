@@ -60,11 +60,10 @@ def export_to_cvat(
         schema = dataset.get_field_schema()
 
         label_field = None
-        # Use caller-supplied classes (manual path) or derive from predictions (auto path)
         classes = list(classes) if classes else []
         if with_predictions:
             pred_fields = [f for f in schema.keys() if f.startswith("pred_od_")]
-            # Prediction field may not be committed to MongoDB yet — wait for it
+            # Prediction field may not be in MongoDB yet; poll for it.
             if not pred_fields:
                 for attempt in range(10):
                     time.sleep(2)
@@ -98,19 +97,46 @@ def export_to_cvat(
             task_id = task.id
             logging.info(f"Created CVAT task {task_id} for dataset '{dataset_name}'")
 
-            file_objects = [open(p, "rb") for p in image_paths]
-            try:
-                client.api_client.tasks_api.create_data(
-                    id=task_id,
-                    data_request=DataRequest(
-                        image_quality=70,
-                        client_files=file_objects,
-                    ),
-                    _content_type="multipart/form-data",
-                )
-            finally:
-                for f in file_objects:
-                    f.close()
+            _UPLOAD_RETRIES = 3
+            upload_ok = False
+            for attempt in range(_UPLOAD_RETRIES):
+                file_objects = [open(p, "rb") for p in image_paths]
+                try:
+                    client.api_client.tasks_api.create_data(
+                        id=task_id,
+                        data_request=DataRequest(
+                            image_quality=70,
+                            client_files=file_objects,
+                        ),
+                        _content_type="multipart/form-data",
+                    )
+                    upload_ok = True
+                    break
+                except Exception as upload_err:
+                    err_str_u = str(upload_err)
+                    is_transient = any(
+                        code in err_str_u for code in ("504", "502", "503", "Gateway Timeout")
+                    )
+                    if is_transient and attempt < _UPLOAD_RETRIES - 1:
+                        logging.warning(
+                            f"[CVAT] Upload timeout (attempt {attempt+1}/{_UPLOAD_RETRIES}), "
+                            f"retrying in {5*(attempt+1)}s..."
+                        )
+                        time.sleep(5 * (attempt + 1))
+                        continue
+                    try:
+                        client.tasks.remove(task_id)
+                        logging.warning(f"[CVAT] Cleaned up orphaned task {task_id}")
+                    except Exception:
+                        pass
+                    raise upload_err
+                finally:
+                    for f in file_objects:
+                        f.close()
+
+            if not upload_ok:
+                # Should not reach here (raise above), but guard against logic errors.
+                raise RuntimeError("Image upload failed after all retries.")
 
             if with_predictions and label_field:
                 with tempfile.TemporaryDirectory() as tmp_dir:
@@ -158,7 +184,12 @@ def export_to_cvat(
         err_str = str(e)
         tb = traceback.format_exc()
 
-        # Parse known CVAT API errors into clean user-facing messages
+        if any(code in err_str for code in ("504", "502", "503", "Gateway Timeout", "Service Unavailable")):
+            return (
+                "CVAT_TIMEOUT_ERROR: CVAT timed out while uploading images. "
+                "This usually happens with large datasets or when the CVAT server is under load. "
+                "Please try again."
+            )
         if "403" in err_str or "Forbidden" in err_str:
             if "maximum number of tasks" in err_str or "maximum number of tasks" in tb:
                 return (
@@ -185,7 +216,6 @@ def export_to_cvat(
                 f"Please check CVAT_URL in .env (currently: {CVAT_URL})."
             )
 
-        # Unknown error — return without traceback
         logging.warning(f"[CVAT] export_to_cvat failed: {tb}")
         return f"CVAT upload failed: {err_str}"
 

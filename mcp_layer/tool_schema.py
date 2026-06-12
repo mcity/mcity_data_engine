@@ -44,6 +44,41 @@ tools = [
         {
             "type": "function",
             "function": {
+                "name": "confirm_export",
+                "description": (
+                    "Call this ONLY after the user has explicitly confirmed they want to export "
+                    "(e.g., responded 'yes', 'proceed', 'go ahead', 'sounds good'). "
+                    "This records their consent and unlocks the export tool for this session. "
+                    "After calling this, immediately call export_to_cvat or export_to_label_studio "
+                    "with the classes from SESSION_STATE manual_classes. "
+                    "Do NOT call this speculatively — only call it when the user has actually confirmed."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "confirm_run",
+                "description": (
+                    "Call this ONLY after the user has explicitly confirmed they want to start auto-labeling "
+                    "(e.g., responded 'yes', 'proceed', 'go ahead', 'start it', 'run it'). "
+                    "This records their consent and unlocks the run_auto_labeling tool for this session. "
+                    "After calling this, immediately call run_auto_labeling. "
+                    "Do NOT call this speculatively — only call it when the user has actually confirmed."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "select_workflow",
                 "description": (
                     "Call this ONLY at the very start of a session when the user picks a workflow "
@@ -56,7 +91,7 @@ tools = [
                     "properties": {
                         "workflow_name": {
                             "type": "string",
-                            "description": "The workflow to activate: auto_labeling, class_mapping, anomaly_detection, embedding_selection, auto_labeling_zero_shot, or ensemble_selection."
+                            "description": "The workflow name the user selected. Must come from the user's message — do not infer or guess."
                         }
                     },
                     "required": ["workflow_name"]
@@ -80,18 +115,20 @@ tools = [
             "function": {
                 "name": "switch_workflow",
                 "description": (
-                    "Call this ONLY when the user explicitly asks to change to a DIFFERENT workflow "
-                    "mid-session (e.g. 'let me try anomaly detection instead', 'start over with class mapping'). "
-                    "Do NOT call this after a workflow completes, to restart the current workflow, "
-                    "or because the session reached a natural end — those are NOT switch triggers. "
-                    "This resets all dataset and parameter state."
+                    "Call this in two cases: "
+                    "(1) the user names a specific different workflow to switch to "
+                    "(e.g. 'switch to class mapping', 'let me try anomaly detection') — pass that workflow name; OR "
+                    "(2) the user wants to start over or restart from scratch within the current workflow — "
+                    "pass the current workflow name to reset all state back to dataset selection. "
+                    "Do NOT call this if the user says they want 'a different workflow' without naming one — "
+                    "use send_reply to present the six workflow options and ask which one instead."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "workflow_name": {
                             "type": "string",
-                            "description": "The different workflow to switch to: auto_labeling, class_mapping, anomaly_detection, embedding_selection, auto_labeling_zero_shot, or ensemble_selection."
+                            "description": "The exact workflow name the user stated. Must come from the user's message — do not infer or guess."
                         }
                     },
                     "required": ["workflow_name"]
@@ -640,6 +677,30 @@ tools = [
                         }
                     },
                     "required": ["backend"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "set_labeling_path",
+                "description": (
+                    "Call this IMMEDIATELY when the user names their labeling path at Step 3b. "
+                    "Use 'manual' when the user says 'Manual Labeling', 'annotate myself', etc. "
+                    "Use 'auto' when the user says 'Auto Generated Labeling', 'run a model', etc. "
+                    "This MUST be called before any export or model tool — it unlocks the correct "
+                    "downstream tools and persists the path so backend switches do not lose it."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "enum": ["manual", "auto"],
+                            "description": "'manual' for Manual Labeling, 'auto' for Auto Generated Labeling."
+                        }
+                    },
+                    "required": ["path"]
                 }
             }
         },

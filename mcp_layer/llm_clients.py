@@ -85,9 +85,7 @@ class OpenAIClient(BaseLLMClient):
         kwargs = dict(model=self.model, messages=messages, temperature=0.1)
         if tools:
             kwargs["tools"] = tools
-            # GPT-4o sometimes emits parallel tool calls with missing required fields
-            # when tool_choice="required". Disabling parallel calls prevents this.
-            kwargs["parallel_tool_calls"] = False
+            kwargs["parallel_tool_calls"] = False  # prevents missing-field errors with tool_choice="required"
         if tool_choice:
             kwargs["tool_choice"] = tool_choice
         response = await self.client.chat.completions.create(**kwargs)
@@ -123,8 +121,19 @@ class GeminiClient(BaseLLMClient):
         self.model = genai.GenerativeModel(model_name="gemini-1.5-flash")
 
     async def chat(self, messages, tools=None, tool_choice=None):
-        # Gemini does not support tool_choice — ignored.
-        parts = [{"role": m["role"], "parts": [m["content"]]} for m in messages]
+        # Gemini: no tool use; skip system/tool roles; map "assistant" → "model".
+        parts = []
+        for m in messages:
+            role = m.get("role", "")
+            content = m.get("content", "")
+            if role in ("system", "tool") or not isinstance(content, str):
+                continue
+            gemini_role = "model" if role == "assistant" else role
+            parts.append({"role": gemini_role, "parts": [content]})
+        while parts and parts[0]["role"] != "user":
+            parts.pop(0)
+        if not parts:
+            parts = [{"role": "user", "parts": [""]}]
         try:
             response = await self.model.generate_content_async(parts, generation_config={"temperature": 0.1})
             return _FakeMessage(content=response.text.strip(), tool_calls=[])
@@ -146,7 +155,7 @@ class ClaudeClient(BaseLLMClient):
         self.model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
     async def chat(self, messages, tools=None, tool_choice=None):
-        system, anthropic_messages = self._to_anthropic_messages(messages)
+        system_parts, anthropic_messages = self._to_anthropic_messages(messages)
 
         if not anthropic_messages:
             anthropic_messages = [{"role": "user", "content": "Hello"}]
@@ -158,14 +167,16 @@ class ClaudeClient(BaseLLMClient):
             "temperature": 0.1,
         }
 
-        if system:
-            # Cache the system prompt — ~300 lines, identical every turn.
-            # Ephemeral cache lasts 5 minutes; reads cost 0.1x vs 1x uncached.
-            kwargs["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+        if system_parts:
+            # Only cache the first (static) block; dynamic injections don't get cache_control.
+            system_blocks = [
+                {"type": "text", "text": system_parts[0], "cache_control": {"type": "ephemeral"}},
+                *[{"type": "text", "text": part} for part in system_parts[1:]],
+            ]
+            kwargs["system"] = system_blocks
 
         if tools:
             converted = self._convert_tools(tools)
-            # Cache the tool list by marking the last entry. Tools are static at startup.
             if converted:
                 converted[-1]["cache_control"] = {"type": "ephemeral"}
             kwargs["tools"] = converted
@@ -197,15 +208,7 @@ class ClaudeClient(BaseLLMClient):
 
     @staticmethod
     def _to_anthropic_messages(openai_messages: list) -> tuple[str, list]:
-        """
-        Convert OpenAI-style messages to (system_str, anthropic_messages).
-
-        role:"system" entries are collected and joined as the Anthropic system parameter.
-        role:"tool" entries are grouped into the preceding role:"user" message as
-        type:"tool_result" blocks (Anthropic requires multiple results in one user message).
-        role:"assistant" entries with tool_calls become type:"tool_use" blocks.
-        Consecutive role:"user" entries are merged to satisfy Anthropic's alternation rules.
-        """
+        """Convert OpenAI-format messages to Anthropic format (system list + messages list)."""
         system_parts: list[str] = []
         result: list[dict] = []
 
@@ -289,7 +292,7 @@ class ClaudeClient(BaseLLMClient):
             if m.get("content") not in (None, "", [], [{"type": "text", "text": ""}])
         ]
 
-        return "\n\n".join(system_parts), result
+        return system_parts, result
 
     @staticmethod
     def _to_fake_message(response) -> "_FakeMessage":

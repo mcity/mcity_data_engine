@@ -1,5 +1,3 @@
-# mcp_layer/host_utils.py
-
 import requests
 
 

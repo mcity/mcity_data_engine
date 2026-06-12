@@ -1,23 +1,13 @@
-# mcp_layer/validate_workflow_state.py
 """
-Pydantic layer over WORKFLOW_STATE in config.py.
-
-Provides:
-  - Typed schema for session state (WorkflowState + per-workflow substates)
-  - Typed tool input contracts validated in chat_pipeline.py before any MCP
-    tool call, catching hallucinated fields and wrong types
-  - can_run_* precondition methods that block run tools if required config is missing
-  - can_export_to_cvat / can_import_from_cvat on AutoLabelingState
-  - Workflow dependency rules (ensemble_selection requires zero_shot first)
-  - Persistence: load() reads from config.py, save() writes back
-  - Migration: handles old flat WORKFLOW_STATE dict format gracefully
+Pydantic state machine over WORKFLOW_STATE in config.py.
+Provides typed schemas, precondition guards, tool input validation, and persistence.
 """
 
 import ast
 import importlib
 import logging
 from pathlib import Path
-from typing import Literal, Optional
+from typing import ClassVar, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -128,7 +118,7 @@ def validate_tool_input(fn_name: str, fn_args: dict) -> tuple[bool, str, dict]:
 class AutoLabelingState(BaseModel):
     model_config = ConfigDict(extra="forbid")
     labeling_path: Literal["manual", "auto", ""] = ""
-    labeling_backend: Literal["cvat", "label_studio", ""] = ""
+    labeling_backend: Literal["cvat", "label_studio", "both", ""] = ""
     manual_classes: list[str] = []
     models_listed: bool = False
     model_configured: bool = False
@@ -137,6 +127,31 @@ class AutoLabelingState(BaseModel):
     cvat_task_id: int = 0
     ls_task_ids: list[int] = []
     labels_imported: bool = False
+    export_confirmed: bool = False
+    run_confirmed: bool = False
+    # True while the pre-run confirmation summary is shown; gates confirm_run tool.
+    run_awaiting_confirmation: bool = False
+    model_source: str = ""
+    model_name: str = ""
+    # "" = Zone A (mutable), "annotating" = post-export, "training" = post-run, "complete" = terminal
+    phase: Literal["", "annotating", "training", "complete"] = ""
+
+    _RESET_SEQUENCE: ClassVar[list[str]] = [
+        "models_listed",
+        "model_configured",
+        "hyperparams_confirmed",
+        "auto_labeling_complete",
+        "labels_imported",
+    ]
+
+    def reset_from_step(self, step: str) -> None:
+        """Clear all pipeline flags at and after `step` in the reset sequence."""
+        try:
+            idx = self._RESET_SEQUENCE.index(step)
+        except ValueError:
+            return
+        for field in self._RESET_SEQUENCE[idx:]:
+            setattr(self, field, False)
 
     def can_configure_auto_labeling(self) -> tuple[bool, str]:
         if not self.models_listed:
@@ -308,6 +323,9 @@ class WorkflowState(BaseModel):
     auto_labeling_zero_shot: Optional[ZeroShotAutoLabelingState] = None
     ensemble_selection: Optional[EnsembleSelectionState] = None
 
+    # Triggers a WORKFLOW_RESET context injection in chat_server on next request.
+    workflow_just_reset: bool = False
+
     @model_validator(mode="after")
     def dataset_confirmed_requires_name(self) -> "WorkflowState":
         if self.dataset_confirmed and not self.dataset_name:
@@ -324,6 +342,11 @@ class WorkflowState(BaseModel):
             )
         return True, ""
 
+    def reset_auto_labeling_from(self, step: str) -> None:
+        if self.auto_labeling is not None:
+            self.auto_labeling.reset_from_step(step)
+        self.save()
+
     def check_workflow_dependencies(
         self, workflow_name: str, completed_workflows: list[str]
     ) -> tuple[bool, str]:
@@ -338,7 +361,7 @@ class WorkflowState(BaseModel):
         return True, ""
 
     def valid_tool_names(self) -> set[str] | None:
-        """Return the set of tools valid for the current workflow step, or None to fail open."""
+        """Return valid tools for the current step, or None to expose all tools."""
         ALWAYS = {"send_reply", "switch_workflow"}
 
         if not self.workflow_name:
@@ -368,40 +391,59 @@ class WorkflowState(BaseModel):
         backend = (al.labeling_backend if al else "") or ""
         ls = backend == "label_studio"
 
+        if al and al.phase == "complete":
+            return ALWAYS | {"launch_voxel51_session"}
+        if al and al.phase in ("annotating", "training"):
+            import_tool = "import_from_label_studio" if ls else "import_from_cvat"
+            return ALWAYS | {import_tool}
+
+        # list_datasets is excluded after dataset selection to prevent LLM listing loops.
         if not al or not al.labeling_path:
             if backend in ("cvat", "label_studio"):
-                export_tool = "export_to_label_studio" if ls else "export_to_cvat"
-                return ALWAYS | {
-                    "list_model_sources_and_models",
-                    export_tool,
-                    "set_labeling_backend",
-                }
-            return ALWAYS | {
-                "list_model_sources_and_models",
-                "export_to_cvat", "export_to_label_studio",
-                "get_labeling_backend", "set_labeling_backend",
-            }
+                # Backend confirmed, awaiting path selection.
+                return ALWAYS | {"set_selected_dataset", "set_labeling_path", "set_labeling_backend"}
+            # Backend not yet confirmed — user must pick one first.
+            return ALWAYS | {"set_selected_dataset", "get_labeling_backend", "set_labeling_backend"}
 
         if al.labeling_path == "manual":
             if al.labels_imported:
                 return ALWAYS | {"launch_voxel51_session"}
             if ls:
-                return ALWAYS | (
-                    {"import_from_label_studio"} if al.ls_task_ids
-                    else {"export_to_label_studio"}
-                )
-            return ALWAYS | (
-                {"import_from_cvat"} if al.cvat_task_id > 0
-                else {"export_to_cvat"}
-            )
+                if al.ls_task_ids:
+                    return ALWAYS | {"import_from_label_studio"}
+                if al.manual_classes and not al.export_confirmed:
+                    return ALWAYS | {"confirm_export", "set_selected_dataset", "set_labeling_backend", "set_labeling_path"}
+                return ALWAYS | {"set_selected_dataset", "export_to_label_studio", "set_labeling_backend", "set_labeling_path"}
+            else:
+                if al.cvat_task_id > 0:
+                    return ALWAYS | {"import_from_cvat"}
+                if al.manual_classes and not al.export_confirmed:
+                    return ALWAYS | {"confirm_export", "set_selected_dataset", "set_labeling_backend", "set_labeling_path"}
+                return ALWAYS | {"set_selected_dataset", "export_to_cvat", "set_labeling_backend", "set_labeling_path"}
 
         if al.labeling_path == "auto":
             if not al.models_listed:
-                return ALWAYS | {"list_model_sources_and_models"}
+                return ALWAYS | {"set_selected_dataset", "list_model_sources_and_models", "set_labeling_backend", "set_labeling_path"}
             if not al.model_configured:
-                return ALWAYS | {"configure_auto_labeling"}
+                return ALWAYS | {
+                    "set_selected_dataset",
+                    "configure_auto_labeling",
+                    "list_model_sources_and_models",
+                    "set_labeling_backend",
+                    "set_labeling_path",
+                }
             if not al.auto_labeling_complete:
-                return ALWAYS | {"set_auto_labeling_hyperparams", "run_auto_labeling"}
+                base = ALWAYS | {
+                    "set_selected_dataset",
+                    "configure_auto_labeling",
+                    "list_model_sources_and_models",
+                    "set_auto_labeling_hyperparams",
+                    "set_labeling_backend",
+                    "set_labeling_path",
+                }
+                if al.run_awaiting_confirmation and not al.run_confirmed:
+                    return base | {"confirm_run"}
+                return base | {"run_auto_labeling"}
             if al.labels_imported:
                 return ALWAYS | {"launch_voxel51_session"}
             import_tool = "import_from_label_studio" if ls else "import_from_cvat"
@@ -479,7 +521,25 @@ class WorkflowState(BaseModel):
             importlib.reload(_cc)
             raw = dict(_cc.WORKFLOW_STATE)
             raw = cls._migrate(raw)
-            return cls.model_validate(raw)
+            state = cls.model_validate(raw)
+
+            # TTL: if config.py has not been written in over an hour, the session
+            # that set run_awaiting_confirmation / export_confirmed is stale.
+            # Reset those flags so a fresh conversation does not resume a dead gate.
+            try:
+                import time as _time
+                age = _time.time() - CONFIG_PATH.stat().st_mtime
+                if age > 3600 and state.auto_labeling:
+                    if state.auto_labeling.run_awaiting_confirmation:
+                        state.auto_labeling.run_awaiting_confirmation = False
+                        logging.warning("[STATE] TTL: cleared stale run_awaiting_confirmation")
+                    if state.auto_labeling.export_confirmed:
+                        state.auto_labeling.export_confirmed = False
+                        logging.warning("[STATE] TTL: cleared stale export_confirmed")
+            except Exception:
+                pass
+
+            return state
         except Exception as e:
             logging.warning(f"[STATE] Failed to load WorkflowState: {e} — using defaults")
             return cls()
@@ -514,10 +574,18 @@ class WorkflowState(BaseModel):
             al.setdefault("ls_task_ids", [])
             al.setdefault("manual_classes", [])
             al.setdefault("models_listed", False)
+            al.setdefault("export_confirmed", False)
+            al.setdefault("run_confirmed", False)
+            al.setdefault("run_awaiting_confirmation", False)
+            al.setdefault("model_source", "")
+            al.setdefault("model_name", "")
+            al.setdefault("phase", "")
+            al.pop("pending_dataset_change", None)
 
         known = {
             "workflow_name", "dataset_name", "dataset_confirmed",
-            "labeled_dataset_name", "auto_labeling", "class_mapping",
+            "labeled_dataset_name",
+            "auto_labeling", "class_mapping",
             "anomaly_detection", "embedding_selection",
             "auto_labeling_zero_shot", "ensemble_selection",
         }
@@ -564,6 +632,7 @@ class WorkflowState(BaseModel):
         if workflow_name in substate_map:
             field, klass = substate_map[workflow_name]
             setattr(fresh, field, klass())
+        fresh.workflow_just_reset = True
         fresh.save()
         return fresh
 
