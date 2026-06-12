@@ -43,6 +43,12 @@ from workflows.auto_labeling import (
     UltralyticsObjectDetection,
     ZeroShotObjectDetection,
 )
+from workflows.rfdetr_keypoint import RFDETRKeypointDetection
+# from workflows.vitpose_keypoint import (
+#     ViTPoseKeypointDetection,
+#     RoIKeypointDetection,
+#     download_vitpose_weights,
+# )
 from workflows.aws_download import AwsDownloader
 from workflows.class_mapping import ClassMapper
 from workflows.embedding_selection import EmbeddingSelection
@@ -761,10 +767,13 @@ class WorkflowExecutor:
 
                     # Config
                     SUPPORTED_MODEL_SOURCES = [
-                        "hf_models_objectdetection",
-                        "ultralytics",
-                        "custom_codetr",
-                        "roboflow",
+                        "hf_models_objectdetection",  # [0]
+                        "ultralytics",                # [1]
+                        "custom_codetr",              # [2]
+                        "roboflow",                   # [3]
+                        "roboflow_keypoint",          # [4]
+                        "vitpose",                    # [5] standalone ViTPose fine-tuning
+                        "roi_keypoint",               # [6] two-stage: RF-DETR + ViTPose
                     ]
 
                     # Common parameters between models
@@ -990,6 +999,187 @@ class WorkflowExecutor:
                             finally:
                                 wandb_close(wandb_exit_code)
 
+                    if SUPPORTED_MODEL_SOURCES[4] in selected_model_source:
+                        # RF-DETR with keypoint head
+                        config_rfdetr_kp = config_autolabel["roboflow_keypoint"]
+
+                        shared_config = {
+                            "epochs": config_autolabel["epochs"],
+                            "learning_rate": config_autolabel["learning_rate"],
+                            "weight_decay": config_autolabel["weight_decay"],
+                            "early_stop_patience": config_autolabel["early_stop_patience"],
+                            "early_stop_threshold": config_autolabel["early_stop_threshold"],
+                        }
+
+                        run_config_kp = {
+                            "export_dataset_root": config_rfdetr_kp["export_dataset_root"],
+                            "mode": config_autolabel["mode"],
+                            "inference_settings": config_autolabel["inference_settings"],
+                            "config": None,
+                            # FiftyOne data-path selector — MUST be forwarded so that
+                            # RFDETRKeypointDetection.train() uses the FO-native loader
+                            # (prefetch_fo_split → FiftyOneKeypointDataset) instead of
+                            # the COCO-export path.  Without this flag, fo_native
+                            # defaults to False and all keypoint visibilities are 0
+                            # (COCO fallback), causing OKS=nan for the entire run.
+                            "fo_native": config_rfdetr_kp.get("fo_native", False),
+                            "detection_field": config_rfdetr_kp.get("detection_field", "ground_truth"),
+                            "target_label": config_rfdetr_kp.get("target_label", "pedestrian"),
+                            "class_names": config_rfdetr_kp.get("class_names", ["pedestrian"]),
+                            "num_classes": config_rfdetr_kp.get("num_classes", 1),
+                            # Keypoint-specific
+                            "keypoint_field": config_rfdetr_kp["keypoint_field"],
+                            "keypoint_names": config_rfdetr_kp["keypoint_names"],
+                            "num_keypoints": len(config_rfdetr_kp["keypoint_names"]),
+                            "kp_xy_coef": config_rfdetr_kp.get("kp_xy_coef", 5.0),
+                            "kp_vis_coef": config_rfdetr_kp.get("kp_vis_coef", 1.0),
+                            "freeze_backbone_epochs": config_rfdetr_kp.get("freeze_backbone_epochs", 5),
+                            "freeze_bbox_head": config_rfdetr_kp.get("freeze_bbox_head", False),
+                            # RF-DETR parameters
+                            "batch_size": config_rfdetr_kp.get("batch_size", 8),
+                            "lr_encoder": config_rfdetr_kp.get("lr_encoder", None),
+                            "resolution": config_rfdetr_kp.get("resolution", 560),
+                            "pretrain_weights": config_rfdetr_kp.get("pretrain_weights", None),
+                        }
+
+                        for config in (
+                            pbar := tqdm(
+                                config_rfdetr_kp["configs"],
+                                desc="Processing RF-DETR Keypoint configurations",
+                            )
+                        ):
+                            pbar.set_description(f"RF-DETR Keypoint model {config}")
+                            run_config_kp["config"] = config
+
+                            try:
+                                wandb_exit_code = 0
+                                wandb_run = wandb_init(
+                                    run_name=config,
+                                    project_name="RF-DETR Keypoint Auto Labeling",
+                                    dataset_name=self.dataset_info["name"],
+                                    config=run_config_kp,
+                                    wandb_activate=True,
+                                )
+
+                                detector_kp = RFDETRKeypointDetection(
+                                    self.dataset, self.dataset_info, run_config_kp
+                                )
+
+                                detector_kp.convert_data()
+
+                                if "train" in mode:
+                                    logging.info(f"Training RF-DETR keypoint model: {config}")
+                                    detector_kp.train(run_config_kp, shared_config)
+
+                                if "inference" in mode:
+                                    logging.info(f"Running keypoint inference: {config}")
+                                    detector_kp.inference(
+                                        inference_settings=config_autolabel["inference_settings"]
+                                    )
+
+                            except Exception as e:
+                                logging.error(f"Error during RF-DETR keypoint workflow with {config}: {e}")
+                                wandb_exit_code = 1
+                            finally:
+                                wandb_close(wandb_exit_code)
+
+
+                    if SUPPORTED_MODEL_SOURCES[5] in selected_model_source:
+                        # ── vitpose: standalone ViTPose-B fine-tuning ───────────────
+                        config_vp = config_autolabel["vitpose"]
+                        kp_names_vp = config_vp.get("keypoint_names", ["ankle_center"])
+
+                        shared_config_vp = {
+                            "epochs":              config_autolabel["epochs"],
+                            "learning_rate":       config_autolabel["learning_rate"],
+                            "weight_decay":        config_autolabel["weight_decay"],
+                            "early_stop_patience": config_autolabel["early_stop_patience"],
+                        }
+                        run_config_vp = {
+                            "mode":                     config_autolabel["mode"],
+                            "vitpose_pretrain_weights": config_vp.get("vitpose_pretrain_weights", "usyd-community/vitpose-base-simple"),
+                            "vitpose_save_dir":         config_vp.get("vitpose_save_dir", "output/models/vitpose/"),
+                            "detection_field":          config_vp.get("detection_field", "ground_truth"),
+                            "keypoint_field":           config_vp.get("keypoint_field", "pedestrian_points"),
+                            "target_label":             config_vp.get("target_label", "pedestrian"),
+                            "keypoint_names":           kp_names_vp,
+                            "num_keypoints":            len(kp_names_vp),
+                            "kp_sigma":                 config_vp.get("kp_sigma", 0.089),
+                            "batch_size":               config_vp.get("batch_size", 32),
+                            "freeze_backbone":          config_vp.get("freeze_backbone", True),
+                            "freeze_backbone_epochs":   config_vp.get("freeze_backbone_epochs", 5),
+                        }
+
+                        try:
+                            wandb_exit_code = 0
+                            wandb_run = wandb_init(
+                                run_name="vitpose-finetune",
+                                project_name="ViTPose Fine-Tuning",
+                                dataset_name=self.dataset_info["name"],
+                                config=run_config_vp,
+                                wandb_activate=True,
+                            )
+                            vp_detector = ViTPoseKeypointDetection(
+                                self.dataset, self.dataset_info, run_config_vp
+                            )
+                            if "train" in mode:
+                                logging.info("Downloading ViTPose-B pretrained weights…")
+                                vp_detector.download_weights()
+                                logging.info("Fine-tuning ViTPose-B on GT RoI crops…")
+                                vp_detector.train(run_config_vp, shared_config_vp)
+                            if "inference" in mode:
+                                logging.info("ViTPose inference with GT boxes…")
+                                vp_detector.inference(
+                                    inference_settings=config_autolabel["inference_settings"]
+                                )
+                        except Exception as e:
+                            logging.error(f"Error in vitpose workflow: {e}")
+                            wandb_exit_code = 1
+                        finally:
+                            wandb_close(wandb_exit_code)
+
+                    if SUPPORTED_MODEL_SOURCES[6] in selected_model_source:
+                        # ── roi_keypoint: RF-DETR detect → ViTPose predict ──────────
+                        config_roi   = config_autolabel["roi_keypoint"]
+                        kp_names_roi = config_roi.get("keypoint_names", ["ankle_center"])
+
+                        run_config_roi = {
+                            "mode":                config_autolabel["mode"],
+                            "rfdetr_model":        config_roi.get("rfdetr_model", "rfdetr_2xlarge"),
+                            "pretrain_weights":    config_roi.get("pretrain_weights", None),
+                            "detection_threshold": config_roi.get("detection_threshold", 0.3),
+                            "vitpose_weights":     config_roi.get("vitpose_weights", None),
+                            "target_label":        config_roi.get("target_label", "pedestrian"),
+                            "keypoint_names":      kp_names_roi,
+                            "num_keypoints":       len(kp_names_roi),
+                            "kp_sigma":            config_roi.get("kp_sigma", 0.089),
+                        }
+
+                        try:
+                            wandb_exit_code = 0
+                            wandb_run = wandb_init(
+                                run_name=f"roi_kp-{config_roi.get('rfdetr_model','rfdetr_2xlarge')}",
+                                project_name="RoI Keypoint Inference",
+                                dataset_name=self.dataset_info["name"],
+                                config=run_config_roi,
+                                wandb_activate=True,
+                            )
+                            roi_detector = RoIKeypointDetection(
+                                self.dataset, self.dataset_info, run_config_roi
+                            )
+                            if "inference" in mode:
+                                logging.info(
+                                    "Running RoI Keypoint inference "
+                                    "(RF-DETR detect → ViTPose predict)…"
+                                )
+                                roi_detector.inference(
+                                    inference_settings=config_autolabel["inference_settings"]
+                                )
+                        except Exception as e:
+                            logging.error(f"Error in roi_keypoint workflow: {e}")
+                            wandb_exit_code = 1
+                        finally:
+                            wandb_close(wandb_exit_code)
 
                 elif workflow == "auto_labeling_zero_shot":
                     config = WORKFLOWS["auto_labeling_zero_shot"]
@@ -1022,6 +1212,13 @@ class WorkflowExecutor:
                         test_dataset_source=None,
                         test_dataset_target=None,
                     )
+                elif workflow == "vitpose_download":
+                    cfg = WORKFLOWS["vitpose_download"]
+                    download_vitpose_weights(
+                        model_name=cfg.get("vitpose_model", "usyd-community/vitpose-base-simple"),
+                        save_dir=cfg.get("save_dir", "output/models/vitpose/"),
+                    )
+
                 elif workflow == "data_ingest":
                     dataset = run_data_ingest()
 

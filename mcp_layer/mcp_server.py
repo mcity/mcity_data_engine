@@ -8,7 +8,9 @@ from mcptools import (
     zsal,
     ensemble_selection,
     data_ingest,
-    v51
+    v51,
+    cvat_export,
+    label_studio_export
 )
 
 if __name__ == "__main__":

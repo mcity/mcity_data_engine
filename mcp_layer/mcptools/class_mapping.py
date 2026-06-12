@@ -1,10 +1,8 @@
 from mcptools import mcp
-import subprocess
 import re
 import asyncio
 from pathlib import Path
 import os
-import ast
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from utils.dataset_loader import load_dataset
@@ -72,7 +70,7 @@ def configure_class_mapping_model(selected_model: str) -> str:
 
         modified.append(line)
 
-    CONFIG_PATH.write_text('\n'.join(modified))
+    CONFIG_PATH.write_text('\n'.join(modified) + "\n")
     return f"Class mapping model updated to `{selected_model}`."
 
 
@@ -108,7 +106,7 @@ def set_class_mapping_dataset_source(dataset_source: str) -> str:
         # Default case: keep the line
         modified.append(line)
 
-    CONFIG_PATH.write_text('\n'.join(modified))
+    CONFIG_PATH.write_text('\n'.join(modified) + "\n")
     # Load and validate the dataset
     try:
         dataset, dataset_info = load_dataset({"name": dataset_source, "n_samples": None})
@@ -153,7 +151,7 @@ def set_class_mapping_dataset_target(dataset_target: str) -> str:
         # Default case: keep the line
         modified.append(line)
 
-    CONFIG_PATH.write_text('\n'.join(modified))
+    CONFIG_PATH.write_text('\n'.join(modified) + "\n")
     dataset, dataset_info = load_dataset({"name": dataset_target, "n_samples": None})
     return f"Class Mapping dataset target set to `{dataset_target}`."
 
@@ -196,7 +194,7 @@ def set_class_mapping_candidate_labels(candidate_labels: dict) -> str:
     new_block.append(f'{indent}}},')
 
     updated_lines = lines[:start_idx] + new_block + lines[end_idx:]
-    CONFIG_PATH.write_text("\n".join(updated_lines))
+    CONFIG_PATH.write_text("\n".join(updated_lines) + "\n")
 
     return f"Candidate labels updated successfully:\n{candidate_labels}"
 

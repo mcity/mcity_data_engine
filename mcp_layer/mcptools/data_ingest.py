@@ -202,14 +202,12 @@ async def _run_data_ingest_streaming_core(
             nonlocal ds_name, samples
             combined_lines.append(f"[{source}] {line}")
             text = line.strip()
-            m = re.search(r'(\d+)\s*/\s*(\d+)', text)
-            if m:
-                try:
-                    cur, tot = int(m.group(1)), int(m.group(2))
-                    await _emit(emit, {"type": "progress", "data": {"current": cur, "total": tot}})
-                except: pass
-            n, s = _parse_name_samples(text)
-            if n and not ds_name: ds_name = n
+            # Target the specific ingestion line directly
+            ingest_match = re.search(r"Ingesting dataset:\s*([A-Za-z0-9_\-\.]+)", text)
+            if ingest_match:
+                ds_name = ingest_match.group(1)
+
+            _, s = _parse_name_samples(text)
             if s: samples = s
             await _emit(emit, {"type": "log", "data": {"msg": text}})
 
@@ -219,9 +217,14 @@ async def _run_data_ingest_streaming_core(
         log_path = LOG_DIR / "last_data_ingest_log.txt"
         _write(log_path, "".join(combined_lines))
 
-        _write(CONFIG_PATH, _read(backup_path))
-        try: backup_path.unlink(missing_ok=True)
-        except: pass
+        try:
+            if backup_path.exists():
+                _write(CONFIG_PATH, _read(backup_path))
+                backup_path.unlink(missing_ok=True)
+            else:
+                logging.warning("[INGEST] Backup not found — config.py not restored")
+        except Exception as restore_err:
+            logging.warning(f"[INGEST] Failed to restore config.py: {restore_err}")
 
         if not ds_name:
             ds_name = dataset_prefix or "custom_dataset"

@@ -11,6 +11,20 @@ SELECTED_DATASET = {
     "custom_view": None,
 }
 
+#: Runtime session state — managed by the agent via WorkflowState, do not edit manually
+WORKFLOW_STATE = {
+    "workflow_name": "",
+    "dataset_name": "",
+    "dataset_confirmed": False,
+    "labeled_dataset_name": "",
+    "auto_labeling": None,
+    "class_mapping": None,
+    "anomaly_detection": None,
+    "embedding_selection": None,
+    "auto_labeling_zero_shot": None,
+    "ensemble_selection": None,
+}
+
 #: Workflows and associated parameters
 WORKFLOWS = {
     "aws_download": {
@@ -68,18 +82,21 @@ WORKFLOWS = {
         },
     },
     "auto_labeling": {
-        "mode": [ 'inference'], #['train','inference']
+        "mode": ['inference'],
         "model_source": [
         # "hf_models_objectdetection",
         # "ultralytics",
         # "custom_codetr",
-        "roboflow",
+         "roboflow",         # fine-tune RF-DETR for detection
+        #"roboflow_keypoint",  # fine-tune RF-DETR with joint bbox+keypoint head
+        # "vitpose",          # fine-tune ViTPose-B on GT RoI crops (run before roi_keypoint)
+        # "roi_keypoint",     # two-stage inference: RF-DETR detect → ViTPose predict
         ],
         "n_worker_dataloader": 20,
         "epochs": 15,
         "early_stop_patience": 2,
         "early_stop_threshold": 0,
-        "learning_rate": 5e-05,
+        "learning_rate": 2e-05,
         "weight_decay": 0.0001,
         "max_grad_norm": 0.01,
         "inference_settings": {
@@ -152,6 +169,76 @@ WORKFLOWS = {
             "gradient_checkpointing": False,      # Memory optimization
             "early_stopping_min_delta": 0.0001,    # Minimum improvement for early stopping
             "early_stopping_use_ema": True,       # Use EMA model for early stopping
+        },
+        "roboflow_keypoint": {  # RF-DETR with dual bbox + keypoint heads
+            "export_dataset_root": "output/datasets/roboflow_kp_data/",
+            "configs": [
+                # "rfdetr_base",
+                # "rfdetr_large",
+                # "rfdetr_xlarge",
+                "rfdetr_2xlarge",
+            ],
+            # ── FiftyOne-native mode (no COCO export needed) ──────────
+            "fo_native": True,                      # read directly from FiftyOne
+            "detection_field": "ground_truth",      # fo.Detections field name
+            "keypoint_field":  "pedestrian_points", # fo.Keypoints field name
+            "target_label":    "pedestrian",        # only this label is used
+            "class_names":     ["pedestrian"],
+            "num_classes":     1,
+            # ── Keypoint configuration ────────────────────────────────
+            "keypoint_names": ["ankle_center"],     # midpoint between left+right ankles
+            "kp_xy_coef": 5.0,                      # weight for OKS coordinate loss
+            "kp_l1_coef": 2.0,                      # weight for L1 coordinate loss (prevents OKS dead zone when predictions are far from GT)
+            "kp_vis_coef": 1.0,                     # weight for visibility loss
+            "kp_sigma": 0.089,                      # OKS sigma for ankle_center (COCO ankle standard)
+            "val_iou_thresh": 0.2,                  # IoU threshold for TP matching during validation (0.3 tolerates frozen bbox head domain shift)
+            "freeze_backbone_epochs": 5,
+            "freeze_bbox_head": True,               # keep bbox/class/transformer frozen; train keypoint_embed only
+            # ── Training parameters ───────────────────────────────────
+            "batch_size": 8,
+            "lr_encoder": None,
+            "resolution": 880,  # rfdetr_2xlarge=880, xlarge=700, base/large=560
+            # ── Pre-trained weights ───────────────────────────────────
+            # Start from the COCO-pretrained checkpoint to benefit from
+            # the bbox head warm-start; keypoint head is re-initialised.
+            # Path was previously /home/dataengine/... (wrong machine path → silently
+            # skipped, model started randomly → TPs=0 all training). Fixed to NFS path.
+            "pretrain_weights": "/nfs/turbo/coe-mcity/rpatnaik/Mcity/rf-detr-data-engine/mcity_data_engine/output/models/rfdetr_kp/coco-2017-keypoints/rfdetr_2xlarge/best.pt",
+        },
+        "vitpose": {  # Standalone ViTPose-B fine-tuning on GT RoI crops
+            # ── ViTPose-B pretrained init (HuggingFace ID or local path) ───────────
+            # Downloaded automatically on first run; cached in vitpose_save_dir.
+            "vitpose_pretrain_weights": "usyd-community/vitpose-base-simple",
+            "model_name": "vitpose_base",  # used in FiftyOne field names: pred_kp_{model_name}-{dataset}
+            "resume_weights": None,        # set to vitpose_best.pt path to continue training from a checkpoint
+            "vitpose_save_dir": "output/models/vitpose/",
+            # ── Dataset / annotation ───────────────────────────────────────────────
+            "detection_field": "ground_truth", #"pred_od_rfdetr_2xlarge-ashley-huron-jan-2026",  # RF-DETR predicted boxes
+            "detection_conf_thresh": 0.2,           # min confidence for RF-DETR pedestrian boxes
+            "keypoint_field":  "pedestrian_points", # fo.Keypoints with ankle keypoints (GT)
+            "target_label":    "pedestrian",             #"class_3",           # label used in detection_field for pedestrians
+            "keypoint_names":  ["ankle_center"],
+            "kp_sigma": 0.089,
+            # ── Training parameters ────────────────────────────────────────────────
+            "val_split_fallback": 0.1,    # fraction of train used as val when no val split exists
+            "batch_size": 32,
+            "freeze_backbone": True,      # freeze ViT-B encoder for first N epochs
+            "freeze_backbone_epochs": 5,  # then unfreeze at 0.1× learning_rate
+        },
+        "roi_keypoint": {  # Two-head model: RF-DETR (Head 1) → ViTPose (Head 2)
+            # ── Head 1: RF-DETR detector ───────────────────────────────────────────
+            # Runs live on each image; detections saved to detection_field in FiftyOne.
+            "rfdetr_model":          "rfdetr_2xlarge",
+            "pretrain_weights":      "/nfs/turbo/coe-mcity/rpatnaik/Mcity/rf-detr-data-engine/mcity_data_engine/output/models/rfdetr_kp/coco-2017-keypoints/rfdetr_2xlarge/best.pt",
+            "detection_conf_thresh": 0.3,
+            "detection_field":       "pred_od_rfdetr_2xlarge-mcity-person-kp_bb",  # Head 1 output field
+            # ── Head 2: Fine-tuned ViTPose-B ───────────────────────────────────────
+            # Receives RoIs from Head 1; set to vitpose_best.pt from vitpose workflow.
+            "vitpose_weights": "output/models/vitpose/<dataset>/vitpose_best.pt",
+            # ── Shared annotation config ───────────────────────────────────────────
+            "target_label":   "pedestrian",
+            "keypoint_names": ["ankle_center"],
+            "kp_sigma": 0.089,
         },
         "ultralytics": {
             "export_dataset_root": "output/datasets/ultralytics_data/",
@@ -266,7 +353,7 @@ WORKFLOWS = {
     "ensemble_selection": {
         "field_includes": "pred_zsod_",  # V51 field used for detections, "pred_zsod_" default for zero-shot object detection models
         "agreement_threshold": 3,  # Threshold for n models necessary for agreement between models
-        "iou_threshold": 0.5,  # Threshold for IoU between bboxes to consider them as overlapping
+        "iou_threshold": 0.3,  # Threshold for IoU between bboxes to consider them as overlapping
         "max_bbox_size": 0.01,  # Value between [0,1] for the max size of considered bboxes
         "positive_classes": [  # Classes to consider, must be subset of available classes in the detections. Example for Vulnerable Road Users.
             "skater",
@@ -310,6 +397,12 @@ WORKFLOWS = {
             "Truck": ["truck", "pickup"],
         },
         "thresholds": {"confidence": 0.2},
+    },
+    "vitpose_download": {
+        # Download ViTPose-B pretrained weights from HuggingFace.
+        # Run this once before starting roi_keypoint training.
+        "vitpose_model": "usyd-community/vitpose-base-simple",
+        "save_dir":      "output/models/vitpose/",
     },
     "data_ingest": {
         "dataset_name": "gs_gen_zina_msight",

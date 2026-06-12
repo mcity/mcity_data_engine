@@ -1,34 +1,42 @@
-# mcp_layer/chat_server.py
+import asyncio
+import json
+import logging
+import os
+import sys
+from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastmcp import Client
+from fastapi.responses import StreamingResponse
 from fastmcp.client.transports import SSETransport
 
-import os
-from dotenv import load_dotenv
-import json
-import sys
-import os
 sys.path.append(os.path.dirname(__file__))
-from llm_clients import OpenAIClient, GroqClient, GeminiClient
-from tool_schema import tools
-import uuid, shutil, tempfile, logging, asyncio, json
-from pathlib import Path
-from fastapi import UploadFile, File, Form, HTTPException, BackgroundTasks
-from sse_starlette.sse import EventSourceResponse
-from mcptools.data_ingest import _run_data_ingest_streaming_core
 
+from chat_pipeline import ChatPipeline
+from host_utils import resolve_host
+from llm_clients import ClaudeClient, GeminiClient, GroqClient, OpenAIClient
+from tool_schema import tools
 
 load_dotenv()
 
-llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
-llm_map = {
+_LLM_PROVIDERS = {
     "openai": OpenAIClient,
     "groq": GroqClient,
-    "gemini": GeminiClient
+    "gemini": GeminiClient,
+    "claude": ClaudeClient,
+    "anthropic": ClaudeClient,  # alias
 }
-llm = llm_map[llm_provider]()
+
+llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
+if llm_provider not in _LLM_PROVIDERS:
+    logging.warning(
+        f"[STARTUP] Unknown LLM_PROVIDER '{llm_provider}'. "
+        f"Valid values: {list(_LLM_PROVIDERS)}. Falling back to 'openai'."
+    )
+    llm_provider = "openai"
+
+llm = _LLM_PROVIDERS[llm_provider]()
 
 app = FastAPI()
 app.add_middleware(
@@ -38,479 +46,453 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#host = os.getenv("PUBLIC_IP", "localhost")
-import os
-from dotenv import load_dotenv
+host = resolve_host()
+MCP_TRANSPORT = SSETransport(url=f"http://{host}:8000/sse")
+
+SYSTEM_PROMPT = (
+    Path(__file__).resolve().parent / "prompts" / "system_prompt.txt"
+).read_text()
 
 
-load_dotenv()
-host = os.getenv("PUBLIC_IP", "localhost")
+def _attach_source(message: str, source: str | None) -> str:
+    """Append a [source: ...] tag when the LLM supplied one, leave message untouched otherwise."""
+    if source and source.strip():
+        return f"{message.strip()}\n[source: {source.strip()}]"
+    return message
 
 
-def get_imds_token():
-    token_url = "http://169.254.169.254/latest/api/token"
-    headers = {"X-aws-ec2-metadata-token-ttl-seconds": "21600"}  # 6 hours
+def filter_tools_for_state(all_tools: list, state) -> list:
+    """Return tools valid for the current step; fails open on None state or exceptions."""
+    if state is None:
+        return all_tools
     try:
-        response = requests.put(token_url, headers=headers, timeout=2)
-        response.raise_for_status()
-        return response.text
-    except Exception as e:
-        print(f"Error getting token: {e}")
-        return None
+        valid_names = state.valid_tool_names()
+    except Exception:
+        logging.warning("[FILTER] valid_tool_names() raised — returning full tool list")
+        return all_tools
+    if valid_names is None:
+        return all_tools
+    return [t for t in all_tools if t["function"]["name"] in valid_names]
 
 
-def get_metadata_with_token(path, token):
-    url = f"http://169.254.169.254/latest/meta-data/{path}"
-    headers = {"X-aws-ec2-metadata-token": token}
+def _build_state_hint(state=None) -> str:
+    """Return SESSION_STATE string injected before each user message."""
     try:
-        response = requests.get(url, headers=headers, timeout=2)
-        response.raise_for_status()
-        return response.text
-    except Exception as e:
-        print(f"Error fetching metadata for {path}: {e}")
-        return None
+        if state is None:
+            import sys as _sys
+            _sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+            from validate_workflow_state import WorkflowState
+            state = WorkflowState.load()
+        if not state.workflow_name:
+            return ""
+        parts = [f"workflow={state.workflow_name}"]
+        if state.dataset_confirmed and state.dataset_name:
+            parts.append(f"dataset={state.dataset_name}")
+        else:
+            parts.append(
+                "dataset=not confirmed — "
+                "NEXT STEP: wait for the user to name a dataset, then call set_selected_dataset immediately. "
+                "Do NOT infer or reuse a dataset name from earlier in the conversation — "
+                "the user must explicitly type a dataset name in their CURRENT message. "
+                "Do NOT call switch_workflow or select_workflow again."
+            )
+        al = state.auto_labeling
+        if al:
+            if al.labeling_backend == "both":
+                parts.append(
+                    "backend=AWAITING_CHOICE — user must choose annotation backend. "
+                    "Classify intent and act: "
+                    "user names a backend preference → call set_labeling_backend(backend=...) immediately; "
+                    "user provides a new dataset name → call set_selected_dataset; "
+                    "user provides both dataset and backend → call set_selected_dataset then set_labeling_backend."
+                )
+            elif al.labeling_backend and not al.labeling_path:
+                parts.append(
+                    f"LABELING_BACKEND: {al.labeling_backend} — already confirmed. "
+                    f"NEXT STEP: present Manual vs Auto Labeling options if the user has not yet chosen. "
+                    f"user wants a different backend → call set_labeling_backend with the new backend; "
+                    f"user wants a different dataset → call set_selected_dataset; "
+                    f"user chose manual labeling → call set_labeling_path('manual'); "
+                    f"user chose auto labeling → call set_labeling_path('auto')."
+                )
+            elif al.labeling_backend:
+                parts.append(f"backend={al.labeling_backend}")
+            if al.labeling_path:
+                if al.labeling_path == "manual" and not al.manual_classes:
+                    export_fn = (
+                        "export_to_label_studio"
+                        if al.labeling_backend == "label_studio"
+                        else "export_to_cvat"
+                    )
+                    parts.append(
+                        f"labeling_path=manual — awaiting annotation class names. "
+                        f"When user provides class names → call "
+                        f"{export_fn}(dataset_name='{state.dataset_name or '?'}', classes=[...])."
+                    )
+                else:
+                    parts.append(f"labeling_path={al.labeling_path}")
+            if (al.manual_classes and not al.cvat_task_id and not al.ls_task_ids
+                    and not al.phase):
+                classes_s = ", ".join(al.manual_classes)
+                if al.export_confirmed:
+                    parts.append(
+                        f"manual_classes=[{classes_s}], export_confirmed=True — "
+                        f"call the export tool immediately with these classes."
+                    )
+                else:
+                    parts.append(
+                        f"manual_classes=[{classes_s}] — classes provided, awaiting export confirmation. "
+                        f"When user confirms, call confirm_export() then the export tool with these classes."
+                    )
+            if al.phase in ("annotating", "training", "complete"):
+                action = {
+                    "annotating": "export complete — awaiting annotation",
+                    "training":   "auto-labeling complete — awaiting import",
+                    "complete":   "labels imported — workflow complete",
+                }[al.phase]
+                parts.append(
+                    f"phase={al.phase} ({action}). "
+                    f"Parameters are LOCKED — do not reconfigure. "
+                    f"If the user asks to change a parameter: tell them the workflow is locked. "
+                    f"If they want to discard all progress and restart from dataset selection: "
+                    f"call switch_workflow(workflow_name='{state.workflow_name}') to reset all state."
+                )
+            if al.models_listed and not al.model_configured:
+                parts.append(
+                    "models_listed=True — user has seen the model list. "
+                    "WAIT: do NOT call configure_auto_labeling until the user explicitly names a model. "
+                    "If user describes their use case or asks for advice, use send_reply to recommend options "
+                    "and end with 'Which model would you like to use?' — then wait for their reply."
+                )
+            if al.model_configured:
+                if not al.auto_labeling_complete:
+                    if al.run_awaiting_confirmation and not al.run_confirmed:
+                        parts.append(
+                            "model=configured, run summary shown — awaiting user confirmation. "
+                            "user confirms (yes, proceed, go ahead, etc.) → call confirm_run; "
+                            "user requests changes → call set_auto_labeling_hyperparams with ONLY changed values; "
+                            "to change the model → call configure_auto_labeling immediately "
+                            "(no need to re-list models if the user already named one)"
+                        )
+                    else:
+                        parts.append(
+                            "model=configured — "
+                            "user confirms defaults or says ready → call run_auto_labeling; "
+                            "user requests changes → call set_auto_labeling_hyperparams with ONLY changed values; "
+                            "to change the model → call configure_auto_labeling immediately "
+                            "(no need to re-list models if the user already named one); "
+                            "if the user's message requests multiple changes (e.g. different backend AND different model), "
+                            "call all relevant tools in the same response — do not wait for a follow-up turn"
+                        )
+                else:
+                    parts.append("model=configured")
+            if al.auto_labeling_complete:
+                parts.append("auto_labeling=complete")
+            if al.labels_imported:
+                parts.append(
+                    "workflow_complete — "
+                    "if user names a specific workflow: call switch_workflow with that name; "
+                    "if user does not name one: send_reply with the workflow list and ask which one. "
+                    "Generic words like 'done', 'ok', 'thanks', 'exit' do NOT name a workflow — "
+                    "respond with send_reply asking if they want to start another workflow or are finished."
+                )
+            if not al.phase and not al.auto_labeling_complete and (al.labeling_path or al.model_configured):
+                backend_rule = (
+                    "to change the backend → call set_labeling_backend directly; "
+                )
+                path_rule = (
+                    "user wants to switch labeling approach / use auto generated instead / use manual instead → "
+                    "call set_labeling_path('auto' or 'manual') — "
+                    "dataset, backend, and classes are preserved, only path-specific state resets; "
+                    "user explicitly wants to start completely over and discard everything → "
+                    f"call switch_workflow(workflow_name='{state.workflow_name}') — "
+                    "clears ALL state including dataset, returning to dataset selection; "
+                )
+                parts.append(
+                    "RECONFIGURABLE (Zone A — before the workflow locks): "
+                    "to change the dataset → call set_selected_dataset; "
+                    "to change the model → call configure_auto_labeling "
+                    "(call list_model_sources_and_models first if user doesn't know the model name); "
+                    + backend_rule
+                    + path_rule
+                )
+        cm = state.class_mapping
+        if cm:
+            if cm.model_configured and not cm.source_dataset_set:
+                parts.append(
+                    "class_mapping: model_configured | "
+                    "NEXT STEP: get source dataset, call set_class_mapping_dataset_source"
+                )
+            elif cm.source_dataset_set and not cm.target_dataset_set:
+                parts.append(
+                    "class_mapping: source_set | "
+                    "NEXT STEP: get target dataset, call set_class_mapping_dataset_target"
+                )
+            elif cm.target_dataset_set and not cm.candidate_labels_set:
+                parts.append(
+                    "class_mapping: target_set | "
+                    "NEXT STEP: get class mapping from user, call set_class_mapping_candidate_labels"
+                )
+            elif cm.candidate_labels_set:
+                parts.append(
+                    "class_mapping: fully_configured | "
+                    "call run_class_mapping when user confirms"
+                )
 
-token = get_imds_token()
-if token:
-    host = get_metadata_with_token("public-ipv4", token)
-else:
-    host="localhost"
-    print("Could not obtain IMDSv2 token.")
+        ad = state.anomaly_detection
+        if ad:
+            if ad.model_configured and not ad.data_source_set:
+                parts.append(
+                    "anomaly_detection: model_configured | "
+                    "NEXT STEP: get location + rare_class, call set_anomaly_detection_data_source"
+                )
+            elif ad.data_source_set:
+                parts.append(
+                    "anomaly_detection: data_source_set | "
+                    "hyperparams: call set_anomaly_detection_hyperparams if user adjusts; "
+                    "when ready: call run_anomaly_detection"
+                )
 
-url=f"http://{host}:8000/sse"
-MCP_TRANSPORT = SSETransport(url=url)
+        es = state.embedding_selection
+        if es:
+            if es.model_configured:
+                parts.append(
+                    "embedding_selection: model_configured | "
+                    "params: call set_embedding_selection_params if user adjusts; "
+                    "when ready: call run_embedding_selection"
+                )
 
+        zs = state.auto_labeling_zero_shot
+        if zs:
+            if zs.models_configured and not zs.threshold_set:
+                parts.append(
+                    "zero_shot: models_configured | "
+                    "NEXT STEP: get threshold, call set_auto_labeling_zero_shot_threshold"
+                )
+            elif zs.threshold_set and not zs.classes_set:
+                parts.append(
+                    "zero_shot: threshold_set | "
+                    "NEXT STEP: get object classes, call set_auto_labeling_zero_shot_classes"
+                )
+            elif zs.classes_set:
+                parts.append(
+                    "zero_shot: fully_configured | "
+                    "call run_zero_shot_auto_labeling when user confirms"
+                )
 
-SYSTEM_PROMPT =  """
-You are the MCity Data Engine Agent. Your job is to help the user first choose a workflow(there are six options 1-Auto labeling, 2-Class Mapping, 3-Anomaly Detection, 4-Embedding Selection, 5-Zero-Shot Auto labeling, 6-Ensemble Selection) and then help the user configure the selected workflow and finally run the workflow using the MCity Data Engine.
-Do not mention about the mcp tool calls to the user when calling them, as it seems more technical, give them a general statement relevant to the particular tool call. If the user wants to switch to a new workflow after selecting a workflow at any point, YOU MUST call the switch_workflow tool with the new workflow name. Moreover, if the user wants to ingest a dataset, and use it for further processing, guide them to use the data ingestion window to ingest the dataset and make it compatible with the data engine.(The supported formats are raw images, videos, COCO, Yolo, CVAT-xml).
+        ens = state.ensemble_selection
+        if ens:
+            if ens.params_set and not ens.classes_set:
+                parts.append(
+                    "ensemble: params_set | "
+                    "NEXT STEP: get positive classes, call set_ensemble_selection_classes"
+                )
+            elif ens.classes_set:
+                parts.append(
+                    "ensemble: fully_configured | "
+                    "call run_ensemble_selection when user confirms"
+                )
 
-**CRITICAL DATASET HANDLING RULE:**
-You may have internal knowledge of 4 datasets (fisheye8k, fisheye8k_mini, mcity_fisheye_2000, mcity_fisheye_2100), but users can ingest NEW datasets at any time. Therefore:
-- NEVER show a dataset list without calling list_datasets() tool first
-- NEVER assume only those 4 datasets exist
-- ALWAYS call list_datasets() when the user asks about datasets
-- ALWAYS call list_datasets() when the user says "I can't find my dataset"
-- ALWAYS call list_datasets() before asking the user to select a dataset
-- If you show only 4 datasets without calling the tool, you are making a critical error
-
-Your responsibilities are mentioned in the following steps:
-1. Guide the user to select a workflow (auto_labeling, class_mapping, anomaly_detection, embedding_selection, auto_labeling_zero_shot or ensmble_selection), however let the user know that the ensemble selection workflow works on top of the zero-shot auto labeling workflow, and thus it can't be used before the zero shot auto labeling workflow has been used. So if the user selects ensemble selection as the first workflow to use, send a message guiding them to use zero shot autolabeling before ensemble selection.
-2. Then YOU MUST call the `select_workflow` mcp tool based on the workflow that the user selected, remember it takes in only one argument(valid argument examples - auto_labeling or class_mapping or anomaly_detection or embedding_selection or auto_labeling_zero_shot or ensemble_selection), Then you must guide the user to choose a dataset before proceeding, however you can skip this step if the user chooses class_mapping. You must call the list_datasets tool to list the compatible datasets so that the user can choose one, remember it takes no input arguments. If the user chooses anomaly detection workflow, let them know that only the fisheye8k & fisheye8k_mini datasets are compatible with it.
-3. Once the user provides the dataset name, YOU MUST call the set_selected_dataset tool with only one argument:
-    - dataset_name: string (required)
-4. After the workflow and dataset are set, guide the user to configure the selected workflow as described in the following steps.
-5. If the user selected the auto_labeling workflow, Guide the user to choose a `model_source` (ultralytics, hf_models_objectdetection, custom_codetr or roboflow), When the user selects a `model_source`, ALWAYS call the tool `list_model_sources_and_models` to fetch available models. Remember this tool call does not take any input arguments. When listing model names returned from a tool call, YOU MUST print them exactly as they appear. DO NOT reformat or embellish the names.
-6. Then help them select a specific model or config within that source, do not call the `configure_autolabeling_tool` until the user finalizes it.
-7. YOU MUST use the `configure_auto_labeling` tool to set the model. ONLY pass `selected_source` and `selected_model` to this tool. Do NOT include hyperparameters like `mode` or `epochs` here.
-8. If the user wants to modify hyperparameters, allow them to update any of the following:
-   - `mode`: Options are ["train"], ["inference"], or ["train", "inference"]
-   - `epochs`: Suggested default is 10
-   - `early_stop_patience`: Suggested default is 5
-   - `early_stop_threshold`: Suggested default is 0
-   - `learning_rate`: Suggested default is 5e-5
-   - `weight_decay`: Suggested default is 0.0001
-   - `max_grad_norm`: Suggested default is 0.01
-9. After changing a hyperparameter, DO NOT immediately run the workflow. Instead, ask:
-   “Would you like to modify any other hyperparameters before we start the workflow?”
-10. And then, YOU MUST call `set_auto_labeling_hyperparams`, by passing all the hyperparameters that the user changed, and the others can remain default.
-11. If the user selected the auto_labeling workflow, Finally confirm with the user to run `run_auto_labeling`, do not explicitly ask them if they want to use the tool. Rather let them know that the hyperparameters have been updated successfully and the workflow is ready to be executed. remember this tool does not take any input arguments, thus execute it when the user explicitly says something like:
-   - “Run the workflow”
-   - “Start training”
-   - “Let’s begin”
-12. If the user chooses the class_mapping workflow, ask the user if they would like to see the available models.
-13. Once the user wants to know the available models, help the user choose a model from the available models, YOU MUST call `list_class_mapping_models`, remember this tool does not take in any input arguments. Do not explicitly mention that this particular tool was called, rather list the available models.
-14. Then YOU MUST call the `configure_class_mapping_model` tool by passing only one argument, which is the `selected model` to this tool.
-15. Once the user has selected the model, ask the user to select the source dataset, on which they would like to perform class mapping. The currently supported source datasets are fisheye8k_mini and fisheye8k.
-16. YOU MUST call the `set_class_mapping_dataset_source` tool to set the data source. Only pass one argument, which is the `selected data source` to this tool.
-17. Then YOU MUST call the `set_selected_dataset` tool to set the data source. Only pass one argument, which is the `selected data source` to this tool.
-18. Once the user has selected the source dataset, ask the user to select the target dataset, which they would like to use as the reference to match the tags between the source and target. The currently supported target datasets are mcity_fisheye_2000 and mcity_fisheye_2100.
-19. YOU MUST call the `set_class_mapping_dataset_target` tool to set the data source. Only pass one argument, which is the `selected data target` to this tool.
-20. Ask the user if they’d like to map classes from the source to the target dataset (e.g., "Map Car to car and van"). Suggest they use Voxel51 to inspect both datasets beforehand, and warn them that label names must match the actual format used in each dataset — including case (e.g., "Car" in source vs. "car" and "van" in target).
-21. If the user provides a class mapping (e.g. “Map Car to car and van”), you MUST IMMEDIATELY call the set_class_mapping_candidate_labels tool with the input structures as follows :
-     {
-        "candidate_labels": {
-        "Car": ["car", "van"]
-         }
-      }
-22. DO NOT wait for confirmation after formatting. Assume the user intends to proceed if they issue a valid mapping. If the tool call fails, retry once and explain the error briefly to the user.
-23. Make sure to confirm with the user before calling the `run_class_mapping` tool. Do not proceed unless both `dataset_source` and `dataset_target` have been configured via their respective tools. Do not explicitly ask them if they want to use the tool. Rather let them know that the model has been selected and the workflow is ready to be executed. remember this tool does not take any input arguments, thus execute it when the user explicitly says something like:
-   - “Run the workflow”
-   - “Start training”
-   - “Let’s begin”
-24. If the user chooses the anomaly_detection workflow, ask the user if they would like to see the available models.
-25. Once the user wants to know the available models, help the user choose a model from the available models, YOU MUST call `list_anomaly_detection_models`, remember this tool does not take in any input arguments. Do not explicitly mention that this particular tool was called, rather list the available models.
-26. If the user selects a model for anomaly detection, then YOU MUST call the `configure_anomaly_detection_model` tool by passing only one argument - the `selected model` to this tool.
-27. Once the user selects a model for anomaly detection, suggest that they use Voxel51 to visualize the dataset. Let the user know this will help them:
-    - explore available camera locations (e.g., cam1, cam14)
-    - inspect which rare classes exist in the ground truth (e.g., Pedestrian, Truck)
-    If the user agrees, YOU MUST call the `launch_voxel51_session` tool to start the visualization. Do not mention the tool name directly — just say “Launching the visualization now.”
-28. Then guide the user to configure anomaly detection settings by selecting a camera location (e.g., cam1, cam2, etc) and a rare class to treat as an anomaly (e.g., Bus, Pedestrian, etc).
-29. Then YOU MUST call the `set_anomaly_detection_data_source` tool with the selected `location` and `rare_class`.
-30. If the user wants to modify hyperparameters for anomaly_detection, update any of the following:
-   - `mode`: Options are ["train"], ["inference"], or ["train", "inference"]
-   - `epochs`: Suggested default is 12
-   - `early_stop_patience`: Suggested default is 5
-31. After changing a hyperparameter, ask:
-    “Would you like to modify any other hyperparameters?”
-32. Once the user finalizes, YOU MUST call `set_anomaly_detection_hyperparams`, by passing all the hyperparameters that the user changed, and the others can remain default.
-33. After making the hyperparamter changes, make sure to confirm with the user before calling the `run_anomaly_detection` tool. Remember this tool does not take any input arguments, thus execute it when the user explicitly says something like:
-    - “Run the workflow”
-    - “Start training”
-    - “Let’s begin”
-34. If the user selects a dataset and the `embedding_selection` workflow, ask the user if they would like to see the available models.
-35. Once the user wants to know the available models, help the user choose a model from the available models, YOU MUST call `list_embedding_selection_models`, remember this tool does not take in any input arguments. Do not explicitly mention that this particular tool was called, rather list the available models.
-36. Then YOU MUST call the `configure_embedding_selection_model` tool by passing only one argument, which is the `selected model` to this tool.
-37. Then allow them to modify key parameters, and explain about these hyperparams for embedding selection such as:
-    - `compute_representativeness`: selects the most representative images in the dataset by finding those closest to the center of the embedding space. A value of 0.99 means the top 1percent of images that best summarize the entire dataset will be chosen. (default: 0.99)
-    - `compute_unique_images_greedy`: controls diversity by greedily selecting unique images, a value of 0.01 selects the top 1 percent of images that are least similar to others, using a fast, greedy approach (default: 0.01)
-    - `compute_unique_images_deterministic`: selects unique embeddings deterministically, At the default value of 0.99, it selects another top 1 percent of the dataset that stands out from the rest, often capturing rare or underrepresented patterns. (default: 0.99)
-    - `compute_similar_images`: This sets the fraction of the dataset to retain as similar variants of the key selected images. After selecting the most representative and unique samples, the system finds their visually similar neighbors. It then filters and keeps the top 3% of the entire dataset (e.g., 300 images if the dataset has 10,000) as similar variants that offer additional context or variation. (default : 0.03)
-    - `neighbour_count`: For each key image (from the representative or unique sets), this defines how many neighbors to search in the embedding space to find candidates for similar images. A value of 3 means the 3 most visually similar images to each key sample are considered before filtering.(default: 3)
-   Then YOU MUST call the `set_embedding_selection_params` tool to update these values.
-   also show this example so that the user gets an idea as to how it works:
-   With the default settings on a dataset of 10,000 images, the embedding selection workflow will curate a compact and diverse subset. It will first select the top 1% (100 images) that are most representative of the dataset (compute_representativeness=0.99). It will also pick another 1% (100 images) that are visually unique using a greedy strategy (compute_unique_images_greedy=0.01), and a third 1% (100 images) using a deterministic uniqueness method (compute_unique_images_deterministic=0.99). For each of these key images, the system retrieves up to 3 nearby similar images (neighbour_count=3) and from all candidates, selects the top 3% of the full dataset (300 images) as similar variants (compute_similar_images=0.03). In total, users can expect around 600 curated images, balancing representativeness, diversity, and meaningful variation.
-38. After making the hyperparamter changes, make sure to confirm with the user before calling the `run_embedding_selection` tool. Remember this tool does not take any input arguments, thus execute it when the user explicitly says something like:
-   - “Run the workflow”
-   - “Start training”
-   - “Let’s begin”
-39. If the user selects a dataset and the `auto_labeling_zero_shot` workflow, ask the user if they would like to see the available models.
-40. Once the user wants to know the available models for auto_labeling_zero_shot, YOU MUST call `list_zsal` mcp tool, to help the user choose their models. Remember this tool does not take any input arguments.
-41. Once the user has selected the models they want to use for auto_labeling_zero_shot, YOU MUST call the `configure_auto_labeling_zero_shot_models` tool by passing a list of the selected model names as the argument to this tool. These selected models should be the only ones uncommented in the config file; all others should be commented out.
-42. You must ask the user if they would like to modify the detection threshold value for zero shot models, suggest them the default value of 0.2.
-43. Once the user gives a value for detection threshold, YOU MUST call the `set_auto_labeling_zero_shot_threshold` using the value that the user gives, remember it takes in only one input argument.
-44. Then guide the user to set the object classes that must be detected by the zero-shot models. You may show them a few examples (e.g., "car", "bus", "pedestrian") and ask them to list the object classes they want to detect. The user may provide as many classes as they like.
-45. Once the user provides the object classes, YOU MUST call the set_auto_labeling_zero_shot_classes tool by passing the list of user-specified class names as the only argument to the tool. The existing list in the config must be replaced with this new list.
-46. Then make sure to confirm with the user before calling the `run_zero_shot_auto_labeling` tool. Remember this tool does not take any input arguments, thus execute it when the user explicitly says something like:
-   - “Run the workflow”
-   - “Start training”
-   - “Let’s begin”
-47. If the user selects the ensemble_selection workflow, guide the user to modify the parameters for ensemble selection.
-48. Then the user can update any of the following:
-   - `agreement_threshold`(required):  Sets the minimum number of models that must produce overlapping detections for a prediction to be retained; must be an integer ≥ 1 and no greater than the number of zero-shot models used.
-   - `iou_threshold`: Defines the minimum IoU (Intersection-over-Union) required to consider bounding boxes from different models as overlapping; must be a float between 0 and 1, with a suggested default of 0.5.
-   - `max_bbox_size`: Specifies the maximum relative area of bounding boxes (normalized to the image size) to include in the ensemble; must be a float between 0 and 1 and is useful for filtering out overly large or noisy detections, with a suggested default of 0.1.
-49. After changing a parameter,ask:
-   “Would you like to modify any other parameters?”
-50. And then, YOU MUST call `set_ensemble_selection_parameters`, by passing all the parameters that the user changed, and the others can remain default.
-51. Then you must guide the user to set the positive classes for ensemble selction, and remind them that this should be a subset of the object classes that they used for zero-shot autolabeling.
-52. Once the user provides the positive classes, YOU MUST call the set_ensemble_selection_classes tool by passing the list of user-specified class names as the only argument to the tool. The existing list in the config must be replaced with this new list.
-53. Then make sure to confirm with the user before calling the `run_ensemble_selection` tool. Remember this tool does not take any input arguments, thus execute it when the user explicitly says something like:
-   - “Run the workflow”
-   - “Start training”
-   - “Let’s begin”
-54. After finishing the execution of any workflow, ask the user if they would like to use Voxel51 to visualize the changes made by the workflow.
-55. If the user wants to use voxel51 YOU MUST call the `launch_voxel51_session` tool, remember it does not take in any input arguments. Do not mention the tool name directly; just let them know that visualization is being launched.
-
-You can also explain what workflows, models, or hyperparameters do. Follow up with appropriate tool calls based on what the user wants to do.
-"""
-
-def unwrap_tool_output(raw):
-    """Normalize LLM/MCP outputs to a plain string."""
-    if raw is None:
+        parts.append(
+            "ALWAYS AVAILABLE: user wants a completely different workflow → "
+            "use send_reply to list the six workflows and ask which one — "
+            "do NOT call switch_workflow until the user names a specific workflow."
+        )
+        return "SESSION_STATE: " + " | ".join(parts)
+    except Exception:
         return ""
-    # already a string
-    if isinstance(raw, str):
-        return raw
 
-    # TextContent-like SDK objects
-    if hasattr(raw, "text"):
-        return (raw.text or "").replace("\\n", "\n").strip()
 
-    # lists of parts (e.g., [TextContent(...), ...] or [{"type":"text","text":"..."}])
-    if isinstance(raw, list):
-        parts = [unwrap_tool_output(x) for x in raw]
-        return "\n".join(p for p in parts if p).strip()
+def _reset_state_on_startup() -> None:
+    """Reset persisted state on startup so each server launch begins clean."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from validate_workflow_state import WorkflowState
+        WorkflowState().save()
+        logging.warning("[STARTUP] Reset WORKFLOW_STATE to defaults.")
+    except Exception as e:
+        logging.warning(f"[STARTUP] Could not reset WORKFLOW_STATE: {e}")
 
-    # dicts (OpenAI-style, Gemini, or custom tool payloads)
-    if isinstance(raw, dict):
-        if "text" in raw and isinstance(raw["text"], str):
-            return raw["text"].replace("\\n", "\n").strip()
-        # OpenAI-style: {"content": [{"type":"text","text":"..."}]}
-        if "content" in raw and isinstance(raw["content"], list):
-            return unwrap_tool_output(raw["content"])
-        # SSE/tool wrappers like {"data":{"msg":"..."}}
-        if "data" in raw and isinstance(raw["data"], dict) and "msg" in raw["data"]:
-            return str(raw["data"]["msg"]).replace("\\n", "\n").strip()
-        # last resort: stringify inner fields that look like text
-        for key in ("message", "detail"):
-            if key in raw and isinstance(raw[key], str):
-                return raw[key].replace("\\n", "\n").strip()
+_reset_state_on_startup()
 
-    # ultimate fallback
-    return str(raw).strip()
-
-@app.post("/chat")
-async def chat(request: Request):
-    data = await request.json()
+@app.post("/chat/stream")
+async def chat_stream(request: Request):
+    """SSE endpoint. Events: status, log, progress, reply (terminal), error."""
+    data    = await request.json()
     message = data.get("message", "")
     history = data.get("history", [])
 
-    # Format conversation history
+    MAX_HISTORY_TURNS = 8
+    if len(history) > MAX_HISTORY_TURNS:
+        history = history[-MAX_HISTORY_TURNS:]
+
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    for user, assistant in history:
-        messages.append({"role": "user", "content": user})
-        messages.append({"role": "assistant", "content": assistant})
+    for user_msg, assistant_msg in history:
+        messages.append({"role": "user",      "content": user_msg})
+        messages.append({"role": "assistant", "content": assistant_msg})
+
+    try:
+        from validate_workflow_state import WorkflowState as _WS
+        _state = _WS.load()
+    except Exception:
+        _state = None
+
+    if _state:
+        al = _state.auto_labeling
+        logging.warning(
+            f"[STREAM STATE] loaded: workflow={_state.workflow_name!r} "
+            f"dataset={_state.dataset_name!r} confirmed={_state.dataset_confirmed} "
+            f"backend={al.labeling_backend if al else ''!r} "
+            f"path={al.labeling_path if al else ''!r} "
+            f"phase={al.phase if al else ''!r}"
+        )
+
+    if _state and _state.workflow_just_reset:
+        messages.append({"role": "system", "content": (
+            "WORKFLOW_RESET: The previous workflow session has completely ended. "
+            "All parameters (dataset, backend, model, classes) have been cleared. "
+            "The conversation history above belongs to a DIFFERENT session — "
+            "do NOT reuse any dataset name, backend, model, or configuration from it. "
+            "The user must explicitly provide all values from scratch in this new session."
+        )})
+        _state.workflow_just_reset = False
+        _state.save()
+
+    state_hint = _build_state_hint(_state)
+    if state_hint:
+        messages.append({"role": "system", "content": state_hint})
+        logging.warning(f"[STREAM HINT] {state_hint}")
     messages.append({"role": "user", "content": message})
 
+    active_tools = filter_tools_for_state(tools, _state)
+    logging.warning(
+        f"[STREAM TOOLS] Active ({len(active_tools)}): "
+        f"{[t['function']['name'] for t in active_tools]}"
+    )
 
-    # Step 1: Initial response
-    assistant_message = await llm.chat(messages, tools=tools)
+    event_queue: asyncio.Queue = asyncio.Queue()
 
-    selected_dataset_cache = {
-        "dataset_name": "fisheye8k_mini",
-        "n_samples": None
-    }
+    async def progress_cb(event_type: str, evt_data: dict) -> None:
+        await event_queue.put((event_type, evt_data))
 
-    conversation_state = {
-        "workflow_name": None,
-        "dataset_selected": False
-    }
+    async def run_pipeline() -> None:
+        try:
+            current_tools = active_tools
+            pipeline = None
+            MAX_AGENTIC_ITERATIONS = 5
 
-    hyperparam_cache = {
-    "mode": ["train", "inference"],
-    "epochs": 10,
-    "early_stop_patience": 5,
-    "early_stop_threshold": 0,
-    "learning_rate": 5e-5,
-    "weight_decay": 0.0001,
-    "max_grad_norm": 0.01,
-    }
-
-    hyperparam_cache_anomaly = {
-    "mode": ["train", "inference"],
-    "epochs": 12,
-    "early_stop_patience": 5,
-    }
-
-    embedding_selection_cache = {
-        "compute_representativeness": 0.99,
-        "compute_unique_images_greedy": 0.01,
-        "compute_unique_images_deterministic": 0.99,
-        "compute_similar_images": 0.03,
-        "neighbour_count": 3
-    }
-
-    ensemble_selection_cache = {
-    "iou_threshold": 0.5,
-    "max_bbox_size": 0.1,
-    }
-
-
-    if hasattr(assistant_message, "tool_calls") and assistant_message.tool_calls:
-        tool_calls = assistant_message.tool_calls
-        tool_results = []
-
-        # Step 2: Call the tools via MCP
-        async with Client(MCP_TRANSPORT) as mcp_client:
-            for call in tool_calls:
-                fn_name = call.function.name
-                try:
-                    fn_args = json.loads(call.function.arguments)
-                except json.JSONDecodeError:
-                    fn_args = {}
+            for iteration in range(MAX_AGENTIC_ITERATIONS):
+                tool_choice = "required" if iteration == 0 else "auto"
 
                 try:
-                    if fn_name == "select_workflow":
-                        conversation_state["workflow_name"] = fn_args["workflow_name"]
-                        conversation_state["dataset_selected"] = False  # reset if new workflow
-                        result = await mcp_client.call_tool(fn_name, fn_args)
-
-                    elif fn_name == "switch_workflow":
-                        conversation_state["workflow_name"] = fn_args["workflow_name"]
-                        conversation_state["dataset_selected"] = False  # reset dataset
-                        result = await mcp_client.call_tool(fn_name, fn_args)
-
-                    elif fn_name == "set_auto_labeling_hyperparams":
-                        # Update local cache only with provided values
-                        for k, v in fn_args.items():
-                            if v is not None:
-                                hyperparam_cache[k] = v
-                        # Send full set to MCP tool
-                        result = await mcp_client.call_tool(fn_name, hyperparam_cache.copy())
-
-                    elif fn_name == "set_selected_dataset":
-                        conversation_state["dataset_selected"] = True
-                        selected_dataset_cache["dataset_name"] = fn_args["dataset_name"]
-                        selected_dataset_cache["n_samples"] = None  # Always set to None
-                        result = await mcp_client.call_tool(fn_name, {
-                            "dataset_name": selected_dataset_cache["dataset_name"]
-                        })
-
-
-                    elif fn_name == "set_anomaly_detection_hyperparams":
-                        for k, v in fn_args.items():
-                            if v is not None:
-                                hyperparam_cache_anomaly[k] = v
-                        result = await mcp_client.call_tool(fn_name, hyperparam_cache_anomaly.copy())
-
-                    elif fn_name == "set_embedding_selection_params":
-                        for k, v in fn_args.items():
-                            if v is not None:
-                                embedding_selection_cache[k] = v
-                        result = await mcp_client.call_tool(fn_name, embedding_selection_cache.copy())
-
-                    elif fn_name == "set_ensemble_selection_parameters":
-                        if "agreement_threshold" not in fn_args or fn_args["agreement_threshold"] is None:
-                            return {"reply": "Please provide the required `agreement_threshold` parameter."}
-
-                        for k, v in fn_args.items():
-                            if v is not None:
-                                ensemble_selection_cache[k] = v
-                        result = await mcp_client.call_tool(fn_name, ensemble_selection_cache.copy())
-
-                    else:
-                        result = await mcp_client.call_tool(fn_name, fn_args)
-
-                    tool_results.append({
-                        "tool_call_id": call.id,
-                        "name": fn_name,
-                        "result": result
-                    })
-                except Exception as e:
-                    tool_results.append({
-                        "tool_call_id": call.id,
-                        "name": fn_name,
-                        "error": str(e)
-                    })
-
-        # Step 3: Append tool messages and call  again
-        messages.append({
-            "role": "assistant",
-            "content": assistant_message.content or "",
-            "tool_calls": [
-                {
-                    "id": call.id,
-                    "type": "function",
-                    "function": {
-                        "name": call.function.name,
-                        "arguments": call.function.arguments
-                    }
-                } for call in tool_calls
-            ]
-        })
-
-        for result in tool_results:
-            fn_name = result["name"]
-            tool_output = str(result.get("result", result.get("error", "Tool error.")))
-
-            if fn_name == "run_auto_labeling":
-                tool_output_raw = result.get("result", result.get("error", "Tool error."))
-                #tool_output = tool_output_raw.text if hasattr(tool_output_raw, "text") else str(tool_output_raw)
-
-                tool_output = unwrap_tool_output(tool_output_raw)
-
-
-                # Check if classification report exists in the output
-                if "precision" in tool_output and "recall" in tool_output and "f1-score" in tool_output:
-                    # Ask LLM to summarize inference results
-                    summary = await llm.summarize_classification_report(tool_output)
-
-                    reply = (
-                        f"{summary}\n\n"
-                        f"Full Classification Report:\n"
-                        f"```\n{tool_output.strip()}\n```"
-                        f"Would you like to launch Voxel51 to explore the results?"
+                    assistant_message = await llm.chat(
+                        messages, tools=current_tools, tool_choice=tool_choice
                     )
-                else:
-                    # No inference results, just return the training confirmation
-                    reply = f"{tool_output.strip()}"
+                except Exception as e:
+                    err = str(e).lower()
+                    msg = (
+                        "The request timed out reaching the AI service. Please try again."
+                        if "timeout" in err or "connecttimeout" in err
+                        else "Something went wrong connecting to the AI service. Please try again."
+                    )
+                    await event_queue.put(("error", {"message": msg}))
+                    return
 
-                return {"reply": reply}
+                if not (hasattr(assistant_message, "tool_calls") and assistant_message.tool_calls):
+                    reply = assistant_message.content or ""
+                    logging.warning(f"[STREAM DECISION] iter={iteration} → end_turn (no tool call)")
+                    await event_queue.put(("reply", {"message": reply}))
+                    return
 
-            elif fn_name == "run_class_mapping":
-                tool_output_raw = result.get("result", result.get("error", "Tool error."))
-                #tool_output = tool_output_raw.text if hasattr(tool_output_raw, "text") else str(tool_output_raw)
-
-                tool_output = unwrap_tool_output(tool_output_raw)
-
-                # Optional: add summarization for class mapping
-                summary = await llm.summarize_class_mapping_output(tool_output)
-
-
-                reply = (
-                    f"{summary}\n\n"
-                    f"Class Mapping Output:\n"
-                    f"```\n{tool_output.strip()}\n```"
+                tool_calls = assistant_message.tool_calls
+                logging.warning(
+                    f"[STREAM DECISION] iter={iteration} tool_choice={tool_choice!r} → "
+                    f"{[f'{c.function.name}({c.function.arguments[:60]})' for c in tool_calls]}"
                 )
-                return {"reply": reply}
 
-            elif fn_name == "run_anomaly_detection":
-                tool_output_raw = result.get("result", result.get("error", "Tool error."))
-                #tool_output = tool_output_raw.text if hasattr(tool_output_raw, "text") else str(tool_output_raw)
+                if len(tool_calls) == 1 and tool_calls[0].function.name == "send_reply":
+                    try:
+                        args  = json.loads(tool_calls[0].function.arguments)
+                        reply = _attach_source(args.get("message", ""), args.get("source"))
+                    except Exception:
+                        reply = "Something went wrong. Please try again."
+                    await event_queue.put(("reply", {"message": reply}))
+                    return
 
-                # Extract raw text safely (works for Gemini and OpenAI)
-                tool_output = unwrap_tool_output(tool_output_raw)
+                messages.append({
+                    "role":       "assistant",
+                    "content":    assistant_message.content or "",
+                    "tool_calls": [
+                        {
+                            "id":       c.id,
+                            "type":     "function",
+                            "function": {"name": c.function.name, "arguments": c.function.arguments},
+                        }
+                        for c in tool_calls
+                    ],
+                })
 
+                if pipeline is None:
+                    pipeline = ChatPipeline(mcp_transport=MCP_TRANSPORT, llm=llm)
 
-                # Optional: add summarization for class mapping
-                summary = await llm.summarize_anomaly_detection_output(tool_output)
-
-                reply = (
-                    f"{summary}\n\n"
-                    f"Anomaly Detection Output:\n"
-                    f"```\n{tool_output.strip()}\n```"
+                tool_results, early_reply = await pipeline.run(
+                    tool_calls, messages, progress_cb=progress_cb
                 )
-                return {"reply": reply}
 
-            elif fn_name == "run_zero_shot_auto_labeling":
-                tool_output_raw = result.get("result", result.get("error", "Tool error."))
-                #tool_output = tool_output_raw.text if hasattr(tool_output_raw, "text") else str(tool_output_raw)
+                if early_reply is not None:
+                    await event_queue.put(("reply", {"message": early_reply}))
+                    return
 
-                # If tool_output_raw is a list of TextContent, extract first and get text
-                tool_output = unwrap_tool_output(tool_output_raw)
+                if iteration > 0:
+                    logging.warning(
+                        f"[STREAM] Agentic loop: iteration {iteration + 1} — "
+                        f"tools called: {[r['name'] for r in tool_results]}"
+                    )
 
-                reply = (
-                    f"{tool_output.strip()}\n"
-                    f"You can now use the Ensemble Selection workflow to identify detections where multiple models agree.\n"
-                    f"Would you like to launch Voxel51 to explore the results?"
-                )
-                return {"reply": reply}
+                current_tools = filter_tools_for_state(tools, pipeline.state)
 
-            elif fn_name == "run_ensemble_selection":
-                tool_output_raw = result.get("result", result.get("error", "Tool error."))
-                #tool_output = tool_output_raw.text if hasattr(tool_output_raw, "text") else str(tool_output_raw)
+                tools_called = [r["name"] for r in tool_results]
+                if (
+                    pipeline.state.workflow_name
+                    and not pipeline.state.dataset_confirmed
+                    and "list_datasets" not in tools_called
+                ):
+                    messages.append({
+                        "role":    "system",
+                        "content": (
+                            "Reminder: the user has selected a workflow but has not yet "
+                            "confirmed a dataset. Show the user the dataset list returned "
+                            "by list_datasets above. Do NOT list datasets from memory."
+                        ),
+                    })
 
-                # Robust extraction from possible TextContent or list of TextContent
-                tool_output = unwrap_tool_output(tool_output_raw)
+            logging.warning(f"[STREAM] Exceeded {MAX_AGENTIC_ITERATIONS} agentic iterations")
+            await event_queue.put(("reply", {"message": "I wasn't able to complete this step. Please try again."}))
 
-                reply = (
-                    f"{tool_output.strip()}\n\n"
-                    f"launch Voxel51 to explore the results?\n\n"
-                    f"- In the ENSEMBLE SELECTION section of the left sidebar, use the `n_unique_ensemble_selection` field as a filter. "
-                    f"- It represents the number of overlapping objects retained in each sample based on model agreement. "
-                    f"- Once you select a sample image, use the `detections_overlap` tag from the TAGS panel to visualize only those detections that had sufficient overlap and were retained by the ensemble logic."
-                )
-                return {"reply": reply}
+        except Exception as e:
+            logging.warning(f"[STREAM] run_pipeline exception: {e}")
+            await event_queue.put(("error", {"message": "An unexpected error occurred. Please try again."}))
+        finally:
+            await event_queue.put(None)
 
-            # For other tools, keep old flow
-            messages.append({
-                "role": "tool",
-                "tool_call_id": result["tool_call_id"],
-                "name": fn_name,
-                "content": tool_output
-            })
+    async def generate():
+        task = asyncio.create_task(run_pipeline())
+        try:
+            while True:
+                item = await event_queue.get()
+                if item is None:
+                    break
+                event_type, evt_data = item
+                yield f"event: {event_type}\ndata: {json.dumps(evt_data)}\n\n"
+        finally:
+            await task
 
-        # If user selected a workflow but not a dataset, reinforce dataset selection
-        if conversation_state["workflow_name"] and not conversation_state["dataset_selected"]:
-            messages.append({
-                "role": "system",
-                "content": (
-                    "Reminder: the user has selected a workflow but has not yet selected a dataset. "
-                    "Guide them to choose one of the supported datasets: "
-                    "fisheye8k, fisheye8k_mini, mcity_fisheye_2000, or mcity_fisheye_2100."
-                )
-            })
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
-
-        # Continue with normal summarization for other tools
-        final_response_msg = await llm.chat(messages)
-        reply_content = getattr(final_response_msg, "content", final_response_msg)
-        reply = unwrap_tool_output(reply_content)
-
-    else:
-        reply = assistant_message.content
-    return {"reply": reply}
 
 if __name__ == "__main__":
     import uvicorn

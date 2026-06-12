@@ -1875,12 +1875,16 @@ class CustomRFDETRObjectDetection:
         """
         export_dir = os.path.join(self.export_dir_root, self.dataset_name, "rfdetr")
 
-        # Check if folder already exists
+        # Check if folder already exists — delete and re-export if no labels present
         if os.path.exists(export_dir):
-            logging.warning(
-                f"Folder {export_dir} already exists, skipping data export."
-            )
-            return
+            schema = self.dataset.get_field_schema()
+            has_labels = "ground_truth" in schema
+            if not has_labels:
+                logging.warning(f"Folder {export_dir} exists but dataset has no labels. Re-exporting.")
+                shutil.rmtree(export_dir)
+            else:
+                logging.warning(f"Folder {export_dir} already exists, skipping data export.")
+                return
 
         # Make directory
         os.makedirs(export_dir, exist_ok=True)
@@ -1930,12 +1934,30 @@ class CustomRFDETRObjectDetection:
 
             logging.info(f"Exporting {len(split_view)} samples to {rfdetr_split}/")
 
-            split_view.export(
-                dataset_type=fo.types.COCODetectionDataset,
-                data_path=split_export_dir,
-                labels_path=annotation_path,
-                label_field="ground_truth",
-            )
+            schema = self.dataset.get_field_schema()
+            has_labels = "ground_truth" in schema
+
+            if has_labels:
+                split_view.export(
+                        dataset_type=fo.types.COCODetectionDataset,
+                        data_path=split_export_dir,
+                        labels_path=annotation_path,
+                        label_field="ground_truth",
+                    )
+            else:
+                # No ground truth — export images with empty annotations
+                self.dataset.add_sample_field(
+                    "empty_detections",
+                    fo.EmbeddedDocumentField,
+                    embedded_doc_type=fo.Detections
+                )
+                split_view.export(
+                    dataset_type=fo.types.COCODetectionDataset,
+                    data_path=split_export_dir,
+                    labels_path=annotation_path,
+                    label_field="empty_detections",
+                )
+                self.dataset.delete_sample_field("empty_detections")
 
             # Fix category IDs: Convert from 1-indexed to 0-indexed
             self._fix_annotation_indices(annotation_path)
@@ -2282,22 +2304,27 @@ class CustomRFDETRObjectDetection:
                     break
 
             if model_path is None:
-                fallback_repo = inference_settings.get("fallback_hf_repo") or self.hf_repo_name
-                logging.info(f"Local model not found. Attempting to download from {fallback_repo}")
-                download_dir = os.path.join(
-                    "output/models/rfdetr", self.dataset_name, model_name
-                )
-                os.makedirs(download_dir, exist_ok=True)
-
-                try:
-                    model_path = hf_hub_download(
-                        repo_id=fallback_repo,
-                        filename="best.pt",
-                        local_dir=download_dir,
+                # Check inference_settings for explicit model_path override
+                config_model_path = inference_settings.get("model_path", None)
+                if config_model_path and os.path.exists(config_model_path):
+                    model_path = config_model_path
+                    logging.info(f"Using model_path from inference_settings: {model_path}")
+                else:
+                    fallback_repo = inference_settings.get("fallback_hf_repo") or self.hf_repo_name
+                    logging.info(f"Local model not found. Attempting to download from {fallback_repo}")
+                    download_dir = os.path.join(
+                        "output/models/rfdetr", self.dataset_name, model_name
                     )
-                except Exception as e:
-                    logging.error(f"Failed to load or download model: {e}")
-                    return False
+                    os.makedirs(download_dir, exist_ok=True)
+                    try:
+                        model_path = hf_hub_download(
+                            repo_id=fallback_repo,
+                            filename="best.pt",
+                            local_dir=download_dir,
+                        )
+                    except Exception as e:
+                        logging.error(f"Failed to load or download model: {e}")
+                        return False
 
         # Check if model exists
         if not os.path.exists(model_path):
@@ -2340,10 +2367,14 @@ class CustomRFDETRObjectDetection:
             model = ModelClass(
                 pretrain_weights=model_path,
                 num_classes=num_classes,
-		accept_platform_model_license=True
+                accept_platform_model_license=True
             )
-
             logging.info("RF-DETR model loaded successfully")
+
+            # Use model's class names if dataset has none
+            if class_names is None and hasattr(model, 'class_names') and model.class_names:
+                class_names = model.class_names
+                logging.info(f"Using model class names: {class_names[:5]}...")
         except Exception as e:
             logging.error(f"Failed to load model: {e}")
             return False
@@ -2441,51 +2472,49 @@ class CustomRFDETRObjectDetection:
                         class_names and pedestrian_class_id < len(class_names)
                     ) else f"class_{pedestrian_class_id}"
 
-                    # Build a bbox→track_id map from confirmed tracker output
-                    track_id_map = {}
+                    # Track IDs already returned by tracker in this frame (avoid double-adding)
+                    active_track_ids = set()
                     for i in range(len(tracked_peds)):
-                        key = tuple(tracked_peds.xyxy[i].tolist())
-                        track_id_map[key] = int(tracked_peds.tracker_id[i]) if tracked_peds.tracker_id is not None else -1
-
-                    # Always write every pedestrian detection; attach track_id if tracker confirmed it
-                    for i in range(len(ped_sv)):
-                        bbox = ped_sv.xyxy[i]
-                        conf = float(ped_sv.confidence[i]) if ped_sv.confidence is not None else 1.0
+                        bbox = tracked_peds.xyxy[i]
+                        conf = float(tracked_peds.confidence[i]) if tracked_peds.confidence is not None else 1.0
+                        tid = int(tracked_peds.tracker_id[i]) if tracked_peds.tracker_id is not None else -1
+                        active_track_ids.add(tid)
                         x1, y1, x2, y2 = bbox
-                        tid = track_id_map.get(tuple(bbox.tolist()), -1)
                         fo_detections.append(fo.Detection(
                             label=ped_label,
                             bounding_box=[x1 / img_width, y1 / img_height,
                                           (x2 - x1) / img_width, (y2 - y1) / img_height],
                             confidence=conf,
-                            track_id=tid if tid != -1 else None,
+                            track_id=tid,
                             tracker_filled=False,
                         ))
 
-                    # --- Gap-fill: RF-DETR missed pedestrians → use Kalman-predicted lost tracks ---
-                    if not rfdetr_detected_peds and hasattr(tracker, "lost_tracks"):
-                        for track in tracker.lost_tracks:
-                            try:
-                                x1, y1, x2, y2 = track.tlbr
-                                x1 = float(np.clip(x1, 0, img_width))
-                                y1 = float(np.clip(y1, 0, img_height))
-                                x2 = float(np.clip(x2, 0, img_width))
-                                y2 = float(np.clip(y2, 0, img_height))
-                                if x2 <= x1 or y2 <= y1:
-                                    continue
-                                conf = float(getattr(track, "score", 0.0))
-                                tid = int(getattr(track, "track_id", -1))
-                                fo_detections.append(fo.Detection(
-                                    label=ped_label,
-                                    bounding_box=[x1 / img_width, y1 / img_height,
-                                                  (x2 - x1) / img_width, (y2 - y1) / img_height],
-                                    confidence=conf,
-                                    track_id=tid,
-                                    tracker_filled=True,
-                                ))
-                                tracker_filled_count += 1
-                            except Exception as te:
-                                logging.debug(f"Skipping lost track: {te}")
+                    # --- Gap-fill: Kalman-predicted positions for ALL lost tracks not yet in this frame.
+                    # This handles both "RF-DETR detected none" and "RF-DETR missed some pedestrians
+                    # while detecting others". Always run — lost_tracks is empty when no gap exists.
+                    for track in tracker.lost_tracks:
+                        try:
+                            tid = int(track.external_track_id)
+                            if tid in active_track_ids:
+                                continue  # already added via tracked_peds
+                            x1, y1, x2, y2 = track.tlbr
+                            x1 = float(np.clip(x1, 0, img_width))
+                            y1 = float(np.clip(y1, 0, img_height))
+                            x2 = float(np.clip(x2, 0, img_width))
+                            y2 = float(np.clip(y2, 0, img_height))
+                            if x2 <= x1 or y2 <= y1:
+                                continue
+                            fo_detections.append(fo.Detection(
+                                label=ped_label,
+                                bounding_box=[x1 / img_width, y1 / img_height,
+                                              (x2 - x1) / img_width, (y2 - y1) / img_height],
+                                confidence=float(track.score),
+                                track_id=tid,
+                                tracker_filled=True,
+                            ))
+                            tracker_filled_count += 1
+                        except Exception as te:
+                            logging.debug(f"Skipping lost track: {te}")
 
                     sample[pred_key] = fo.Detections(detections=fo_detections)
                     sample.save()

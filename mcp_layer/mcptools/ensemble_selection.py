@@ -1,10 +1,6 @@
 from mcptools import mcp
-import subprocess
-import re
 import asyncio
 from pathlib import Path
-import os
-import ast
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
 CONFIG_PATH = ROOT_DIR / "config" / "config.py"
@@ -50,7 +46,7 @@ def set_ensemble_selection_parameters(
 
         modified.append(line)
 
-    CONFIG_PATH.write_text("\n".join(modified))
+    CONFIG_PATH.write_text("\n".join(modified).rstrip("\n") + "\n")
     return "Ensemble Selection Parameters updated successfully."
 
 @mcp.tool()
@@ -90,7 +86,7 @@ def set_ensemble_selection_classes(positive_classes: list) -> str:
 
         modified.append(line)
 
-    CONFIG_PATH.write_text("\n".join(modified))
+    CONFIG_PATH.write_text("\n".join(modified).rstrip("\n") + "\n")
     return f"Set `positive_classes` to: {positive_classes}"
 
 @mcp.tool()

@@ -3,14 +3,95 @@ tools = [
         {
             "type": "function",
             "function": {
+                "name": "send_reply",
+                "description": (
+                    "Use this to send a plain text reply to the user when no other tool is needed. "
+                    "Call this instead of responding with text directly. "
+                    "SOURCE FIELD: look at what YOUR REPLY does — not at how the user phrased their message. "
+                    "Set 'source' if your reply provides knowledge: it explains, describes, compares, or recommends "
+                    "something based on ML expertise, tool documentation, or domain best practices. "
+                    "Omit 'source' if your reply drives the workflow: confirms an action, presents a list of options, "
+                    "reports session state, or asks the user to make a selection. "
+                    "Source phrase options: 'MCity Data Engine workflow guide' | 'general knowledge' | "
+                    "'ML best practices' | 'project configuration (config.py)' | 'tool result — <tool_name>'. "
+                    "EXAMPLES — reply provides knowledge (set source): "
+                    "send_reply(message='YOLO models are faster; DETR models are more accurate for complex scenes.', source='general knowledge') | "
+                    "send_reply(message='For a small dataset I recommend epochs=12 and learning_rate=0.0001.', source='ML best practices'). "
+                    "EXAMPLES — reply drives workflow (omit source): "
+                    "send_reply(message='Model configured. Would you like to adjust hyperparameters?') | "
+                    "send_reply(message='Which labeling path would you like — Manual or Auto Generated?')."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "message": {
+                            "type": "string",
+                            "description": "The reply text to send to the user."
+                        },
+                        "source": {
+                            "type": "string",
+                            "description": (
+                                "Source attribution — set when your reply provides knowledge "
+                                "(explains, describes, compares, or recommends). "
+                                "Omit when your reply drives the workflow (confirms, presents options, reports state)."
+                            )
+                        }
+                    },
+                    "required": ["message"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "confirm_export",
+                "description": (
+                    "Call this ONLY after the user has explicitly confirmed they want to export "
+                    "(e.g., responded 'yes', 'proceed', 'go ahead', 'sounds good'). "
+                    "This records their consent and unlocks the export tool for this session. "
+                    "After calling this, immediately call export_to_cvat or export_to_label_studio "
+                    "with the classes from SESSION_STATE manual_classes. "
+                    "Do NOT call this speculatively — only call it when the user has actually confirmed."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "confirm_run",
+                "description": (
+                    "Call this ONLY after the user has explicitly confirmed they want to start auto-labeling "
+                    "(e.g., responded 'yes', 'proceed', 'go ahead', 'start it', 'run it'). "
+                    "This records their consent and unlocks the run_auto_labeling tool for this session. "
+                    "After calling this, immediately call run_auto_labeling. "
+                    "Do NOT call this speculatively — only call it when the user has actually confirmed."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "select_workflow",
-                "description": "Set the selected workflow (auto_labeling or class_mapping) in the config file.",
+                "description": (
+                    "Call this ONLY at the very start of a session when the user picks a workflow "
+                    "for the first time and no workflow is currently active. "
+                    "Do NOT call this if SESSION_STATE already shows a workflow — "
+                    "use switch_workflow instead if the user wants to change to a different workflow."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "workflow_name": {
                             "type": "string",
-                            "description": "The name of the workflow to activate (auto_labeling or class_mapping)"
+                            "description": "The workflow name the user selected. Must come from the user's message — do not infer or guess."
                         }
                     },
                     "required": ["workflow_name"]
@@ -33,53 +114,68 @@ tools = [
             "type": "function",
             "function": {
                 "name": "switch_workflow",
-                "description": "Switch to a new workflow by updating SELECTED_WORKFLOW in config.py and resetting dataset/parameter selections.",
+                "description": (
+                    "Call this in two cases: "
+                    "(1) the user names a specific different workflow to switch to "
+                    "(e.g. 'switch to class mapping', 'let me try anomaly detection') — pass that workflow name; OR "
+                    "(2) the user wants to start over or restart from scratch within the current workflow — "
+                    "pass the current workflow name to reset all state back to dataset selection. "
+                    "Do NOT call this if the user says they want 'a different workflow' without naming one — "
+                    "use send_reply to present the six workflow options and ask which one instead."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "workflow_name": {
                             "type": "string",
-                            "description": "The name of the workflow to switch to (e.g., auto_labeling, class_mapping, anomaly_detection, etc.)"
+                            "description": "The exact workflow name the user stated. Must come from the user's message — do not infer or guess."
                         }
                     },
                     "required": ["workflow_name"]
                 }
             }
         },
-
-        {
+       {
             "type": "function",
             "function": {
                 "name": "set_selected_dataset",
-                "description": "Update the SELECTED_DATASET field in config.py to choose which dataset to use.",
+                "description": (
+                    "REQUIRED: Update SELECTED_DATASET in config.py. "
+                    "Call this immediately whenever the user provides a dataset name — "
+                    "whether from ingestion or from the existing list. "
+                    "No downstream tool (run_auto_labeling, export_to_cvat, etc.) works correctly without this."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "dataset_name": {
                             "type": "string",
-                            "description": "The name of the dataset (e.g., 'fisheye8k', 'fisheye8k_mini')"
-                        },
-                        "n_samples": {
-                            "type": ["integer", "null"],
-                            "description": "Optional number of samples to use (use null for full dataset)"
+                            "description": "The name of the dataset to select."
                         }
                     },
                     "required": ["dataset_name"]
                 }
             }
         },
-
         {
             "type": "function",
             "function": {
                 "name": "configure_auto_labeling",
-                "description": "Enable the selected model source and model inside config.py for the auto_labeling workflow.",
+                "description": (
+                    "Enable the selected model source and model inside config.py for the auto_labeling workflow. "
+                    "ACCURACY GUARD: only call this when the user has explicitly named a specific model "
+                    "(e.g. 'use yolo12n', 'rfdetr_2xlarge', 'I want the DETR model'). "
+                    "A user describing their use case ('I want to detect cars and pedestrians'), "
+                    "asking what to use ('what model should I use?'), or saying 'sure' to a vague suggestion "
+                    "is NOT an explicit model selection. In those cases, recommend with send_reply and ask "
+                    "'Which model would you like to use?' — then wait for a specific answer."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "selected_source": {
                             "type": "string",
-                            "description": "The model source to enable (ultralytics, hf_models_objectdetection, or custom_codetr)"
+                            "description": "The model source to enable: ultralytics, hf_models_objectdetection, custom_codetr, or roboflow"
                         },
                         "selected_model": {
                             "type": "string",
@@ -105,14 +201,24 @@ tools = [
             "type": "function",
             "function": {
                 "name": "set_auto_labeling_hyperparams",
-                "description": "Update hyperparameters like mode, epochs, learning_rate, etc. for auto_labeling workflow.",
+                "description": (
+                    "Update hyperparameters like mode, epochs, learning_rate, etc. for auto_labeling workflow. "
+                    "ACCURACY GUARD — TWO valid triggers only: "
+                    "(1) user directly instructs a change ('set epochs to 5', 'change learning rate to 0.001') — act immediately; "
+                    "(2) user explicitly confirms a recommendation you already made ('yes apply those', 'go ahead', 'sounds good', 'yes') — act after that confirmation. "
+                    "NOT a trigger — any request for advice or suggestions, regardless of phrasing: "
+                    "'what do you recommend?', 'what would you suggest?', 'what's best for my use case?', 'any recommendations?'. "
+                    "In those cases: give the recommendation with send_reply, ask 'Would you like me to apply these?', then wait. "
+                    "Do NOT call this tool speculatively or before receiving explicit confirmation. "
+                    "If the user accepts current defaults without changes, do NOT call this tool."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "mode": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Pipeline mode(s): train, inference, or both."
+                            "description": "Pipeline mode(s): inference."
                         },
                         "epochs": {"type": "integer", "description": "Number of training epochs."},
                         "early_stop_patience": {"type": "integer", "description": "Patience for early stopping."},
@@ -421,7 +527,7 @@ tools = [
                     "properties": {
                         "agreement_threshold": {
                             "type": "integer",
-                            "description": "Required. Minimum number of models that must agree on overlapping detections; must be ≥ 1 and ≤ number of zero-shot models used."
+                            "description": "Required. Minimum number of models that must agree on overlapping detections; must be >= 1 and <= number of zero-shot models used."
                         },
                         "iou_threshold": {
                             "type": "number",
@@ -456,16 +562,20 @@ tools = [
                 }
             }
         },
-
-
         {
             "type": "function",
             "function": {
                 "name": "launch_voxel51_session",
-                "description": "Launch the Voxel51 session to visualize workflow results.",
+                "description": "Launch the Voxel51 session for a specific dataset. Always pass dataset_name explicitly — never call without it.",
                 "parameters": {
                     "type": "object",
-                    "properties": {}
+                    "properties": {
+                        "dataset_name": {
+                            "type": "string",
+                            "description": "Name of the FiftyOne dataset to visualize. After import_from_cvat, use the labeled name (e.g. 'custom_dataset15_labeled')."
+                        }
+                    },
+                    "required": ["dataset_name"]
                 }
             }
         },
@@ -485,10 +595,155 @@ tools = [
             "type": "function",
             "function": {
                 "name": "run_auto_labeling",
-                "description": "Run main.py for auto_labeling workflow and stream logs in real time.",
+                "description": (
+                    "Run main.py for auto_labeling workflow and stream logs in real time. "
+                    "IRREVERSIBLE: training consumes time and compute and cannot be undone once started. "
+                    "Only call this after the user has given an explicit run confirmation — "
+                    "valid phrases: 'Run the workflow', 'Start training', 'Let's begin', or equivalent. "
+                    "Do not call this based on inferred intent or because the workflow appears ready."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {}
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "export_to_cvat",
+                "description": "Export a FiftyOne dataset to CVAT for annotation. Use ONLY for the Manual Labeling path with with_predictions=False. For Auto Generated Labeling, this tool is called automatically by the system after run_auto_labeling completes — do NOT call it yourself for Auto Generated Labeling.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_name": {
+                            "type": "string",
+                            "description": "Name of the FiftyOne dataset to export."
+                        },
+                        "with_predictions": {
+                            "type": "boolean",
+                            "description": "If true, exports model predictions for Auto Generated Labeling. If false, exports images only for Manual Labeling."
+                        },
+                        "classes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Label names to pre-configure in CVAT for the Manual Labeling path (e.g. ['car', 'pedestrian', 'cyclist']). Only used when with_predictions=False. Ask the user for these before calling export."
+                        }
+                    },
+                    "required": ["dataset_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "import_from_cvat",
+                "description": "Download completed annotations from CVAT for a previously uploaded dataset and save as a new labeled FiftyOne dataset named <dataset_name>_labeled.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_name": {
+                            "type": "string",
+                            "description": "Name of the original FiftyOne dataset that was uploaded to CVAT."
+                        }
+                    },
+                    "required": ["dataset_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_labeling_backend",
+                "description": "Check which annotation backends (CVAT, Label Studio) are configured in .env and return the active backend. Call this at Step 3 before asking the user about Manual vs Auto labeling path. Use the returned message to inform the user which backend will be used, or to ask them to choose if both are available.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "set_labeling_backend",
+                "description": "Set the active annotation backend for this session. Call this ONLY when the user directly names a backend as their choice ('CVAT', 'Label Studio', 'use CVAT', 'I prefer Label Studio'). A question ('what's the difference?', 'tell me more') is NOT a selection — answer it with send_reply and re-ask which they prefer. Do NOT call this if only one backend is configured — it is selected automatically.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "backend": {
+                            "type": "string",
+                            "enum": ["cvat", "label_studio"],
+                            "description": "The annotation backend to use. 'cvat' for CVAT, 'label_studio' for Label Studio."
+                        }
+                    },
+                    "required": ["backend"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "set_labeling_path",
+                "description": (
+                    "Call this IMMEDIATELY when the user names their labeling path at Step 3b. "
+                    "Use 'manual' when the user says 'Manual Labeling', 'annotate myself', etc. "
+                    "Use 'auto' when the user says 'Auto Generated Labeling', 'run a model', etc. "
+                    "This MUST be called before any export or model tool — it unlocks the correct "
+                    "downstream tools and persists the path so backend switches do not lose it."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "enum": ["manual", "auto"],
+                            "description": "'manual' for Manual Labeling, 'auto' for Auto Generated Labeling."
+                        }
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "export_to_label_studio",
+                "description": "Export a FiftyOne dataset to Label Studio for annotation. Use ONLY when the active backend is Label Studio. For Manual Labeling use with_predictions=False. For Auto Generated Labeling, this is called automatically after run_auto_labeling — do NOT call it yourself.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_name": {
+                            "type": "string",
+                            "description": "Name of the FiftyOne dataset to export."
+                        },
+                        "with_predictions": {
+                            "type": "boolean",
+                            "description": "If true, attaches model predictions for Auto Generated Labeling. If false, uploads images only for Manual Labeling."
+                        },
+                        "classes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Label names to pre-configure in Label Studio for the Manual Labeling path (e.g. ['car', 'pedestrian', 'cyclist']). Only used when with_predictions=False. Ask the user for these before calling export."
+                        }
+                    },
+                    "required": ["dataset_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "import_from_label_studio",
+                "description": "Download completed annotations from Label Studio for a previously exported dataset and save as a new FiftyOne dataset named <dataset_name>_labeled.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_name": {
+                            "type": "string",
+                            "description": "Name of the original FiftyOne dataset that was exported to Label Studio."
+                        }
+                    },
+                    "required": ["dataset_name"]
                 }
             }
         },
