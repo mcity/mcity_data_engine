@@ -18,7 +18,7 @@ from chat_pipeline import ChatPipeline
 from host_utils import resolve_host
 from llm_clients import ClaudeClient, GeminiClient, GroqClient, OpenAIClient
 from tool_schema import tools
-from validate_workflow_state import LabelingBackend, AutoLabelingPhase
+from validate_workflow_state import LabelingBackend, AutoLabelingPhase, LabelingPath, WorkflowState
 
 load_dotenv()
 
@@ -38,9 +38,6 @@ if llm_provider not in _LLM_PROVIDERS:
     )
     llm_provider = "openai"
 
-llm = _LLM_PROVIDERS[llm_provider]()
-
-
 def _reset_state_on_startup() -> None:
     """Reset persisted state on startup so each server launch begins clean."""
     try:
@@ -55,6 +52,9 @@ def _reset_state_on_startup() -> None:
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     _reset_state_on_startup()
+    app.state.llm = _LLM_PROVIDERS[llm_provider]()
+    host = resolve_host()
+    app.state.mcp_transport = SSETransport(url=f"http://{host}:8000/sse")
     yield
 
 
@@ -65,9 +65,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-host = resolve_host()
-MCP_TRANSPORT = SSETransport(url=f"http://{host}:8000/sse")
 
 SYSTEM_PROMPT = (
     Path(__file__).resolve().parent / "prompts" / "system_prompt.txt"
@@ -99,9 +96,6 @@ def _build_state_hint(state=None) -> str:
     """Return SESSION_STATE string injected before each user message."""
     try:
         if state is None:
-            import sys as _sys
-            _sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-            from validate_workflow_state import WorkflowState
             state = WorkflowState.load()
         if not state.workflow_name:
             return ""
@@ -138,7 +132,7 @@ def _build_state_hint(state=None) -> str:
             elif al.labeling_backend:
                 parts.append(f"backend={al.labeling_backend}")
             if al.labeling_path:
-                if al.labeling_path == "manual" and not al.manual_classes:
+                if al.labeling_path == LabelingPath.MANUAL and not al.manual_classes:
                     export_fn = (
                         "export_to_label_studio"
                         if al.labeling_backend == LabelingBackend.LABEL_STUDIO
@@ -397,7 +391,7 @@ async def chat_stream(request: Request):
                 tool_choice = "required" if iteration == 0 else "auto"
 
                 try:
-                    assistant_message = await llm.chat(
+                    assistant_message = await request.app.state.llm.chat(
                         messages, tools=current_tools, tool_choice=tool_choice
                     )
                 except Exception as e:
@@ -445,7 +439,7 @@ async def chat_stream(request: Request):
                 })
 
                 if pipeline is None:
-                    pipeline = ChatPipeline(mcp_transport=MCP_TRANSPORT, llm=llm)
+                    pipeline = ChatPipeline(mcp_transport=request.app.state.mcp_transport, llm=request.app.state.llm)
 
                 tool_results, early_reply = await pipeline.run(
                     tool_calls, messages, progress_cb=progress_cb

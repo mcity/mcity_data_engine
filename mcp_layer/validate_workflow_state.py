@@ -44,6 +44,16 @@ class AutoLabelingPhase:
     COMPLETE   = "complete"    # terminal state
 
 
+class LabelingPath:
+    """String constants for auto-labeling path names.
+
+    Values match the Pydantic Literal field in AutoLabelingState; that definition
+    is the authoritative schema and is NOT changed here.
+    """
+    MANUAL = "manual"
+    AUTO   = "auto"
+
+
 class SetAutoLabelingHyperparamsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mode: Optional[list[Literal["train", "inference"]]] = None
@@ -196,7 +206,7 @@ class AutoLabelingState(BaseModel):
                 "A model source and model must be configured before running "
                 "auto-labeling. Please select a model first."
             )
-        if self.labeling_path == "manual":
+        if self.labeling_path == LabelingPath.MANUAL:
             return False, (
                 "Auto-labeling cannot run on the manual labeling path. "
                 "Please export to the annotation tool and annotate manually."
@@ -426,7 +436,7 @@ class WorkflowState(BaseModel):
             # Backend not yet confirmed — user must pick one first.
             return ALWAYS | {"set_selected_dataset", "get_labeling_backend", "set_labeling_backend"}
 
-        if al.labeling_path == "manual":
+        if al.labeling_path == LabelingPath.MANUAL:
             if al.labels_imported:
                 return ALWAYS | {"launch_voxel51_session"}
             if ls:
@@ -442,7 +452,7 @@ class WorkflowState(BaseModel):
                     return ALWAYS | {"confirm_export", "set_selected_dataset", "set_labeling_backend", "set_labeling_path"}
                 return ALWAYS | {"set_selected_dataset", "export_to_cvat", "set_labeling_backend", "set_labeling_path"}
 
-        if al.labeling_path == "auto":
+        if al.labeling_path == LabelingPath.AUTO:
             if not al.auto_labeling_complete:
                 # configure_auto_labeling and set_auto_labeling_hyperparams are visible
                 # from the start of the auto path; their respective preconditions

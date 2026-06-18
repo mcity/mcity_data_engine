@@ -12,7 +12,7 @@ from validate_workflow_state import (
     AnomalyDetectionState, EmbeddingSelectionState,
     ZeroShotAutoLabelingState, EnsembleSelectionState,
     WORKFLOW_DEPENDENCIES, validate_tool_input,
-    LabelingBackend, AutoLabelingPhase,
+    LabelingBackend, AutoLabelingPhase, LabelingPath,
 )
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "config.py"
@@ -148,6 +148,7 @@ class Sentinels:
     CVAT_CONNECTION_ERROR     = "CVAT_CONNECTION_ERROR"
     CVAT_TIMEOUT_ERROR        = "CVAT_TIMEOUT_ERROR"
     BACKEND_NOT_SET           = "BACKEND_NOT_SET"
+    LS_NO_ANNOTATIONS         = "LS_NO_ANNOTATIONS"
 
 
 class ChatPipeline:
@@ -797,9 +798,8 @@ class ChatPipeline:
         result = unwrap_tool_output(await mcp_client.call_tool("get_labeling_backend", fn_args))
         # Read env vars directly — unwrap_tool_output may return a Python repr, not valid JSON.
         try:
-            import os as _os
-            cvat_ok = bool(_os.getenv("CVAT_ACCESS_TOKEN", "").strip())
-            ls_ok   = bool(_os.getenv("LS_TOKEN", "").strip())
+            cvat_ok = bool(os.getenv("CVAT_ACCESS_TOKEN", "").strip())
+            ls_ok   = bool(os.getenv("LS_TOKEN", "").strip())
             if cvat_ok and ls_ok:
                 active = LabelingBackend.CVAT  # defer real choice to user
             elif ls_ok:
@@ -837,7 +837,7 @@ class ChatPipeline:
         if self.state.auto_labeling is None:
             self.state.auto_labeling = AutoLabelingState()
         if not self.state.auto_labeling.labeling_path:
-            self.state.auto_labeling.labeling_path = "auto"
+            self.state.auto_labeling.labeling_path = LabelingPath.AUTO
             self.state.save()
 
         result = unwrap_tool_output(await mcp_client.call_tool("list_model_sources_and_models", fn_args))
@@ -859,9 +859,8 @@ class ChatPipeline:
         low-severity case — this is known/accepted behaviour.
         """
         try:
-            import os as _os
-            cvat_ok = bool(_os.getenv("CVAT_ACCESS_TOKEN", "").strip())
-            ls_ok   = bool(_os.getenv("LS_TOKEN", "").strip())
+            cvat_ok = bool(os.getenv("CVAT_ACCESS_TOKEN", "").strip())
+            ls_ok   = bool(os.getenv("LS_TOKEN", "").strip())
 
             if cvat_ok and ls_ok:
                 # Do not pre-set a backend — the LLM must ask the user to choose.
@@ -928,14 +927,14 @@ class ChatPipeline:
 
         if al and al.labeling_path:
             path_label = (
-                "Manual Labeling" if al.labeling_path == "manual"
+                "Manual Labeling" if al.labeling_path == LabelingPath.MANUAL
                 else "Auto Generated Labeling"
             )
             ack = (
                 f"The annotation backend has been switched to **{backend_label}**. "
                 f"Continuing with **{path_label}**.\n\n"
             )
-            if al.labeling_path == "manual":
+            if al.labeling_path == LabelingPath.MANUAL:
                 if al.manual_classes:
                     classes_s = ", ".join(al.manual_classes)
                     return [HardStop(
@@ -1006,39 +1005,43 @@ class ChatPipeline:
             return msg, [FallThrough()]
 
         if not self.state.auto_labeling.labeling_path:
-            self.state.auto_labeling.labeling_path = "auto"
+            self.state.auto_labeling.labeling_path = LabelingPath.AUTO
             self.state.save()
 
         result = unwrap_tool_output(await mcp_client.call_tool("configure_auto_labeling", fn_args))
-        if "Invalid model" not in result:
-            self.state.auto_labeling.model_configured = True
-            self.state.auto_labeling.hyperparams_confirmed = True
-            self.state.auto_labeling.model_source = fn_args.get("selected_source", "")
-            self.state.auto_labeling.model_name = fn_args.get("selected_model", "")
-            self.state.auto_labeling.run_confirmed = False
-            self.state.auto_labeling.run_awaiting_confirmation = False
-            self.state.save()
-            model_name   = self.state.auto_labeling.model_name or "?"
-            model_source = self.state.auto_labeling.model_source or "?"
-            d = self.auto_labeling_cache
-            return result, [
-                Injection(
-                    f"configure_auto_labeling succeeded for {model_name} ({model_source}). "
-                    f"Default hyperparameters: "
-                    f"mode={d['mode']} | epochs={d['epochs']} | early_stop_patience={d['early_stop_patience']} | "
-                    f"early_stop_threshold={d['early_stop_threshold']} | learning_rate={d['learning_rate']} | "
-                    f"weight_decay={d['weight_decay']} | max_grad_norm={d['max_grad_norm']}\n\n"
-                    f"NEXT ACTION — choose exactly one:\n"
-                    f"(A) If the user's current message explicitly states any hyperparam value "
-                    f"(e.g. 'epochs 20', '5 epochs', 'learning rate 0.001'), "
-                    f"call set_auto_labeling_hyperparams immediately with those values. "
-                    f"Do NOT re-call configure_auto_labeling.\n"
-                    f"(B) Otherwise, present the defaults to the user and ask "
-                    f"'Would you like to modify any of these hyperparameters before we start?'"
-                ),
-                FallThrough(),
-            ]
-        return result, [FallThrough()]
+        al = self.state.auto_labeling
+
+        def _set_model_configured():
+            al.model_configured = True
+            al.hyperparams_confirmed = True
+            al.model_source = fn_args.get("selected_source", "")
+            al.model_name = fn_args.get("selected_model", "")
+            al.run_confirmed = False
+            al.run_awaiting_confirmation = False
+
+        stop = self._set_flag_if_ok(result, ["Invalid model"], _set_model_configured)
+        if stop:
+            return result, [stop]
+        model_name   = al.model_name or "?"
+        model_source = al.model_source or "?"
+        d = self.auto_labeling_cache
+        return result, [
+            Injection(
+                f"configure_auto_labeling succeeded for {model_name} ({model_source}). "
+                f"Default hyperparameters: "
+                f"mode={d['mode']} | epochs={d['epochs']} | early_stop_patience={d['early_stop_patience']} | "
+                f"early_stop_threshold={d['early_stop_threshold']} | learning_rate={d['learning_rate']} | "
+                f"weight_decay={d['weight_decay']} | max_grad_norm={d['max_grad_norm']}\n\n"
+                f"NEXT ACTION — choose exactly one:\n"
+                f"(A) If the user's current message explicitly states any hyperparam value "
+                f"(e.g. 'epochs 20', '5 epochs', 'learning rate 0.001'), "
+                f"call set_auto_labeling_hyperparams immediately with those values. "
+                f"Do NOT re-call configure_auto_labeling.\n"
+                f"(B) Otherwise, present the defaults to the user and ask "
+                f"'Would you like to modify any of these hyperparameters before we start?'"
+            ),
+            FallThrough(),
+        ]
 
     async def _handle_set_auto_labeling_hyperparams(
         self, fn_args: dict, mcp_client
@@ -1577,7 +1580,7 @@ class ChatPipeline:
             if self.state.auto_labeling is None:
                 self.state.auto_labeling = AutoLabelingState()
 
-            if self.state.auto_labeling.labeling_path == "auto" and not with_predictions:
+            if self.state.auto_labeling.labeling_path == LabelingPath.AUTO and not with_predictions:
                 msg = (
                     "Export is handled automatically after auto-labeling completes. "
                     "Please run the auto-labeling workflow first."
@@ -1585,7 +1588,7 @@ class ChatPipeline:
                 return msg, [FallThrough()]
 
             if not self.state.auto_labeling.labeling_path:
-                self.state.auto_labeling.labeling_path = "manual" if not with_predictions else "auto"
+                self.state.auto_labeling.labeling_path = LabelingPath.MANUAL if not with_predictions else LabelingPath.AUTO
                 self.state.save()
 
             ok, msg = (
@@ -1596,9 +1599,8 @@ class ChatPipeline:
             if not ok:
                 return msg, [FallThrough()]
 
-        import os as _os
         cred_env  = "LS_TOKEN" if is_ls else "CVAT_ACCESS_TOKEN"
-        if not _os.getenv(cred_env, "").strip():
+        if not os.getenv(cred_env, "").strip():
             msg = (
                 f"No {backend_label} credentials found. "
                 f"Please add {cred_env} to your .env file and restart the server."
@@ -1649,11 +1651,9 @@ class ChatPipeline:
         if al:
             if is_ls and "Project ID" in result:
                 try:
-                    from pathlib import Path as _Path
-                    import json as _json
-                    tasks_file = _Path(__file__).resolve().parents[1] / "output" / "ls_tasks.json"
+                    tasks_file = Path(__file__).resolve().parents[1] / "output" / "ls_tasks.json"
                     if tasks_file.exists():
-                        registry = _json.loads(tasks_file.read_text())
+                        registry = json.loads(tasks_file.read_text())
                         dataset_name = fn_args.get("dataset_name", "")
                         if dataset_name in registry:
                             al.ls_task_ids = registry[dataset_name].get("task_ids", [])
@@ -1684,11 +1684,6 @@ class ChatPipeline:
         self, fn_args: dict, mcp_client
     ) -> tuple[str, list[ToolRouting]]:
         return await self._handle_export_generic(LabelingBackend.CVAT, fn_args, mcp_client)
-
-    async def _handle_export_to_label_studio(
-        self, fn_args: dict, mcp_client
-    ) -> tuple[str, list[ToolRouting]]:
-        return await self._handle_export_generic(LabelingBackend.LABEL_STUDIO, fn_args, mcp_client)
 
     async def _handle_run_auto_labeling_streaming(
         self, fn_args: dict, progress_cb, mcp_client
@@ -1856,7 +1851,7 @@ class ChatPipeline:
         self, fn_args: dict
     ) -> tuple[str, list[ToolRouting]]:
         path = fn_args.get("path", "")
-        if path not in ("manual", "auto"):
+        if path not in (LabelingPath.MANUAL, LabelingPath.AUTO):
             msg = f"INVALID_PATH: '{path}' is not a valid labeling path. Must be 'manual' or 'auto'."
             return msg, [FallThrough()]
         if self.state.auto_labeling is None:
@@ -1877,7 +1872,7 @@ class ChatPipeline:
         logging.warning(f"[PIPELINE] set_labeling_path: path={path!r}")
         result = f"Labeling path set to '{path}'."
         al = self.state.auto_labeling
-        if path == "manual":
+        if path == LabelingPath.MANUAL:
             if al.manual_classes:
                 classes_s = ", ".join(al.manual_classes)
                 backend_l = "Label Studio" if al.labeling_backend == LabelingBackend.LABEL_STUDIO else "CVAT"
@@ -1922,7 +1917,7 @@ class ChatPipeline:
             if not ok:
                 return msg, [FallThrough()]
         result = unwrap_tool_output(await mcp_client.call_tool("import_from_label_studio", fn_args))
-        if "LS_NO_ANNOTATIONS" in result:
+        if Sentinels.LS_NO_ANNOTATIONS in result:
             err = result.split(":", 1)[1].strip() if ":" in result else result
             return result, [HardStop(err)]
         return result, [HardStop(self._finalize_import(fn_args, result))]
@@ -2046,11 +2041,9 @@ class ChatPipeline:
         if al:
             if is_ls and "Project ID" in export_msg:
                 try:
-                    from pathlib import Path as _Path
-                    import json as _json
-                    tasks_file = _Path(__file__).resolve().parents[1] / "output" / "ls_tasks.json"
+                    tasks_file = Path(__file__).resolve().parents[1] / "output" / "ls_tasks.json"
                     if tasks_file.exists():
-                        reg = _json.loads(tasks_file.read_text())
+                        reg = json.loads(tasks_file.read_text())
                         if dataset_name in reg:
                             al.ls_task_ids = reg[dataset_name].get("task_ids", [])
                             self.state.save()
@@ -2179,14 +2172,13 @@ class ChatPipeline:
 
     async def _fetch_and_return_dataset_list(self) -> str:
         """Fetch and format the dataset list for display after a workflow switch."""
-        import json as _json
         async with Client(self.transport) as mcp_client:
             try:
                 raw = unwrap_tool_output(await mcp_client.call_tool("list_datasets", {}))
             except Exception as e:
                 return f"Workflow switched. Could not fetch datasets: {e}"
         try:
-            datasets = _json.loads(raw)
+            datasets = json.loads(raw)
             if isinstance(datasets, list):
                 raw = "\n".join(f"{i + 1}. {name}" for i, name in enumerate(datasets))
         except Exception:
