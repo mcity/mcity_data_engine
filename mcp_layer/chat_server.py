@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -17,6 +18,7 @@ from chat_pipeline import ChatPipeline
 from host_utils import resolve_host
 from llm_clients import ClaudeClient, GeminiClient, GroqClient, OpenAIClient
 from tool_schema import tools
+from validate_workflow_state import LabelingBackend, AutoLabelingPhase
 
 load_dotenv()
 
@@ -38,7 +40,25 @@ if llm_provider not in _LLM_PROVIDERS:
 
 llm = _LLM_PROVIDERS[llm_provider]()
 
-app = FastAPI()
+
+def _reset_state_on_startup() -> None:
+    """Reset persisted state on startup so each server launch begins clean."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from validate_workflow_state import WorkflowState
+        WorkflowState().save()
+        logging.warning("[STARTUP] Reset WORKFLOW_STATE to defaults.")
+    except Exception as e:
+        logging.warning(f"[STARTUP] Could not reset WORKFLOW_STATE: {e}")
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    _reset_state_on_startup()
+    yield
+
+
+app = FastAPI(lifespan=_lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -98,7 +118,7 @@ def _build_state_hint(state=None) -> str:
             )
         al = state.auto_labeling
         if al:
-            if al.labeling_backend == "both":
+            if al.labeling_backend == LabelingBackend.BOTH:
                 parts.append(
                     "backend=AWAITING_CHOICE — user must choose annotation backend. "
                     "Classify intent and act: "
@@ -121,7 +141,7 @@ def _build_state_hint(state=None) -> str:
                 if al.labeling_path == "manual" and not al.manual_classes:
                     export_fn = (
                         "export_to_label_studio"
-                        if al.labeling_backend == "label_studio"
+                        if al.labeling_backend == LabelingBackend.LABEL_STUDIO
                         else "export_to_cvat"
                     )
                     parts.append(
@@ -144,11 +164,11 @@ def _build_state_hint(state=None) -> str:
                         f"manual_classes=[{classes_s}] — classes provided, awaiting export confirmation. "
                         f"When user confirms, call confirm_export() then the export tool with these classes."
                     )
-            if al.phase in ("annotating", "training", "complete"):
+            if al.phase in (AutoLabelingPhase.ANNOTATING, AutoLabelingPhase.TRAINING, AutoLabelingPhase.COMPLETE):
                 action = {
-                    "annotating": "export complete — awaiting annotation",
-                    "training":   "auto-labeling complete — awaiting import",
-                    "complete":   "labels imported — workflow complete",
+                    AutoLabelingPhase.ANNOTATING: "export complete — awaiting annotation",
+                    AutoLabelingPhase.TRAINING:   "auto-labeling complete — awaiting import",
+                    AutoLabelingPhase.COMPLETE:   "labels imported — workflow complete",
                 }[al.phase]
                 parts.append(
                     f"phase={al.phase} ({action}). "
@@ -160,7 +180,9 @@ def _build_state_hint(state=None) -> str:
             if al.models_listed and not al.model_configured:
                 parts.append(
                     "models_listed=True — user has seen the model list. "
-                    "WAIT: do NOT call configure_auto_labeling until the user explicitly names a model. "
+                    "When the user names a model (e.g. 'rfdetr_2xlarge', 'yolo11n', 'facebook/detr-resnet-50') "
+                    "→ call configure_auto_labeling(selected_source=<infer from name>, selected_model=<exact name>) immediately. "
+                    "Do NOT call set_selected_dataset or set_labeling_backend when the user is naming a model. "
                     "If user describes their use case or asks for advice, use send_reply to recommend options "
                     "and end with 'Which model would you like to use?' — then wait for their reply."
                 )
@@ -177,12 +199,14 @@ def _build_state_hint(state=None) -> str:
                     else:
                         parts.append(
                             "model=configured — "
-                            "user confirms defaults or says ready → call run_auto_labeling; "
-                            "user requests changes → call set_auto_labeling_hyperparams with ONLY changed values; "
+                            "user confirms defaults or says ready (e.g. 'these parameters are good', 'looks good', 'go ahead', 'yes') "
+                            "→ call run_auto_labeling immediately — do NOT use send_reply to ask for confirmation first, "
+                            "run_auto_labeling shows its own pre-flight summary and handles the confirmation step itself; "
+                            "any message with a hyperparam name or value (e.g. 'epochs 20', 'set learning rate to 0.001', '5 epochs') "
+                            "→ call set_auto_labeling_hyperparams immediately with ONLY the changed values — "
+                            "do NOT re-call configure_auto_labeling for hyperparam-only requests; "
                             "to change the model → call configure_auto_labeling immediately "
-                            "(no need to re-list models if the user already named one); "
-                            "if the user's message requests multiple changes (e.g. different backend AND different model), "
-                            "call all relevant tools in the same response — do not wait for a follow-up turn"
+                            "(no need to re-list models if the user already named one)"
                         )
                 else:
                     parts.append("model=configured")
@@ -302,18 +326,6 @@ def _build_state_hint(state=None) -> str:
     except Exception:
         return ""
 
-
-def _reset_state_on_startup() -> None:
-    """Reset persisted state on startup so each server launch begins clean."""
-    try:
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-        from validate_workflow_state import WorkflowState
-        WorkflowState().save()
-        logging.warning("[STARTUP] Reset WORKFLOW_STATE to defaults.")
-    except Exception as e:
-        logging.warning(f"[STARTUP] Could not reset WORKFLOW_STATE: {e}")
-
-_reset_state_on_startup()
 
 @app.post("/chat/stream")
 async def chat_stream(request: Request):

@@ -7,19 +7,11 @@ tools = [
                 "description": (
                     "Use this to send a plain text reply to the user when no other tool is needed. "
                     "Call this instead of responding with text directly. "
-                    "SOURCE FIELD: look at what YOUR REPLY does — not at how the user phrased their message. "
-                    "Set 'source' if your reply provides knowledge: it explains, describes, compares, or recommends "
-                    "something based on ML expertise, tool documentation, or domain best practices. "
-                    "Omit 'source' if your reply drives the workflow: confirms an action, presents a list of options, "
-                    "reports session state, or asks the user to make a selection. "
-                    "Source phrase options: 'MCity Data Engine workflow guide' | 'general knowledge' | "
-                    "'ML best practices' | 'project configuration (config.py)' | 'tool result — <tool_name>'. "
-                    "EXAMPLES — reply provides knowledge (set source): "
-                    "send_reply(message='YOLO models are faster; DETR models are more accurate for complex scenes.', source='general knowledge') | "
-                    "send_reply(message='For a small dataset I recommend epochs=12 and learning_rate=0.0001.', source='ML best practices'). "
-                    "EXAMPLES — reply drives workflow (omit source): "
-                    "send_reply(message='Model configured. Would you like to adjust hyperparameters?') | "
-                    "send_reply(message='Which labeling path would you like — Manual or Auto Generated?')."
+                    "Parameters: 'message' (required) — the reply text; "
+                    "'source' (optional) — set when your reply provides knowledge (explains, compares, "
+                    "or recommends based on ML expertise or tool documentation); omit when your reply "
+                    "drives the workflow (confirms an action, reports state, or presents options). "
+                    "See the SOURCE TAG RULE in the system prompt for full classification criteria and examples."
                 ),
                 "parameters": {
                     "type": "object",
@@ -175,11 +167,17 @@ tools = [
                     "properties": {
                         "selected_source": {
                             "type": "string",
-                            "description": "The model source to enable: ultralytics, hf_models_objectdetection, custom_codetr, or roboflow"
+                            "description": (
+                                "The model source to enable. Derive it from the model name: "
+                                "rfdetr_* → 'roboflow'; "
+                                "yolo* (yolo11n, yolo12x, etc.) → 'ultralytics'; "
+                                "facebook/*, microsoft/*, SenseTime/*, hustvl/*, jozhang97/*, Omnifact/* → 'hf_models_objectdetection'; "
+                                "co_deformable_detr_*.py or co_dino_*.py → 'custom_codetr'."
+                            )
                         },
                         "selected_model": {
                             "type": "string",
-                            "description": "The specific model or config to enable within the selected source"
+                            "description": "The exact model name or config file the user typed (e.g. 'rfdetr_2xlarge', 'yolo11n', 'facebook/detr-resnet-50')"
                         }
                     },
                     "required": ["selected_source", "selected_model"]
@@ -302,7 +300,7 @@ tools = [
                     "properties": {
                         "candidate_labels": {
                             "type": "object",
-                            "description": "Mapping from generalized target class to list of source class labels.",
+                            "description": "Mapping from source class label to list of generalized target class names.",
                             "additionalProperties": {
                                 "type": "array",
                                 "items": { "type": "string" }
@@ -655,7 +653,7 @@ tools = [
             "type": "function",
             "function": {
                 "name": "get_labeling_backend",
-                "description": "Check which annotation backends (CVAT, Label Studio) are configured in .env and return the active backend. Call this at Step 3 before asking the user about Manual vs Auto labeling path. Use the returned message to inform the user which backend will be used, or to ask them to choose if both are available.",
+                "description": "Check which annotation backends (CVAT, Label Studio) are configured in .env and return the active one. Call this when the backend has not yet been detected for the session (e.g., after a workflow switch mid-session).",
                 "parameters": {
                     "type": "object",
                     "properties": {}

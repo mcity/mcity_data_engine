@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from abc import ABC, abstractmethod
 from typing import List, Optional
 
 from openai import AsyncOpenAI
@@ -32,7 +33,8 @@ class _FakeMessage:
         self.tool_calls = tool_calls
 
 
-class BaseLLMClient:
+class BaseLLMClient(ABC):
+    @abstractmethod
     async def chat(self, messages, tools: Optional[List] = None, tool_choice: Optional[str] = None):
         raise NotImplementedError
 
@@ -72,6 +74,7 @@ class BaseLLMClient:
         """
         return await self._summarize(prompt)
 
+    @abstractmethod
     async def _summarize(self, prompt: str) -> str:
         raise NotImplementedError
 
@@ -121,6 +124,11 @@ class GeminiClient(BaseLLMClient):
         self.model = genai.GenerativeModel(model_name="gemini-1.5-flash")
 
     async def chat(self, messages, tools=None, tool_choice=None):
+        if tools:
+            raise NotImplementedError(
+                "GeminiClient does not yet support tool use; do not set "
+                "LLM_PROVIDER=gemini for workflows requiring tool calls."
+            )
         # Gemini: no tool use; skip system/tool roles; map "assistant" → "model".
         parts = []
         for m in messages:

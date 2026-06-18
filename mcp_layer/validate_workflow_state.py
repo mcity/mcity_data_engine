@@ -15,22 +15,33 @@ import config.config as _cc
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "config.py"
 
-WORKFLOW_STATE_DEFAULT = {
-    "workflow_name": "",
-    "dataset_name": "",
-    "dataset_confirmed": False,
-    "labeled_dataset_name": "",
-    "auto_labeling": None,
-    "class_mapping": None,
-    "anomaly_detection": None,
-    "embedding_selection": None,
-    "auto_labeling_zero_shot": None,
-    "ensemble_selection": None,
-}
-
 WORKFLOW_DEPENDENCIES: dict[str, list[str]] = {
     "ensemble_selection": ["auto_labeling_zero_shot"],
 }
+
+
+class LabelingBackend:
+    """String constants for annotation backend names.
+
+    Values match the Pydantic Literal fields in AutoLabelingState/SetLabelingBackendInput;
+    those Literal definitions are the authoritative schema and are NOT changed here.
+    """
+    CVAT         = "cvat"
+    LABEL_STUDIO = "label_studio"
+    BOTH         = "both"   # sentinel: both backends available, user must choose
+    NONE         = "none"   # sentinel: no credentials found
+
+
+class AutoLabelingPhase:
+    """String constants for auto-labeling workflow phase names.
+
+    Values match the Pydantic Literal field in AutoLabelingState; that definition
+    is the authoritative schema and is NOT changed here.
+    """
+    PENDING    = ""            # Zone A — mutable configuration
+    ANNOTATING = "annotating"  # post-export, locked until import
+    TRAINING   = "training"    # post-run, locked until import
+    COMPLETE   = "complete"    # terminal state
 
 
 class SetAutoLabelingHyperparamsInput(BaseModel):
@@ -159,6 +170,14 @@ class AutoLabelingState(BaseModel):
                 "The available models must be listed before configuring. "
                 "Please call list_model_sources_and_models first so the user "
                 "can select from the actual available models."
+            )
+        return True, ""
+
+    def can_set_auto_labeling_hyperparams(self) -> tuple[bool, str]:
+        if not self.model_configured:
+            return False, (
+                "A model must be configured before setting hyperparameters. "
+                "Please call configure_auto_labeling first to select a model."
             )
         return True, ""
 
@@ -368,6 +387,8 @@ class WorkflowState(BaseModel):
             return ALWAYS | {"select_workflow"}
 
         if self.workflow_name == "class_mapping":
+            # class_mapping uses its own source/target dataset tools, not the shared
+            # set_selected_dataset / dataset_confirmed gate used by all other workflows.
             return self._class_mapping_tools(ALWAYS)
 
         if not self.dataset_confirmed:
@@ -389,17 +410,17 @@ class WorkflowState(BaseModel):
     def _auto_labeling_tools(self, ALWAYS: set[str]) -> set[str]:
         al = self.auto_labeling
         backend = (al.labeling_backend if al else "") or ""
-        ls = backend == "label_studio"
+        ls = backend == LabelingBackend.LABEL_STUDIO
 
-        if al and al.phase == "complete":
+        if al and al.phase == AutoLabelingPhase.COMPLETE:
             return ALWAYS | {"launch_voxel51_session"}
-        if al and al.phase in ("annotating", "training"):
+        if al and al.phase in (AutoLabelingPhase.ANNOTATING, AutoLabelingPhase.TRAINING):
             import_tool = "import_from_label_studio" if ls else "import_from_cvat"
             return ALWAYS | {import_tool}
 
         # list_datasets is excluded after dataset selection to prevent LLM listing loops.
         if not al or not al.labeling_path:
-            if backend in ("cvat", "label_studio"):
+            if backend in (LabelingBackend.CVAT, LabelingBackend.LABEL_STUDIO):
                 # Backend confirmed, awaiting path selection.
                 return ALWAYS | {"set_selected_dataset", "set_labeling_path", "set_labeling_backend"}
             # Backend not yet confirmed — user must pick one first.
@@ -422,17 +443,11 @@ class WorkflowState(BaseModel):
                 return ALWAYS | {"set_selected_dataset", "export_to_cvat", "set_labeling_backend", "set_labeling_path"}
 
         if al.labeling_path == "auto":
-            if not al.models_listed:
-                return ALWAYS | {"set_selected_dataset", "list_model_sources_and_models", "set_labeling_backend", "set_labeling_path"}
-            if not al.model_configured:
-                return ALWAYS | {
-                    "set_selected_dataset",
-                    "configure_auto_labeling",
-                    "list_model_sources_and_models",
-                    "set_labeling_backend",
-                    "set_labeling_path",
-                }
             if not al.auto_labeling_complete:
+                # configure_auto_labeling and set_auto_labeling_hyperparams are visible
+                # from the start of the auto path; their respective preconditions
+                # (can_configure_auto_labeling, can_set_auto_labeling_hyperparams)
+                # block premature calls with clear recovery messages.
                 base = ALWAYS | {
                     "set_selected_dataset",
                     "configure_auto_labeling",
@@ -448,9 +463,6 @@ class WorkflowState(BaseModel):
                 return ALWAYS | {"launch_voxel51_session"}
             import_tool = "import_from_label_studio" if ls else "import_from_cvat"
             return ALWAYS | {import_tool}
-
-        logging.warning(f"[STATE] _auto_labeling_tools: unexpected labeling_path={al.labeling_path!r}")
-        return ALWAYS
 
     def _class_mapping_tools(self, ALWAYS: set[str]) -> set[str]:
         cm = self.class_mapping
@@ -596,22 +608,22 @@ class WorkflowState(BaseModel):
         return raw
 
     def save(self) -> None:
-        try:
-            src = CONFIG_PATH.read_text()
-            tree = ast.parse(src)
-            lines = src.splitlines()
-            state_dict = self.model_dump()
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Assign):
-                    for target in node.targets:
-                        if isinstance(target, ast.Name) and target.id == "WORKFLOW_STATE":
-                            start = node.lineno - 1
-                            end = node.end_lineno
-                            lines[start:end] = [f"WORKFLOW_STATE = {repr(state_dict)}"]
-                            CONFIG_PATH.write_text("\n".join(lines).rstrip("\n") + "\n")
-                            return
-        except Exception as e:
-            logging.warning(f"[STATE] Failed to save WorkflowState: {e}")
+        src = CONFIG_PATH.read_text()
+        tree = ast.parse(src)
+        lines = src.splitlines()
+        state_dict = self.model_dump()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == "WORKFLOW_STATE":
+                        start = node.lineno - 1
+                        end = node.end_lineno
+                        lines[start:end] = [f"WORKFLOW_STATE = {repr(state_dict)}"]
+                        CONFIG_PATH.write_text("\n".join(lines).rstrip("\n") + "\n")
+                        return
+        raise RuntimeError(
+            f"WORKFLOW_STATE assignment not found in config.py — save aborted"
+        )
 
     @classmethod
     def reset(cls) -> "WorkflowState":
