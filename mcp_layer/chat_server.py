@@ -338,8 +338,7 @@ async def chat_stream(request: Request):
         messages.append({"role": "assistant", "content": assistant_msg})
 
     try:
-        from validate_workflow_state import WorkflowState as _WS
-        _state = _WS.load()
+        _state = WorkflowState.load()
     except Exception:
         _state = None
 

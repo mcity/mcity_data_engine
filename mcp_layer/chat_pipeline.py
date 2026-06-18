@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -1942,7 +1943,8 @@ class ChatPipeline:
     async def _handle_reset_workflow_state(self, mcp_client) -> tuple[str, list[ToolRouting]]:
         result = unwrap_tool_output(await mcp_client.call_tool("reset_workflow_state", {}))
         self.state = WorkflowState()
-        logging.warning("[PIPELINE] reset_workflow_state: local state cleared")
+        self.state.save()
+        logging.warning("[PIPELINE] reset_workflow_state: local state cleared and saved")
         return result, [HardStop(result)]
 
     def _format_hyperparam_block(self) -> str:
