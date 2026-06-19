@@ -615,7 +615,7 @@ class ChatPipeline:
             ]
             ok, msg = self.state.check_workflow_dependencies(workflow_name, completed)
             if not ok:
-                return msg, [FallThrough()]
+                return msg, [HardStop(msg)]
 
         self.state = self.state.reset_for_workflow(workflow_name)
         result = unwrap_tool_output(await mcp_client.call_tool(fn_name, fn_args))
@@ -802,14 +802,14 @@ class ChatPipeline:
             cvat_ok = bool(os.getenv("CVAT_ACCESS_TOKEN", "").strip())
             ls_ok   = bool(os.getenv("LS_TOKEN", "").strip())
             if cvat_ok and ls_ok:
-                active = LabelingBackend.CVAT  # defer real choice to user
+                active = LabelingBackend.BOTH
             elif ls_ok:
                 active = LabelingBackend.LABEL_STUDIO
             elif cvat_ok:
                 active = LabelingBackend.CVAT
             else:
                 active = LabelingBackend.NONE
-            if active in (LabelingBackend.CVAT, LabelingBackend.LABEL_STUDIO):
+            if active in (LabelingBackend.CVAT, LabelingBackend.LABEL_STUDIO, LabelingBackend.BOTH):
                 if self.state.auto_labeling is None:
                     self.state.auto_labeling = AutoLabelingState()
                 self.state.auto_labeling.labeling_backend = active
@@ -842,12 +842,12 @@ class ChatPipeline:
             self.state.save()
 
         result = unwrap_tool_output(await mcp_client.call_tool("list_model_sources_and_models", fn_args))
-        self.state.auto_labeling.models_listed = True
-        self.state.save()
 
         if "DATASET_NOT_CONFIRMED" in result:
             return result, [FallThrough()]
 
+        self.state.auto_labeling.models_listed = True
+        self.state.save()
         return result, [HardStop(self._format_model_list(result))]
 
     async def _auto_detect_backend(self, mcp_client) -> dict | None:
@@ -1061,6 +1061,7 @@ class ChatPipeline:
         result = unwrap_tool_output(
             await mcp_client.call_tool("set_auto_labeling_hyperparams", self.auto_labeling_cache.copy())
         )
+        # No error sentinel from this MCP tool -- it always returns a success string.
         self.state.auto_labeling.hyperparams_confirmed = True
         self.state.auto_labeling.run_confirmed = False
         self.state.auto_labeling.run_awaiting_confirmation = False
@@ -1660,6 +1661,13 @@ class ChatPipeline:
                             al.ls_task_ids = registry[dataset_name].get("task_ids", [])
                 except Exception:
                     pass
+                if not al.ls_task_ids:
+                    return result, [HardStop(
+                        "The export may have succeeded on the Label Studio backend, but the "
+                        "task IDs could not be read from the task registry. Please check Label "
+                        "Studio directly for your project, or retry the export. If the problem "
+                        "persists, contact support."
+                    )]
                 al.phase = AutoLabelingPhase.ANNOTATING
                 self.state.save()
                 return result, [HardStop(
@@ -1670,14 +1678,18 @@ class ChatPipeline:
                 try:
                     task_id = int(result.split("Task ID:")[1].split()[0].strip())
                     al.cvat_task_id = task_id
+                    al.phase = AutoLabelingPhase.ANNOTATING
+                    self.state.save()
+                    return result, [HardStop(
+                        f"{result.strip()}\n\n"
+                        f"Let me know when you have finished annotating and I will import your labels."
+                    )]
                 except Exception:
-                    pass
-                al.phase = AutoLabelingPhase.ANNOTATING
-                self.state.save()
-                return result, [HardStop(
-                    f"{result.strip()}\n\n"
-                    f"Let me know when you have finished annotating and I will import your labels."
-                )]
+                    return result, [HardStop(
+                        "The export may have succeeded on the CVAT backend, but the task ID "
+                        "could not be read from the response. Please check CVAT directly for "
+                        "your task, or retry the export. If the problem persists, contact support."
+                    )]
 
         return result, [FallThrough()]
 

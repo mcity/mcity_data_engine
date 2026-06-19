@@ -39,8 +39,13 @@ def detect(cvat_token: str = "", ls_token: str = "") -> dict | None:
 # ---------------------------------------------------------------------------
 
 def test_auto_detect_backend_no_nameerror():
-    """os.getenv must be reachable — no NameError from missing import."""
-    _, result = detect(cvat_token="", ls_token="")
+    """os.getenv must be reachable — no NameError from missing 'import os'."""
+    try:
+        _, result = detect(cvat_token="", ls_token="")
+    except AttributeError as exc:
+        raise AssertionError(
+            "chat_pipeline.os is not defined — check that 'import os' exists at module level"
+        ) from exc
     assert result is not None, (
         "_auto_detect_backend returned None — "
         "likely NameError from missing 'import os' at module level"

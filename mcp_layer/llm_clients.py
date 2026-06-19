@@ -4,6 +4,7 @@ import os
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
+from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 from groq import AsyncGroq
 import google.generativeai as genai
@@ -158,7 +159,6 @@ class GeminiClient(BaseLLMClient):
 
 class ClaudeClient(BaseLLMClient):
     def __init__(self):
-        from anthropic import AsyncAnthropic
         self.client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         self.model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
