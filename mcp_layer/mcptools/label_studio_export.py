@@ -113,6 +113,61 @@ def _upload_image(http, project_id: int, path: Path) -> list[int]:
     )
 
 
+def _upload_images_concurrent(
+    http, project_id: int, paths: list[Path], max_workers: int = 3
+) -> dict[str, int]:
+    """
+    Upload images one-per-POST using a thread pool, return {filename: task_id}.
+
+    LS creates exactly one task per POST regardless of how many files are packed
+    into a single multipart body, so per-file uploads are required for N tasks.
+    Concurrency removes the per-image latency; max_workers=3 stays under LS
+    cloud rate limits (429 appears above ~5 simultaneous uploads).
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    total = len(paths)
+    t0 = time.time()
+    logging.warning(f"[LS] Uploading {total} image(s) ({max_workers} concurrent)…")
+
+    def _upload_one(path: Path) -> tuple[str, int]:
+        for attempt in range(4):
+            try:
+                task_ids = _upload_image(http, project_id, path)
+                if not task_ids:
+                    raise RuntimeError(f"No task_id returned for {path.name}")
+                return path.name, task_ids[0]
+            except RuntimeError as e:
+                if "429" in str(e) and attempt < 3:
+                    wait = 2 ** attempt  # 1s, 2s, 4s
+                    logging.warning(f"[LS] 429 on {path.name}, retry in {wait}s…")
+                    time.sleep(wait)
+                else:
+                    raise
+
+    fname_to_task_id: dict[str, int] = {}
+    errors: list[str] = []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_upload_one, p): p for p in paths}
+        for done, future in enumerate(as_completed(futures), 1):
+            try:
+                fname, task_id = future.result()
+                fname_to_task_id[fname] = task_id
+            except Exception as e:
+                errors.append(str(e))
+            if done % 10 == 0 or done == total:
+                logging.warning(f"[LS] {done}/{total} uploaded…")
+
+    if errors:
+        logging.warning(f"[LS] {len(errors)} upload error(s): {errors[:3]}")
+
+    logging.warning(
+        f"[LS] {len(fname_to_task_id)}/{total} images uploaded in {time.time()-t0:.1f}s"
+    )
+    return fname_to_task_id
+
+
 def _detections_to_ls_results(detections) -> list:
     """
     Convert FiftyOne detections to Label Studio rectanglelabels result format.
@@ -397,26 +452,50 @@ def export_to_label_studio(
             )
             logging.warning(f"[LS] Label config PATCH status: {patch_resp.status_code}")
 
-        image_paths = [Path(s.filepath) for s in dataset]
-        all_task_ids = []
+        samples = list(dataset)
+        image_paths = [Path(s.filepath) for s in samples]
 
-        for sample in dataset:
-            path = Path(sample.filepath)
-            try:
-                task_ids = _upload_image(http, project_id, path)
-            except RuntimeError as e:
-                logging.warning(f"[LS] {e}")
-                continue
+        # --- Upload (concurrent, one POST per image) ----------------------
+        fname_to_task_id = _upload_images_concurrent(http, project_id, image_paths)
+        all_task_ids = list(fname_to_task_id.values())
 
-            all_task_ids.extend(task_ids)
+        # --- Attach predictions (auto path only) --------------------------
+        if with_predictions and label_field and fname_to_task_id:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
 
-            if with_predictions and label_field and task_ids:
-                detections = sample[label_field]
-                if detections and detections.detections:
-                    _attach_as_annotations(
-                        http, task_ids[0],
-                        detections.detections, label_field,
-                    )
+            samples_with_dets = [
+                (Path(s.filepath).name, s[label_field])
+                for s in samples
+                if s.get_field(label_field) is not None
+                and s[label_field] is not None
+                and s[label_field].detections
+            ]
+
+            t_ann = time.time()
+            ann_ok = ann_skip = 0
+
+            def _attach_one(fname, dets):
+                task_id = fname_to_task_id.get(fname)
+                if not task_id:
+                    return False
+                _attach_as_annotations(http, task_id, dets.detections, label_field)
+                return True
+
+            with ThreadPoolExecutor(max_workers=5) as pool:
+                futures = {
+                    pool.submit(_attach_one, fname, dets): fname
+                    for fname, dets in samples_with_dets
+                }
+                for future in as_completed(futures):
+                    if future.result():
+                        ann_ok += 1
+                    else:
+                        ann_skip += 1
+
+            logging.warning(
+                f"[LS] Annotations attached: {ann_ok} ok / {ann_skip} skipped "
+                f"in {time.time() - t_ann:.1f}s"
+            )
 
         registry = _load_registry()
         registry[dataset_name] = {

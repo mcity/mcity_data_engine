@@ -358,7 +358,30 @@ class ChatPipeline:
                 )
 
             elif fn_name == "configure_auto_labeling":
-                result, routings = await self._handle_configure_auto_labeling(fn_args, mcp_client)
+                model_name_raw = fn_args.get("selected_model", "")
+                recent_user_text = " ".join(
+                    m["content"].lower()
+                    for m in messages[-6:]
+                    if m.get("role") == "user" and isinstance(m.get("content"), str)
+                )
+                if model_name_raw and model_name_raw.lower() not in recent_user_text:
+                    logging.warning(
+                        f"[PIPELINE] configure_auto_labeling blocked: "
+                        f"'{model_name_raw}' not found in recent user messages"
+                    )
+                    result = (
+                        f"CONFIGURE_NEEDS_SELECTION: model name '{model_name_raw}' was not "
+                        f"found in the user's recent messages — user must explicitly name a model."
+                    )
+                    routings = [Injection(
+                        f"configure_auto_labeling was blocked: '{model_name_raw}' was not typed "
+                        f"by the user in their recent messages. The user likely described their use "
+                        f"case without naming a specific model. "
+                        f"Use send_reply to provide recommendations and ask: "
+                        f"'Which model would you like to use?' — wait for the user to name one explicitly."
+                    )]
+                else:
+                    result, routings = await self._handle_configure_auto_labeling(fn_args, mcp_client)
 
             elif fn_name == "set_auto_labeling_hyperparams":
                 result, routings = await self._handle_set_auto_labeling_hyperparams(
@@ -1025,24 +1048,12 @@ class ChatPipeline:
             return result, [stop]
         model_name   = al.model_name or "?"
         model_source = al.model_source or "?"
-        d = self.auto_labeling_cache
-        return result, [
-            Injection(
-                f"configure_auto_labeling succeeded for {model_name} ({model_source}). "
-                f"Default hyperparameters: "
-                f"mode={d['mode']} | epochs={d['epochs']} | early_stop_patience={d['early_stop_patience']} | "
-                f"early_stop_threshold={d['early_stop_threshold']} | learning_rate={d['learning_rate']} | "
-                f"weight_decay={d['weight_decay']} | max_grad_norm={d['max_grad_norm']}\n\n"
-                f"NEXT ACTION — choose exactly one:\n"
-                f"(A) If the user's current message explicitly states any hyperparam value "
-                f"(e.g. 'epochs 20', '5 epochs', 'learning rate 0.001'), "
-                f"call set_auto_labeling_hyperparams immediately with those values. "
-                f"Do NOT re-call configure_auto_labeling.\n"
-                f"(B) Otherwise, present the defaults to the user and ask "
-                f"'Would you like to modify any of these hyperparameters before we start?'"
-            ),
-            FallThrough(),
-        ]
+        return result, [HardStop(
+            f"**{model_name}** ({model_source}) has been configured.\n\n"
+            f"Here are the current hyperparameters:\n\n"
+            f"{self._format_hyperparam_block()}\n\n"
+            f"Would you like to modify any of these hyperparameters, or are you ready to start?"
+        )]
 
     async def _handle_set_auto_labeling_hyperparams(
         self, fn_args: dict, mcp_client
@@ -1746,6 +1757,8 @@ class ChatPipeline:
         error_output = "\n".join(stderr_lines)
         combined     = output + "\n" + error_output
 
+        error_lines = [l for l in stderr_lines if " - ERROR - " in l]
+
         if "Evaluating detections..." in combined:
             res_lines, capture = [], False
             for line in stdout_lines:
@@ -1757,8 +1770,10 @@ class ChatPipeline:
                 elif capture:
                     res_lines.append(line)
             report = "\n".join(res_lines).strip() or "No inference results found."
+        elif error_lines:
+            report = "Workflow completed with errors:\n" + "\n".join(error_lines[-10:])
         else:
-            report = "Training completed successfully.\nThe model is ready to be tested using inference on the validation set."
+            report = "Workflow completed successfully.\nThe model is ready to be tested using inference on the validation set."
 
         log_path = "output/logs/last_auto_labeling_log.txt"
         Path(log_path).parent.mkdir(parents=True, exist_ok=True)

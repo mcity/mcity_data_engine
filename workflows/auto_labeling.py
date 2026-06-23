@@ -935,6 +935,7 @@ class UltralyticsObjectDetection:
                 repo_id=model_hf,
                 filename="best.pt",
                 local_dir=download_dir,
+                token=os.environ.get("HF_TOKEN"),
             )
         else:
             # Automatically determine model based on dataset
@@ -954,6 +955,7 @@ class UltralyticsObjectDetection:
                         repo_id=self.hf_hub_model_id,
                         filename="best.pt",
                         local_dir=download_dir,
+                        token=os.environ.get("HF_TOKEN"),
                     )
             except Exception as e:
                 logging.error(f"Failed to load or download model: {str(e)}.")
@@ -1632,6 +1634,7 @@ class CustomCoDETRObjectDetection:
                 repo_id=hf_path,
                 filename="model.pth",
                 local_dir=download_folder,
+                token=os.environ.get("HF_TOKEN"),
             )
         except Exception as e:
             logging.error(f"An error occured during model download: {e}")
@@ -2281,6 +2284,7 @@ class CustomRFDETRObjectDetection:
                     repo_id=model_hf,
                     filename="best.pt",
                     local_dir=download_dir,
+                    token=os.environ.get("HF_TOKEN"),
                 )
             except Exception as e:
                 logging.error(f"Failed to download model from Hugging Face: {e}")
@@ -2321,6 +2325,7 @@ class CustomRFDETRObjectDetection:
                             repo_id=fallback_repo,
                             filename="best.pt",
                             local_dir=download_dir,
+                            token=os.environ.get("HF_TOKEN"),
                         )
                     except Exception as e:
                         logging.error(f"Failed to load or download model: {e}")
