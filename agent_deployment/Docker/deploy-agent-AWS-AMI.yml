@@ -22,6 +22,22 @@ Parameters:
   HFTOKEN:
     Type: String
     Default: hf_asdasdasduasdasdasTSDSDasfadfasdasd
+  ANTHROPICAPIKEY:
+    Type: String
+    Default: ''
+    Description: Anthropic API key
+  LSTOKEN:
+    Type: String
+    Default: ''
+    Description: Label Studio API token
+  LSURL:
+    Type: String
+    Default: 'https://app.humansignal.com'
+    Description: Label Studio instance URL
+  CVATACCESSTOKEN:
+    Type: String
+    Default: ''
+    Description: CVAT access token (leave empty if using Label Studio)
 
 Resources:
   MyKeyPair:
@@ -77,12 +93,14 @@ Resources:
           # apt-get install -y git python3-pip python3-venv curl ffmpeg
           # Move to the ubuntu home directory
           cd /home/ubuntu/myapp
-          # git clone --branch agentic-data-engine ${RepoURL}  myapp
-          # cd myapp
-          
+          git config --global --add safe.directory /home/ubuntu/myapp
+          git fetch origin
+          git checkout aws-agentic-dataengine
+          git pull origin aws-agentic-dataengine
 
           python3 -m venv venv
           source venv/bin/activate
+          pip install --quiet -r requirements.txt -r agent_requirements.txt
 
           # Install dependencies
           #if [ -f requirements.txt ]; then
@@ -96,10 +114,14 @@ Resources:
           # fi
 
           cat <<EOF > .env
-          LLM_PROVIDER=openai          
+          LLM_PROVIDER=openai
           #OPENAI_MODEL=gpt-5-mini
           OPENAI_API_KEY=${OPENAIAPIKEY}
+          ANTHROPIC_API_KEY=${ANTHROPICAPIKEY}
           HF_TOKEN=${HFTOKEN}
+          LS_TOKEN=${LSTOKEN}
+          LS_URL=${LSURL}
+          CVAT_ACCESS_TOKEN=${CVATACCESSTOKEN}
           EOF
 
           #chown -R ubuntu:ubuntu /home/ubuntu/myapp

@@ -26,7 +26,11 @@ class CloudFormationManager:
                 {'ParameterKey': 'KeyPairName', 'ParameterValue': keypair_name},
                 {'ParameterKey': 'OPENAIAPIKEY', 'ParameterValue': self.config.OPENAIAPIKEY},
                 {'ParameterKey': 'HFTOKEN', 'ParameterValue': self.config.HFTOKEN},
-                {'ParameterKey': 'InstanceType', 'ParameterValue': self.config.INSTANCE_TYPE}
+                {'ParameterKey': 'InstanceType', 'ParameterValue': self.config.INSTANCE_TYPE},
+                {'ParameterKey': 'ANTHROPICAPIKEY', 'ParameterValue': self.config.ANTHROPICAPIKEY},
+                {'ParameterKey': 'LSTOKEN', 'ParameterValue': self.config.LSTOKEN},
+                {'ParameterKey': 'LSURL', 'ParameterValue': self.config.LSURL},
+                {'ParameterKey': 'CVATACCESSTOKEN', 'ParameterValue': self.config.CVATACCESSTOKEN}
             ],
             Capabilities=['CAPABILITY_NAMED_IAM']
         )
