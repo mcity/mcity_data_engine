@@ -57,7 +57,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 8000
           ToPort: 8002
-          CidrIp: 0.0.0.0/0          
+          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
@@ -65,7 +65,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 5151
           ToPort: 5151
-          CidrIp: 0.0.0.0/0          
+          CidrIp: 0.0.0.0/0
 
   # EC2 Instance using Amazon Linux 2023
   WebServerInstance:
@@ -82,7 +82,7 @@ Resources:
          Ebs:
            VolumeSize: 100      # Size in GiB
            VolumeType: gp3      # Latest generation SSD for better performance
-           DeleteOnTermination: true      
+           DeleteOnTermination: true
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -93,25 +93,9 @@ Resources:
           # apt-get install -y git python3-pip python3-venv curl ffmpeg
           # Move to the ubuntu home directory
           cd /home/ubuntu/myapp
-          git config --global --add safe.directory /home/ubuntu/myapp
-          git fetch origin
-          git checkout aws-agentic-dataengine
-          git pull origin aws-agentic-dataengine
 
           python3 -m venv venv
           source venv/bin/activate
-          pip install --quiet -r requirements.txt -r agent_requirements.txt
-
-          # Install dependencies
-          #if [ -f requirements.txt ]; then
-          #  while read p; do pip3 install "$p" || continue; done < requirements.txt
-          #fi
-          # if [ -f requirements.txt ]; then
-          #  while read p; do pip3 install "$p" || continue; done < requirements_prod.txt 
-          # fi
-          # if [ -f agent_requirements.txt ]; then
-          #   while read p; do pip3 install "$p" || continue; done <  agent_requirements.txt
-          # fi
 
           cat <<EOF > .env
           LLM_PROVIDER=openai
@@ -135,12 +119,12 @@ Resources:
           nohup python3 client_chat.py --ui > client_chat.log 2>&1 &
           nohup python3 mcp_server.py > mcp_server.log 2>&1  &
           nohup python3 llm_clients.py > llm_clients.log 2>&1  &
-          nohup python3 chat_server.py > chat_server.log 2>&1   &      
+          nohup python3 chat_server.py > chat_server.log 2>&1   &
           nohup uvicorn ingest_server:app --host 0.0.0.0 --port 8002 --reload > ingest_server.log 2>&1
 
 
 
-          
+
 
 Outputs:
   PublicIP:
