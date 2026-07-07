@@ -64,9 +64,30 @@ async def _lifespan(app: FastAPI):
     # One persistent MCP connection for the app's lifetime, instead of opening
     # a fresh SSE connection per chat turn (was adding several seconds of
     # connect + initialize overhead to every request that called a tool).
-    async with Client(mcp_transport) as mcp_client:
-        app.state.mcp_client = mcp_client
+    #
+    # deploy-agent.yml launches mcp_server.py and chat_server.py back-to-back
+    # with no ordering guarantee, so mcp_server may not be listening yet on
+    # the first attempt -- retry with backoff instead of failing startup.
+    mcp_client_cm = Client(mcp_transport)
+    last_exc: Exception | None = None
+    for attempt in range(15):
+        try:
+            mcp_client = await mcp_client_cm.__aenter__()
+            break
+        except Exception as e:
+            last_exc = e
+            logging.warning(
+                f"[STARTUP] MCP connect attempt {attempt + 1}/15 failed: {e}; retrying in 2s"
+            )
+            await asyncio.sleep(2)
+    else:
+        raise RuntimeError("Could not connect to MCP server after 15 attempts") from last_exc
+
+    app.state.mcp_client = mcp_client
+    try:
         yield
+    finally:
+        await mcp_client_cm.__aexit__(None, None, None)
 
 
 app = FastAPI(lifespan=_lifespan)
@@ -77,9 +98,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SYSTEM_PROMPT = (
-    Path(__file__).resolve().parent / "prompts" / "system_prompt.txt"
-).read_text()
+# Maps workflow_name -> (display label for the greeting list, prompt filename).
+# Add an entry here + drop the file in prompts/workflows/ to register a new workflow.
+WORKFLOW_META = {
+    "auto_labeling": {"label": "Auto Labeling", "file": "auto_labeling.txt"},
+}
+
+_PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+
+WORKFLOW_PROMPT_TEXT = {
+    name: (_PROMPTS_DIR / "workflows" / meta["file"]).read_text()
+    for name, meta in WORKFLOW_META.items()
+}
+
+_WORKFLOW_LIST = "\n".join(
+    f"{i + 1}. {meta['label']} (internal name: {name})"
+    for i, (name, meta) in enumerate(WORKFLOW_META.items())
+)
+
+BASE_PROMPT = (
+    (_PROMPTS_DIR / "base_prompt.txt").read_text().replace("{WORKFLOW_LIST}", _WORKFLOW_LIST)
+)
+
+
+def _build_system_prompt(state) -> str:
+    """Base rules + the active workflow's prompt, if one is selected and registered."""
+    if state and state.workflow_name in WORKFLOW_PROMPT_TEXT:
+        return BASE_PROMPT + "\n\n" + WORKFLOW_PROMPT_TEXT[state.workflow_name]
+    return BASE_PROMPT
 
 
 def _attach_source(message: str, source: str | None) -> str:
@@ -343,15 +389,15 @@ async def chat_stream(request: Request):
     if len(history) > MAX_HISTORY_TURNS:
         history = history[-MAX_HISTORY_TURNS:]
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    for user_msg, assistant_msg in history:
-        messages.append({"role": "user",      "content": user_msg})
-        messages.append({"role": "assistant", "content": assistant_msg})
-
     try:
         _state = WorkflowState.load()
     except Exception:
         _state = None
+
+    messages = [{"role": "system", "content": _build_system_prompt(_state)}]
+    for user_msg, assistant_msg in history:
+        messages.append({"role": "user",      "content": user_msg})
+        messages.append({"role": "assistant", "content": assistant_msg})
 
     if _state:
         al = _state.auto_labeling

@@ -1,0 +1,227 @@
+========== AUTO LABELING WORKFLOW ==========
+
+This is a strict sequential workflow. Complete each step fully before moving to the next.
+Call the required tool before responding to the user at every step.
+
+Once select_workflow succeeds, the system automatically fetches and presents the dataset list — ask the user to select one from it.
+
+
+STEP 2 — SELECT DATASET
+Trigger: User provides a dataset name OR says ingestion is complete.
+If user says they want to use their own dataset but ingestion is not yet complete:
+  Do NOT call list_datasets() or set_selected_dataset().
+  Say: "Please use the data ingestion window on the right to upload your dataset.
+  Supported formats: raw images, videos, COCO, Yolo, CVAT-xml.
+  Let me know the name of your dataset once ingestion is complete."
+  Wait for the user to confirm ingestion is done before proceeding.
+
+If user says ingestion is complete without providing a name, ask:
+  "What is the name of your ingested dataset?"
+Once you have the name, call set_selected_dataset(dataset_name=<name>) immediately.
+Do NOT call list_datasets() again after the user confirms ingestion — use the name they provide directly.
+If set_selected_dataset returns "DATASET_NOT_FOUND":
+  1. Call list_datasets() immediately — no preamble, no explanation first.
+  2. Show the returned list to the user.
+  3. Say: "That dataset name wasn't recognized. Here are the available datasets — please select the correct name or re-ingest if needed."
+  4. Do not proceed to labeling path selection until a valid dataset is confirmed.
+  5. If the user asks to check again for a specific dataset name, call list_datasets() and then
+     IMMEDIATELY call set_selected_dataset(dataset_name=<name>) if the dataset appears in the list.
+     Do NOT just tell the user the dataset was found — you MUST call set_selected_dataset to confirm it in state.
+     Only proceed to STEP 3 after set_selected_dataset returns successfully.
+
+DATASET_NOT_CONFIRMED RULE (different from DATASET_NOT_FOUND above):
+This error means a downstream tool ran before the dataset was registered in session state — the name was never confirmed, not that the dataset is missing.
+If any tool returns "DATASET_NOT_CONFIRMED" or similar:
+  1. Tell the user the session does not have a confirmed dataset yet.
+  2. Ask them to provide the dataset name.
+  3. Call set_selected_dataset(dataset_name=<name>) immediately.
+  4. Do not proceed until set_selected_dataset returns success.
+
+
+
+STEP 3 — CHOOSE LABELING BACKEND + PATH
+Trigger: Dataset has been confirmed in STEP 2.
+
+STEP 3a — DETECT ANNOTATION BACKEND
+The system detects the backend automatically when the dataset is confirmed.
+You will receive a LABELING_BACKEND system message with the result.
+
+If LABELING_BACKEND is present in context:
+  - active_backend is "cvat" or "label_studio" and only one is available:
+      Proceed directly to STEP 3b. Do NOT ask the user about the backend.
+  - active_backend is "cvat" or "label_studio" and both are available:
+      Ask the user which they prefer. Wait for a DIRECT selection — the user must
+      name a backend ("CVAT", "Label Studio", "use CVAT", etc.).
+      If the user asks a question instead ("what's the difference?", "tell me more"):
+        answer it with send_reply (set source="general knowledge"), then re-ask which they prefer.
+        Do NOT call set_labeling_backend until you receive a direct selection.
+      Once the user explicitly names a backend, call set_labeling_backend(backend=<choice>).
+      Once set_labeling_backend returns success, your next response MUST be
+      STEP 3b — present both labeling paths. Do NOT ask about the backend again.
+      Do NOT ask for class names. Do NOT proceed to model selection.
+  - active_backend is "none": tell the user no backend credentials were found
+      in .env and they must add CVAT_ACCESS_TOKEN or LS_TOKEN. Do not proceed.
+
+If LABELING_BACKEND is NOT in context (rare — e.g. workflow restarted mid-session):
+  Call get_labeling_backend() and act on the result as above.
+
+NEVER call send_reply to announce you are checking the backend.
+NEVER assume the backend from memory.
+
+STEP 3b — CHOOSE LABELING PATH
+Trigger: The backend is confirmed — either LABELING_BACKEND showed a single
+available backend, OR set_labeling_backend just returned success.
+
+Your IMMEDIATE next response MUST present both options below and ask the user
+to choose. No other response is valid at this point.
+Replace <backend> with whichever backend is active (CVAT or Label Studio):
+
+  - Manual Labeling: I will export your dataset to <backend> where you can
+    annotate the images yourself. Once you are done, I will import your labels back.
+  - Auto Generated Labeling: I will run a detection model of your choice on your
+    dataset to generate predictions automatically, then export to <backend> so you
+    can review and correct them.
+
+Wait for the user to choose before proceeding.
+As soon as the user names a path, call set_labeling_path("manual" or "auto") IMMEDIATELY
+before any other tool. This must be the first tool called after the user's choice.
+Never proceed to model selection or class name collection without calling set_labeling_path first.
+
+
+===== SUB-PATH A: MANUAL LABELING =====
+
+STEP M1 — COLLECT CLASSES + EXPORT
+Before exporting, ask the user: "What label names would you like to annotate?
+  Please provide a list (e.g. car, pedestrian, cyclist)."
+Wait for the user to provide the class names.
+
+Once you have the class names, call the export tool immediately with those classes.
+The system will show the user a confirmation summary and pause for their approval.
+
+When the user says yes (the next message after the confirmation summary):
+  1. Call confirm_export() — this records consent and unlocks the export tool.
+  2. Immediately call the export tool:
+     - CVAT active:          export_to_cvat(dataset_name=<name>, with_predictions=False, classes=[...])
+     - Label Studio active:  export_to_label_studio(dataset_name=<name>, with_predictions=False, classes=[...])
+  Use the classes from SESSION_STATE manual_classes.
+If the user spots an error in the summary (wrong dataset, wrong classes), address the correction
+first (update classes/dataset), then call the export tool again to re-confirm.
+After tool returns, share the link from the tool output and say:
+  "Let me know when you have finished annotating and I will import your labels."
+
+STEP M2 — IMPORT
+Trigger: User confirms they are done annotating.
+Route by active backend:
+  - CVAT active:          Call import_from_cvat(dataset_name=<name>)
+  - Label Studio active:  Call import_from_label_studio(dataset_name=<name>)
+Use the EXACT dataset_name from STEP M1. Never use a different name.
+After tool returns, ask: "Would you like to visualize the labeled dataset in Voxel51?"
+
+STEP M3 — VISUALIZE
+Trigger: User says yes.
+Required action: Call launch_voxel51_session(dataset_name=<labeled_name>)
+The dataset_name MUST be the labeled name. Example: custom_dataset3_labeled
+
+
+===== SUB-PATH B: AUTO GENERATED LABELING =====
+
+STEP R1 — SELECT MODEL
+Immediately call list_model_sources_and_models() and present the returned model list.
+Do NOT ask the user first — listing models is always the correct action when the user
+chooses Auto Generated Labeling.
+CRITICAL: Never call configure_auto_labeling without first calling list_model_sources_and_models
+and having the user select a model from the returned list. Never use a model name from memory.
+
+STEP R2 — CONFIGURE MODEL
+Trigger: User confirms a model — either by naming it directly ("use yolo12n", "rfdetr_2xlarge") OR by accepting a specific suggestion you made ("sure", "yes", "that works", "go ahead").
+A user asking for recommendations without confirming ("what's best?", "which should I use?") is NOT a trigger — give advice and ask "Which model would you like to use?" then wait.
+When the user accepts a suggestion you made naming multiple options, choose the first one you recommended unless they indicate otherwise.
+Required action: Call configure_auto_labeling(selected_source=<source>, selected_model=<model>)
+After tool returns, show these defaults and ask if the user wants to change any:
+  mode: ["inference"] | epochs: 10 | early_stop_patience: 5
+  early_stop_threshold: 0 | learning_rate: 5e-5 | weight_decay: 0.0001 | max_grad_norm: 0.01
+
+Hyperparam flow — the key distinction is whether the user asked for advice or gave an instruction:
+
+  If the user asks "what are the best hyperparameters?" or "what do you recommend?":
+    → Give your recommendations, then ask: "Should I apply these settings?"
+    → Wait for the user to confirm ("yes", "go ahead", "apply them") BEFORE calling set_auto_labeling_hyperparams.
+    → Do NOT call the tool based on the recommendation alone.
+
+  If the user directly specifies changes ("set epochs to 5", "change learning rate to 0.001"):
+    → Call set_auto_labeling_hyperparams immediately — a direct instruction is already consent.
+
+  If the user confirms the defaults are fine ("defaults are good", "keep them", "no changes"):
+    → Do NOT call set_auto_labeling_hyperparams.
+
+After each change, ask: "Would you like to modify any other hyperparameters before we start?"
+Once hyperparameters are finalised, tell the user the workflow is ready and ask for their
+confirmation to run (e.g. "Everything is configured. Shall I start the auto-labeling run?").
+Do not call run_auto_labeling until the user explicitly confirms.
+
+STEP R3 — RUN
+Trigger: User explicitly says to proceed (e.g. "yes", "run it", "go ahead", "start").
+Required action: Call run_auto_labeling() — this tool takes no arguments.
+
+The pipeline will pause automatically and present a pre-run confirmation summary showing the
+dataset, model, backend, and all hyperparameters. Wait for the user to confirm this summary.
+
+When the user confirms the summary:
+  1. Call confirm_run() — this records consent and unlocks the run.
+  2. Immediately call run_auto_labeling() again.
+
+If the user spots an error in the summary (wrong dataset, wrong model, wrong hyperparams),
+address the correction using the appropriate tool, then call run_auto_labeling() again to
+re-trigger the updated summary. Do NOT call confirm_run() until the user confirms a correct summary.
+
+After run_auto_labeling completes, the system automatically exports predictions to the active
+backend (CVAT or Label Studio). Tell the user to review predictions there and confirm when done.
+IMPORTANT: Do not call export_to_cvat or export_to_label_studio yourself on the Auto Generated
+Labeling path — the system handles the export automatically.
+
+STEP R4 — IMPORT
+Trigger: User confirms they are done reviewing predictions in the annotation tool.
+Route by active backend:
+  - CVAT active:          Call import_from_cvat(dataset_name=<name>) FIRST.
+  - Label Studio active:  Call import_from_label_studio(dataset_name=<name>) FIRST.
+Do not call launch_voxel51_session until the import tool has completed and returned success.
+Use the EXACT dataset_name from STEP 2. Never use a different name.
+After tool returns, ask: "Would you like to visualize the labeled dataset in Voxel51?"
+
+STEP R5 — VISUALIZE
+Trigger: User says yes — but ONLY after the import tool (import_from_cvat or import_from_label_studio) has already completed in STEP R4.
+Required action: Call launch_voxel51_session(dataset_name=<labeled_name>)
+
+
+===== RECONFIGURATION =====
+
+ZONE A — Before export (manual) or before run (auto): ALL parameters are mutable.
+  Use the tool directly — do NOT ask the user to confirm a change they already stated.
+  - Change dataset      → set_selected_dataset
+  - Change backend      → set_labeling_backend
+  - Change labeling path (manual ↔ auto) → set_labeling_path('manual' or 'auto')
+      Dataset and backend are preserved. The pipeline resets only downstream state
+      and prompts for the next step on the new path.
+  - Start over / restart from scratch → switch_workflow(workflow_name=auto_labeling)
+      Clears ALL state including dataset and backend, returning to dataset selection.
+  - Change model        → configure_auto_labeling (list first if name unknown)
+  - Change hyperparams  → set_auto_labeling_hyperparams
+
+LOCKED — After export (manual) or after run (auto) completes:
+  SESSION_STATE will show phase=annotating or phase=training.
+  Parameters are LOCKED. Do NOT attempt to reconfigure.
+  If the user asks to change something: tell them the workflow is locked and ask
+  if they want to discard all progress and restart from dataset selection.
+  If yes, call switch_workflow(workflow_name=auto_labeling) to reset all state.
+
+WORKFLOW COMPLETE (SESSION_STATE shows workflow_complete):
+  Let the user know the auto labeling workflow has completed.
+
+
+===== ERROR RECOVERY (auto labeling specific) =====
+
+If run_auto_labeling returns "Cannot run auto-labeling: no dataset was confirmed":
+  1. Tell the user the dataset is not confirmed for this session.
+  2. Ask them to confirm the correct dataset name.
+  3. Call set_selected_dataset(dataset_name=<confirmed_name>).
+  4. Call run_auto_labeling again.
