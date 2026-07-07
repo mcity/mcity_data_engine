@@ -385,7 +385,7 @@ async def chat_stream(request: Request):
     message = data.get("message", "")
     history = data.get("history", [])
 
-    MAX_HISTORY_TURNS = 8
+    MAX_HISTORY_TURNS = 4
     if len(history) > MAX_HISTORY_TURNS:
         history = history[-MAX_HISTORY_TURNS:]
 
