@@ -10,9 +10,15 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastmcp import Client
 from fastmcp.client.transports import SSETransport
 
 sys.path.append(os.path.dirname(__file__))
+
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
 from chat_pipeline import ChatPipeline
 from host_utils import resolve_host
@@ -54,8 +60,13 @@ async def _lifespan(app: FastAPI):
     _reset_state_on_startup()
     app.state.llm = _LLM_PROVIDERS[llm_provider]()
     host = resolve_host()
-    app.state.mcp_transport = SSETransport(url=f"http://{host}:8000/sse")
-    yield
+    mcp_transport = SSETransport(url=f"http://{host}:8000/sse")
+    # One persistent MCP connection for the app's lifetime, instead of opening
+    # a fresh SSE connection per chat turn (was adding several seconds of
+    # connect + initialize overhead to every request that called a tool).
+    async with Client(mcp_transport) as mcp_client:
+        app.state.mcp_client = mcp_client
+        yield
 
 
 app = FastAPI(lifespan=_lifespan)
@@ -438,7 +449,7 @@ async def chat_stream(request: Request):
                 })
 
                 if pipeline is None:
-                    pipeline = ChatPipeline(mcp_transport=request.app.state.mcp_transport, llm=request.app.state.llm)
+                    pipeline = ChatPipeline(mcp_client=request.app.state.mcp_client, llm=request.app.state.llm)
 
                 tool_results, early_reply = await pipeline.run(
                     tool_calls, messages, progress_cb=progress_cb

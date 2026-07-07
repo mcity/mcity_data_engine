@@ -86,7 +86,9 @@ class OpenAIClient(BaseLLMClient):
         self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
     async def chat(self, messages, tools=None, tool_choice=None):
-        kwargs = dict(model=self.model, messages=messages, temperature=0.1)
+        kwargs = dict(model=self.model, messages=messages)
+        if not self.model.startswith(("gpt-5", "o1", "o3", "o4")):
+            kwargs["temperature"] = 0.1
         if tools:
             kwargs["tools"] = tools
             kwargs["parallel_tool_calls"] = False  # prevents missing-field errors with tool_choice="required"

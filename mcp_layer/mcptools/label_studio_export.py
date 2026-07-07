@@ -377,7 +377,12 @@ def export_to_label_studio(
         return "LS_TOKEN not set in .env"
 
     try:
+        # fo.load_dataset() returns a process-wide singleton keyed by name — if this
+        # process already loaded this dataset earlier (e.g. during selection/listing),
+        # its in-memory schema can be stale relative to fields another process (the
+        # auto-labeling subprocess) just wrote. reload() forces a resync from Mongo.
         dataset = fo.load_dataset(dataset_name)
+        dataset.reload()
     except Exception as e:
         return f"Failed to load dataset '{dataset_name}': {e}"
 
@@ -411,7 +416,7 @@ def export_to_label_studio(
                 # Wait up to 20s for the prediction field to appear after inference.
                 for _ in range(10):
                     time.sleep(2)
-                    dataset     = fo.load_dataset(dataset_name)
+                    dataset.reload()
                     schema      = dataset.get_field_schema()
                     pred_fields = [f for f in schema if f.startswith("pred_od_")]
                     if pred_fields:

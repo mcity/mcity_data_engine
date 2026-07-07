@@ -51,7 +51,12 @@ def export_to_cvat(
         return "CVAT_ACCESS_TOKEN not set in .env"
 
     try:
+        # fo.load_dataset() returns a process-wide singleton keyed by name — if this
+        # process already loaded this dataset earlier (e.g. during selection/listing),
+        # its in-memory schema can be stale relative to fields another process (the
+        # auto-labeling subprocess) just wrote. reload() forces a resync from Mongo.
         dataset = fo.load_dataset(dataset_name)
+        dataset.reload()
     except Exception as e:
         return f"Failed to load dataset '{dataset_name}': {e}"
 
@@ -67,7 +72,7 @@ def export_to_cvat(
             if not pred_fields:
                 for attempt in range(10):
                     time.sleep(2)
-                    dataset = fo.load_dataset(dataset_name)
+                    dataset.reload()
                     schema = dataset.get_field_schema()
                     pred_fields = [f for f in schema.keys() if f.startswith("pred_od_")]
                     if pred_fields:

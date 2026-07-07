@@ -6,7 +6,6 @@ import re
 from pathlib import Path
 
 from fastmcp import Client
-from fastmcp.client.transports import SSETransport
 
 from validate_workflow_state import (
     WorkflowState, AutoLabelingState, ClassMappingState,
@@ -161,8 +160,8 @@ class ChatPipeline:
     assistant tool_call_id without a matching tool result.
     """
 
-    def __init__(self, mcp_transport: SSETransport, llm):
-        self.transport = mcp_transport
+    def __init__(self, mcp_client: Client, llm):
+        self.mcp_client = mcp_client
         self.llm = llm
 
         self.state: WorkflowState = WorkflowState()
@@ -257,43 +256,43 @@ class ChatPipeline:
             f"{[c.function.name for c in tool_calls]}"
         )
 
-        async with Client(self.transport) as mcp_client:
-            for call in tool_calls:
-                fn_name = call.function.name
+        mcp_client = self.mcp_client
+        for call in tool_calls:
+            fn_name = call.function.name
 
-                try:
-                    fn_args = json.loads(call.function.arguments)
-                except json.JSONDecodeError:
-                    fn_args = {}
+            try:
+                fn_args = json.loads(call.function.arguments)
+            except json.JSONDecodeError:
+                fn_args = {}
 
-                ok, err, fn_args = validate_tool_input(fn_name, fn_args)
-                if not ok:
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": call.id,
-                        "name": fn_name,
-                        "content": err,
-                    })
-                    tool_results.append({
-                        "tool_call_id": call.id,
-                        "name": fn_name,
-                        "fn_args": fn_args,
-                        "result": err,
-                    })
-                    all_routings.append([FallThrough()])
-                    logging.warning(f"[PIPELINE] Tool input validation failed for {fn_name}: {err}")
-                    continue
-
-                result, routings = await self._dispatch(
-                    fn_name, fn_args, call, mcp_client, messages, progress_cb
-                )
+            ok, err, fn_args = validate_tool_input(fn_name, fn_args)
+            if not ok:
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "name": fn_name,
+                    "content": err,
+                })
                 tool_results.append({
                     "tool_call_id": call.id,
                     "name": fn_name,
                     "fn_args": fn_args,
-                    "result": result,
+                    "result": err,
                 })
-                all_routings.append(routings)
+                all_routings.append([FallThrough()])
+                logging.warning(f"[PIPELINE] Tool input validation failed for {fn_name}: {err}")
+                continue
+
+            result, routings = await self._dispatch(
+                fn_name, fn_args, call, mcp_client, messages, progress_cb
+            )
+            tool_results.append({
+                "tool_call_id": call.id,
+                "name": fn_name,
+                "fn_args": fn_args,
+                "result": result,
+            })
+            all_routings.append(routings)
 
         # Workflow reset wipes dataset_confirmed; re-apply if both fired in the same batch.
         workflow_reset_this_batch = any(
@@ -2065,10 +2064,11 @@ class ChatPipeline:
             tool_name, {"dataset_name": dataset_name, "with_predictions": True}
         )
         export_msg = unwrap_tool_output(export_result)
+        success = ("Project ID" in export_msg) if is_ls else ("Task ID:" in export_msg)
 
         al = self.state.auto_labeling
-        if al:
-            if is_ls and "Project ID" in export_msg:
+        if al and success:
+            if is_ls:
                 try:
                     tasks_file = Path(__file__).resolve().parents[1] / "output" / "ls_tasks.json"
                     if tasks_file.exists():
@@ -2078,13 +2078,20 @@ class ChatPipeline:
                             self.state.save()
                 except Exception:
                     pass
-            elif not is_ls and "Task ID:" in export_msg:
+            else:
                 try:
                     task_id = int(export_msg.split("Task ID:")[1].split()[0].strip())
                     al.cvat_task_id = task_id
                     self.state.save()
                 except Exception:
                     pass
+
+        if not success:
+            return (
+                f"\n\n{export_msg}"
+                f"\n\nExport to {backend_label} did not complete — the predictions were not uploaded. "
+                f"Let me know how you'd like to proceed."
+            )
 
         return (
             f"\n\n{export_msg}"
@@ -2187,25 +2194,23 @@ class ChatPipeline:
         )
 
     async def _dataset_not_found_reply(self) -> str:
-        async with Client(self.transport) as list_client:
-            try:
-                list_result = await list_client.call_tool("list_datasets", {})
-                list_output = unwrap_tool_output(list_result)
-                return (
-                    f"That dataset name wasn't recognized. "
-                    f"Here are the available datasets:\n\n{list_output}\n\n"
-                    f"Please select the correct name or re-ingest if needed."
-                )
-            except Exception as e:
-                return f"Dataset not found and couldn't fetch the list: {e}"
+        try:
+            list_result = await self.mcp_client.call_tool("list_datasets", {})
+            list_output = unwrap_tool_output(list_result)
+            return (
+                f"That dataset name wasn't recognized. "
+                f"Here are the available datasets:\n\n{list_output}\n\n"
+                f"Please select the correct name or re-ingest if needed."
+            )
+        except Exception as e:
+            return f"Dataset not found and couldn't fetch the list: {e}"
 
     async def _fetch_and_return_dataset_list(self) -> str:
         """Fetch and format the dataset list for display after a workflow switch."""
-        async with Client(self.transport) as mcp_client:
-            try:
-                raw = unwrap_tool_output(await mcp_client.call_tool("list_datasets", {}))
-            except Exception as e:
-                return f"Workflow switched. Could not fetch datasets: {e}"
+        try:
+            raw = unwrap_tool_output(await self.mcp_client.call_tool("list_datasets", {}))
+        except Exception as e:
+            return f"Workflow switched. Could not fetch datasets: {e}"
         try:
             datasets = json.loads(raw)
             if isinstance(datasets, list):

@@ -113,7 +113,11 @@ tools = [
                     "(2) the user wants to start over or restart from scratch within the current workflow — "
                     "pass the current workflow name to reset all state back to dataset selection. "
                     "Do NOT call this if the user says they want 'a different workflow' without naming one — "
-                    "use send_reply to present the six workflow options and ask which one instead."
+                    "use send_reply to present the six workflow options and ask which one instead. "
+                    "Do NOT call this if the user is answering a pending in-workflow question — e.g. replying "
+                    "'auto labeling' or 'auto' to a Manual vs Auto Generated Labeling prompt means the annotation "
+                    "method (call set_labeling_path instead), not the 'Auto Labeling' workflow by name. "
+                    "Only treat a message as a workflow switch when no other pending question is awaiting an answer."
                 ),
                 "parameters": {
                     "type": "object",
@@ -188,7 +192,14 @@ tools = [
             "type": "function",
             "function": {
                 "name": "list_model_sources_and_models",
-                "description": "Lists valid model sources and models for auto_labeling.",
+                "description": (
+                    "Lists valid model sources and models for auto_labeling. "
+                    "Only call this to show the list for the first time. "
+                    "Do NOT call this again if the user is asking for a recommendation or says they're unsure "
+                    "which model to pick (e.g. 'I don't know which to use', 'what do you suggest?') — "
+                    "the list has already been shown; use send_reply to recommend a specific model with brief "
+                    "reasoning instead, then ask them to confirm."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {}
@@ -664,7 +675,7 @@ tools = [
             "type": "function",
             "function": {
                 "name": "set_labeling_backend",
-                "description": "Set the active annotation backend for this session. Call this ONLY when the user directly names a backend as their choice ('CVAT', 'Label Studio', 'use CVAT', 'I prefer Label Studio'). A question ('what's the difference?', 'tell me more') is NOT a selection — answer it with send_reply and re-ask which they prefer. Do NOT call this if only one backend is configured — it is selected automatically.",
+                "description": "Set the active annotation backend for this session. Call this when the user names a backend as their choice, including softly-phrased decisions that still name a specific backend ('CVAT', 'use CVAT', 'I prefer Label Studio', 'can I use CVAT instead', 'let's switch to Label Studio', 'actually use CVAT'). Only treat it as a non-selection when the user asks for information WITHOUT naming a backend they want ('what's the difference?', 'tell me more', 'which is better?') — those get send_reply, re-asking which they prefer. Do NOT call this if only one backend is configured — it is selected automatically.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -683,11 +694,14 @@ tools = [
             "function": {
                 "name": "set_labeling_path",
                 "description": (
-                    "Call this IMMEDIATELY when the user names their labeling path at Step 3b. "
+                    "Call this IMMEDIATELY when the user names their labeling path at Step 3b, "
+                    "or explicitly asks to switch between manual and auto generated labeling later. "
                     "Use 'manual' when the user says 'Manual Labeling', 'annotate myself', etc. "
                     "Use 'auto' when the user says 'Auto Generated Labeling', 'run a model', etc. "
                     "This MUST be called before any export or model tool — it unlocks the correct "
-                    "downstream tools and persists the path so backend switches do not lose it."
+                    "downstream tools and persists the path so backend switches do not lose it. "
+                    "Do NOT call this for unrelated requests (backend changes, dataset changes, questions) — "
+                    "it only sets manual vs. auto, never re-call it with the path that is already active."
                 ),
                 "parameters": {
                     "type": "object",
