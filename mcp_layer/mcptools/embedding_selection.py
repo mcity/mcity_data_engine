@@ -1,6 +1,7 @@
 from mcptools import mcp
 import re
 import asyncio
+import sys
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -148,7 +149,7 @@ async def run_embedding_selection() -> str:
 
     try:
         process = await asyncio.create_subprocess_exec(
-            "python", "-u", str(MAIN_PATH),
+            sys.executable, "-u", str(MAIN_PATH),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(MAIN_PATH.parent),

@@ -1,6 +1,7 @@
 from mcptools import mcp  #shared instance from __init__.py
 import re
 import asyncio
+import sys
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -239,7 +240,7 @@ async def run_auto_labeling() -> str:
 
     try:
         process = await asyncio.create_subprocess_exec(
-            "python", "-u", str(MAIN_PATH),
+            sys.executable, "-u", str(MAIN_PATH),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(MAIN_PATH.parent),

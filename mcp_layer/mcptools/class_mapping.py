@@ -206,7 +206,7 @@ async def run_class_mapping() -> str:
     try:
         # Use communicate() instead of readline loop to prevent deadlocks
         process = await asyncio.create_subprocess_exec(
-            "python", "-u", str(MAIN_PATH),
+            sys.executable, "-u", str(MAIN_PATH),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(MAIN_PATH.parent),

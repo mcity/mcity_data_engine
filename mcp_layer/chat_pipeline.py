@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+import sys
 from pathlib import Path
 
 from fastmcp import Client
@@ -1728,7 +1729,7 @@ class ChatPipeline:
             return sentinel, [HardStop(self._format_run_confirmation_prompt())]
 
         process = await asyncio.create_subprocess_exec(
-            "python", "-u", str(MAIN_PATH),
+            sys.executable, "-u", str(MAIN_PATH),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(MAIN_PATH.parent),

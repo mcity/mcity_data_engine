@@ -75,7 +75,7 @@ def launch_voxel51_session(dataset_name: str = "") -> str:
         log_path = ROOT_DIR / "session_v51.log"
         with open(log_path, "a") as log_file:
             proc = subprocess.Popen(
-                ["python", str(ROOT_DIR / "session_v51.py"), target_dataset],
+                [sys.executable, str(ROOT_DIR / "session_v51.py"), target_dataset],
                 stdout=log_file,
                 stderr=log_file,
                 cwd=str(ROOT_DIR),
