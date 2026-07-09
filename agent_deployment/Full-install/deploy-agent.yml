@@ -2,12 +2,10 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Mcity data engine deployment'
 
 Parameters:
-  UbuntuAMI:
-    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/canonical/ubuntu/server/noble/stable/current/amd64/hvm/ebs-gp3/ami-id'
   OPENAIAPIKEY:
     Type: String
     Default: sk-123456789123456789123456789 # Replace this key
+    NoEcho: true
   KeyPairName:
     Type: String
     Default: mcity-data-engine-key
@@ -22,7 +20,31 @@ Parameters:
   HFTOKEN:
     Type: String
     Default: hf_asdasdasduasdasdasTSDSDasfadfasdasd
-    
+    NoEcho: true
+  ANTHROPICAPIKEY:
+    Type: String
+    Default: ''
+    Description: Anthropic API key
+    NoEcho: true
+  LSTOKEN:
+    Type: String
+    Default: ''
+    Description: Label Studio API token
+    NoEcho: true
+  LSURL:
+    Type: String
+    Default: 'https://app.humansignal.com'
+    Description: Label Studio instance URL
+  CVATURL:
+    Type: String
+    Default: 'https://app.cvat.ai'
+    Description: CVAT instance URL
+  CVATACCESSTOKEN:
+    Type: String
+    Default: ''
+    Description: CVAT access token (leave empty if using Label Studio)
+    NoEcho: true
+
 Resources:
   MyKeyPair:
     Type: 'AWS::EC2::KeyPair'
@@ -41,7 +63,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 8000
           ToPort: 8002
-          CidrIp: 0.0.0.0/0          
+          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
@@ -49,9 +71,8 @@ Resources:
         - IpProtocol: tcp
           FromPort: 5151
           ToPort: 5151
-          CidrIp: 0.0.0.0/0          
+          CidrIp: 0.0.0.0/0
 
-  # EC2 Instance using Amazon Linux 2023
   WebServerInstance:
     Type: 'AWS::EC2::Instance'
     Properties:
@@ -59,70 +80,75 @@ Resources:
       KeyName: !Ref MyKeyPair
       SecurityGroups:
         - !Ref InstanceSecurityGroup
-      ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/noble/stable/current/amd64/hvm/ebs-gp3/ami-id}}' # Amazon Linux 2023 (AMI varies by region)
+      ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/noble/stable/current/amd64/hvm/ebs-gp3/ami-id}}'
       BlockDeviceMappings:
-       - DeviceName: /dev/sda1  # Root device name for Amazon Linux 2023
-         Ebs:
-           VolumeSize: 100      # Size in GiB
-           VolumeType: gp3      # Latest generation SSD for better performance
-           DeleteOnTermination: true      
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 100
+            VolumeType: gp3
+            DeleteOnTermination: true
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          # Update Ubuntu and install Git/Python
-          #export DEBIAN_FRONTEND=noninteractive
-          sudo -s
+          # cloud-init already runs as root -- no sudo -s needed
+
           apt-get update -y
           apt-get install -y git python3-pip python3-venv curl ffmpeg
-          # Move to the ubuntu home directory
+
           cd /home/ubuntu
-          git clone --branch agentic-data-engine ${RepoURL}  myapp
+          git config --global --add safe.directory /home/ubuntu/myapp
+          git clone --branch aws-agentic-dataengine ${RepoURL} myapp
           cd myapp
-          
 
           python3 -m venv venv
           source venv/bin/activate
 
-          # Install dependencies
-          #if [ -f requirements.txt ]; then
-          #  while read p; do pip3 install "$p" || continue; done < requirements.txt
-          #fi
-          if [ -f requirements.txt ]; then
-           while read p; do pip3 install "$p" || continue; done < requirements_prod.txt 
+          # Every package below is exact-pinned, so --no-deps skips pip's slow
+          # full-graph resolution and just installs what's listed.
+          if [ -f requirements_prod.txt ]; then
+            pip3 install -r requirements_prod.txt --no-deps
           fi
-          # if [ -f agent_requirements.txt ]; then
-          #   while read p; do pip3 install "$p" || continue; done <  agent_requirements.txt
-          # fi
+          if [ -f agent_requirements.txt ]; then
+            pip3 install -r agent_requirements.txt --no-deps
+          fi
+
+          # fiftyone requires sse-starlette<1, but mcp (via fastmcp) requires
+          # >=1.6.1 -- no version satisfies both, so fiftyone is installed
+          # separately with --no-deps rather than forcing the wrong one.
+          pip3 install "fiftyone==1.4.1" --no-deps
+
+          # strawberry-graphql: agent_requirements.txt's 0.138.1 predates pydantic
+          # v2 support; numpy: msight_core and imgaug both require exactly 1.26.3.
+          pip3 install "strawberry-graphql==0.280.0"
+          pip3 install "numpy==1.26.3"
 
           cat <<EOF > .env
-          LLM_PROVIDER=openai          
+          LLM_PROVIDER=openai
           OPENAI_MODEL=gpt-5-mini
           OPENAI_API_KEY=${OPENAIAPIKEY}
           HF_TOKEN=${HFTOKEN}
+          ANTHROPIC_API_KEY=${ANTHROPICAPIKEY}
+          LS_TOKEN=${LSTOKEN}
+          LS_URL=${LSURL}
+          CVAT_URL=${CVATURL}
+          CVAT_ACCESS_TOKEN=${CVATACCESSTOKEN}
           EOF
 
-          #chown -R ubuntu:ubuntu /home/ubuntu/myapp
-          #chown ubuntu:ubuntu .env
           chmod 600 .env
+
+          # PYTHONPATH lets mcp_layer scripts import the config/ package from project root
+          export PYTHONPATH=/home/ubuntu/myapp
+
           nohup python3 session_v51.py > session_v51.log 2>&1 &
 
           cd mcp_layer
-          # Run multiple python files in background
-          # Redirect output to logs for troubleshooting
           nohup python3 client_chat.py --ui > client_chat.log 2>&1 &
-          nohup python3 mcp_server.py > mcp_server.log 2>&1  &
-          nohup python3 llm_clients.py > llm_clients.log 2>&1  &
-          nohup python3 chat_server.py > chat_server.log 2>&1   &      
-          nohup uvicorn ingest_server:app --host 0.0.0.0 --port 8002 --reload > ingest_server.log 2>&1
-
-
-
-          
+          nohup python3 mcp_server.py > mcp_server.log 2>&1 &
+          nohup python3 llm_clients.py > llm_clients.log 2>&1 &
+          nohup python3 chat_server.py > chat_server.log 2>&1 &
+          nohup uvicorn ingest_server:app --host 0.0.0.0 --port 8002 > ingest_server.log 2>&1
 
 Outputs:
   PublicIP:
     Description: Instance Public IP
     Value: !GetAtt WebServerInstance.PublicIp
-  KeyPairID:
-    Description: ID of the key pair for retrieving the private key
-    Value: !GetAtt MyKeyPair.KeyPairId

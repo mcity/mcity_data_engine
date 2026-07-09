@@ -10,6 +10,7 @@ import fiftyone as fo
 from mcptools import mcp
 import fiftyone.core.odm as _foodm
 import config.config as _cc
+from host_utils import resolve_host
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT_DIR / "config" / "config.py"
@@ -80,9 +81,10 @@ def launch_voxel51_session(dataset_name: str = "") -> str:
                 cwd=str(ROOT_DIR),
             )
         logging.warning(f"[V51] Launched PID={proc.pid} for dataset '{target_dataset}'")
+        host = resolve_host()
         return (
             f"Voxel51 session launched for dataset '{target_dataset}'. "
-            f"Open your browser and go to: http://localhost:5151"
+            f"Open your browser and go to: http://{host}:5151"
         )
     except Exception as e:
         return f"Failed to launch Voxel51 session: {e}\n{traceback.format_exc()}"
