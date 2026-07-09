@@ -10,6 +10,8 @@ class Config:
     OPENAIAPIKEY = os.getenv('OPENAIAPIKEY')
     HFTOKEN = os.getenv('HFTOKEN')
     ANTHROPICAPIKEY = os.getenv('ANTHROPICAPIKEY', '')
+    GEMINIAPIKEY = os.getenv('GEMINIAPIKEY', '')
+    GROQAPIKEY = os.getenv('GROQAPIKEY', '')
     LSTOKEN = os.getenv('LSTOKEN', '')
     LSURL = os.getenv('LSURL', 'https://app.humansignal.com')
     CVATACCESSTOKEN = os.getenv('CVATACCESSTOKEN', '')

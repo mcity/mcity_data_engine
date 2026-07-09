@@ -51,6 +51,10 @@ html, body {
   color:var(--muted);font-size:13px;
 }
 .status-dot{color:#22c55e;font-size:14px;line-height:1}
+.provider-select{
+  padding:4px 8px;border-radius:8px;border:1px solid var(--border);
+  background:#0a1224;color:var(--text);font-size:13px;outline:none
+}
 .app-grid{
 display:flex;
 gap:16px;
@@ -231,6 +235,9 @@ min-width:auto;
   </div>
   <textarea id="input" rows="1" placeholder="Type a message…" autocomplete="off"></textarea>
   <button id="send" type="submit">Send</button>
+  <div style="grid-column:2/3; display:flex; justify-content:flex-end;">
+    <select id="providerSelect" class="provider-select"></select>
+  </div>
 </form>
 </section>
 <!-- RIGHT: Ingestion (30%) -->
@@ -284,6 +291,30 @@ const chatTxt = document.getElementById("chatStatusText");
 
 let history = [];
 
+const PROVIDER_KEY = "mcity_llm_provider";
+const providerLabels = { openai: "OpenAI", claude: "Anthropic", gemini: "Gemini", groq: "Groq" };
+let selectedProvider = localStorage.getItem(PROVIDER_KEY) || "openai";
+
+async function initProviderDropdown() {
+    const sel = document.getElementById("providerSelect");
+    try {
+        const res = await fetch(`${CHAT_BASE}/chat/providers`);
+        const { providers, default: dflt } = await res.json();
+        if (!providers.includes(selectedProvider)) {
+            selectedProvider = providers.includes(dflt) ? dflt : (providers[0] || "openai");
+        }
+        sel.innerHTML = providers.map(p => `<option value="${p}">${providerLabels[p] || p}</option>`).join("");
+        sel.value = selectedProvider;
+    } catch {
+        sel.innerHTML = `<option value="openai">OpenAI</option>`;
+    }
+    sel.addEventListener("change", () => {
+        selectedProvider = sel.value;
+        localStorage.setItem(PROVIDER_KEY, selectedProvider);
+    });
+}
+initProviderDropdown();
+
 // Extract [source: ...] tag from the end of a message, return {body, source}.
 function extractSource(text) {
     const match = text.match(/\n?\[source:\s*([^\]]+)\]\s*$/i);
@@ -297,15 +328,21 @@ function extractSource(text) {
 function renderText(text) {
     // Markdown links → <a>
     let out = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, url) => {
-        url = url.replace(/[.,;:!?]+$/, "");
+        url = url.replace(/[.,;:!?*_]+$/, "");
         return `<a href="${url}" target="_blank" style="color:inherit;text-decoration:underline;">${linkText}</a>`;
+    });
+    // Bold/italic-wrapped bare URLs (**url** / *url*) -- strip the wrapper before
+    // the generic bare-URL pass runs, else the closing */_ gets swallowed into
+    // the href and the leading one is left as stray visible text.
+    out = out.replace(/([*_]{1,2})(https?:\/\/[^\s*_<>"{}|\\^`\[\]]+?)\1/g, (_, __, url) => {
+        return `<a href="${url}" target="_blank" style="color:inherit;text-decoration:underline;">${url}</a>`;
     });
     // Bare URLs
     out = out.replace(/(?<!href="|">)https?:\/\/[^\s<>"{}|\\^`\[\]]+/g, url => {
         const opens  = (url.match(/\(/g) || []).length;
         const closes = (url.match(/\)/g) || []).length;
         if (closes > opens) url = url.replace(/\)+$/, "");
-        url = url.replace(/[.,;:!?]+$/, "");
+        url = url.replace(/[.,;:!?*_]+$/, "");
         return `<a href="${url}" target="_blank" style="color:inherit;text-decoration:underline;">${url}</a>`;
     });
     return out;
@@ -440,7 +477,7 @@ async function chatSend(content) {
         const res = await fetch(`${CHAT_BASE}/chat/stream`, {
             method:  "POST",
             headers: { "Content-Type": "application/json" },
-            body:    JSON.stringify({ message: content, history }),
+            body:    JSON.stringify({ message: content, history, provider: selectedProvider }),
         });
 
         if (!res.ok) throw new Error(`chat/stream failed: ${res.status}`);

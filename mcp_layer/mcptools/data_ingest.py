@@ -230,6 +230,18 @@ async def _run_data_ingest_streaming_core(
             ds_name = dataset_prefix or "custom_dataset"
 
         if final_rc == 0:
+            # Ingestion runs outside any chat turn, so nothing else marks the
+            # dataset confirmed -- without this the next chat message can't call
+            # set_labeling_path until the user separately names the dataset.
+            try:
+                from validate_workflow_state import WorkflowState
+                state = WorkflowState.load()
+                state.dataset_name = ds_name
+                state.dataset_confirmed = True
+                state.save()
+            except Exception as e:
+                logging.warning(f"[INGEST] Failed to mark dataset confirmed in WorkflowState: {e}")
+
             await _emit(emit, {
                 "type": "agent",
                 "data": {
@@ -349,6 +361,16 @@ async def run_data_ingest_tool(
             backup_path.unlink(missing_ok=True)
         except Exception:
             pass
+
+        if rc == 0:
+            try:
+                from validate_workflow_state import WorkflowState
+                state = WorkflowState.load()
+                state.dataset_name = name
+                state.dataset_confirmed = True
+                state.save()
+            except Exception as e:
+                logging.warning(f"[INGEST] Failed to mark dataset confirmed in WorkflowState: {e}")
 
         tail = combined[-5000:] if len(combined) > 5000 else combined
         status = "ok" if rc == 0 else "error"

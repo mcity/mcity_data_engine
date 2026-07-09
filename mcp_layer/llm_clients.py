@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import uuid
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
@@ -8,6 +9,8 @@ from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 from groq import AsyncGroq
 import google.generativeai as genai
+from google.generativeai import protos
+from google.generativeai.types import content_types
 
 
 class _FakeFunction:
@@ -105,12 +108,14 @@ class OpenAIClient(BaseLLMClient):
 class GroqClient(BaseLLMClient):
     def __init__(self):
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-        self.model = os.getenv("GROQ_MODEL", "llama3-70b-8192")
+        # llama3-70b-8192 (former default) was decommissioned by Groq on 2025-05-31.
+        self.model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
     async def chat(self, messages, tools=None, tool_choice=None):
         kwargs = dict(model=self.model, messages=messages, temperature=0.1)
         if tools:
             kwargs["tools"] = tools
+            kwargs["parallel_tool_calls"] = False  # matches OpenAIClient: prevents missing-field errors with tool_choice="required"
         if tool_choice:
             kwargs["tool_choice"] = tool_choice
         response = await self.client.chat.completions.create(**kwargs)
@@ -124,39 +129,134 @@ class GroqClient(BaseLLMClient):
 class GeminiClient(BaseLLMClient):
     def __init__(self):
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        self.model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+        # gemini-1.5-flash (former default) was retired (404, confirmed live).
+        self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
     async def chat(self, messages, tools=None, tool_choice=None):
+        system_text, contents = self._to_gemini_contents(messages)
+        # system_instruction is constructor-only, and system text varies per turn.
+        model = genai.GenerativeModel(model_name=self.model_name, system_instruction=system_text or None)
+
+        kwargs = {"generation_config": {"temperature": 0.1}}
         if tools:
-            raise NotImplementedError(
-                "GeminiClient does not yet support tool use; do not set "
-                "LLM_PROVIDER=gemini for workflows requiring tool calls."
-            )
-        # Gemini: no tool use; skip system/tool roles; map "assistant" → "model".
-        parts = []
-        for m in messages:
-            role = m.get("role", "")
-            content = m.get("content", "")
-            if role in ("system", "tool") or not isinstance(content, str):
-                continue
-            gemini_role = "model" if role == "assistant" else role
-            parts.append({"role": gemini_role, "parts": [content]})
-        while parts and parts[0]["role"] != "user":
-            parts.pop(0)
-        if not parts:
-            parts = [{"role": "user", "parts": [""]}]
+            kwargs["tools"] = [self._convert_tools(tools)]
+            kwargs["tool_config"] = {
+                "function_calling_config": {"mode": "any" if tool_choice == "required" else "auto"}
+            }
+
         try:
-            response = await self.model.generate_content_async(parts, generation_config={"temperature": 0.1})
-            return _FakeMessage(content=response.text.strip(), tool_calls=[])
+            response = await model.generate_content_async(contents, **kwargs)
         except Exception as e:
-            return _FakeMessage(content=f"[Gemini error] {str(e)}", tool_calls=[])
+            logging.warning(f"[GEMINI] API error: {e}")
+            raise
+
+        return self._to_fake_message(response)
 
     async def _summarize(self, prompt: str) -> str:
-        try:
-            response = await self.model.generate_content_async(prompt, generation_config={"temperature": 0.1})
-            return response.text.strip()
-        except Exception as e:
-            return f"[Gemini summarization error] {str(e)}"
+        model = genai.GenerativeModel(model_name=self.model_name)
+        response = await model.generate_content_async(prompt, generation_config={"temperature": 0.1})
+        return response.text.strip()
+
+    @staticmethod
+    def _convert_tools(tools: list) -> dict:
+        decls = []
+        for t in tools:
+            fn = t.get("function", {})
+            params = fn.get("parameters", {"type": "object", "properties": {}})
+            # Gemini's Schema proto has no additionalProperties field (confirmed:
+            # constructing it raises) -- strip via the SDK's own helper.
+            params = json.loads(json.dumps(params))  # deep copy; strip mutates in place
+            content_types.strip_additional_properties(params)
+            decls.append({"name": fn.get("name", ""), "description": fn.get("description", ""), "parameters": params})
+        return {"function_declarations": decls}
+
+    @staticmethod
+    def _to_gemini_contents(openai_messages: list) -> tuple[str, list]:
+        """Convert the shared OpenAI-format messages to Gemini's contents shape
+        (mirrors ClaudeClient._to_anthropic_messages). Tool results become
+        function_response parts matched by name -- FunctionCall has no id field.
+        """
+        system_parts: list[str] = []
+        result: list[dict] = []
+
+        def _append_part(role: str, part):
+            if result and result[-1]["role"] == role:
+                result[-1]["parts"].append(part)
+            else:
+                result.append({"role": role, "parts": [part]})
+
+        for msg in openai_messages:
+            role = msg.get("role", "")
+
+            if role == "system":
+                text = (msg.get("content", "") or "").strip()
+                if text:
+                    system_parts.append(text)
+                continue
+
+            if role == "tool":
+                fr_part = protos.Part(function_response=protos.FunctionResponse(
+                    name=msg.get("name", ""),
+                    response={"result": str(msg.get("content", ""))},
+                ))
+                _append_part("user", fr_part)
+                continue
+
+            if role == "assistant":
+                text = msg.get("content") or ""
+                if text:
+                    _append_part("model", {"text": text})
+                for tc in msg.get("tool_calls") or []:
+                    if isinstance(tc, dict):
+                        fn = tc.get("function") or {}
+                        fn_name = fn.get("name", "")
+                        fn_args_str = fn.get("arguments", "{}")
+                    else:
+                        fn_obj = getattr(tc, "function", None)
+                        fn_name = getattr(fn_obj, "name", "") if fn_obj else ""
+                        fn_args_str = getattr(fn_obj, "arguments", "{}") if fn_obj else "{}"
+                    try:
+                        args = json.loads(fn_args_str)
+                    except Exception:
+                        args = {}
+                    fc_part = protos.Part(function_call=protos.FunctionCall(name=fn_name, args=args))
+                    _append_part("model", fc_part)
+                continue
+
+            if role == "user":
+                content = msg.get("content", "") or ""
+                if content:
+                    _append_part("user", {"text": content})
+                continue
+
+        while result and result[0]["role"] != "user":
+            result.pop(0)
+
+        return "\n\n".join(system_parts), result
+
+    @staticmethod
+    def _to_fake_message(response) -> "_FakeMessage":
+        text_parts: list[str] = []
+        tool_calls: list[_FakeToolCall] = []
+
+        parts = response.candidates[0].content.parts if response.candidates else []
+        for i, part in enumerate(parts):
+            if "text" in part and part.text:
+                text_parts.append(part.text)
+            elif "function_call" in part:
+                fc = part.function_call
+                # args is a protobuf Struct -- numbers round-trip as float (5 -> 5.0).
+                args = {
+                    k: (int(v) if isinstance(v, float) and v.is_integer() else v)
+                    for k, v in dict(fc.args).items()
+                }
+                tool_calls.append(_FakeToolCall(
+                    id=f"gemini_{fc.name}_{i}_{uuid.uuid4().hex[:8]}",
+                    name=fc.name,
+                    arguments=json.dumps(args),
+                ))
+
+        return _FakeMessage(content="".join(text_parts) or None, tool_calls=tool_calls)
 
 
 class ClaudeClient(BaseLLMClient):

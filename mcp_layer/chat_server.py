@@ -35,6 +35,12 @@ _LLM_PROVIDERS = {
     "claude": ClaudeClient,
     "anthropic": ClaudeClient,  # alias
 }
+_PROVIDER_ENV_VAR = {
+    "openai": "OPENAI_API_KEY",
+    "claude": "ANTHROPIC_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "groq": "GROQ_API_KEY",
+}
 
 llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
 if llm_provider not in _LLM_PROVIDERS:
@@ -43,6 +49,29 @@ if llm_provider not in _LLM_PROVIDERS:
         f"Valid values: {list(_LLM_PROVIDERS)}. Falling back to 'openai'."
     )
     llm_provider = "openai"
+
+
+def _canonical_provider(key: str) -> str:
+    key = (key or "").lower()
+    return "claude" if key == "anthropic" else key
+
+
+def available_providers() -> list[str]:
+    """Providers whose API key env var is actually set on this server."""
+    return [p for p, env in _PROVIDER_ENV_VAR.items() if os.getenv(env, "").strip()]
+
+
+def get_llm_client(app: FastAPI, requested: str):
+    """Resolve + lazily construct + cache a client, never for a provider whose key is missing."""
+    avail = available_providers()
+    key = _canonical_provider(requested)
+    if key not in avail:
+        default_key = _canonical_provider(llm_provider)
+        key = default_key if default_key in avail else (avail[0] if avail else "openai")
+    cache = app.state.llm_clients
+    if key not in cache:
+        cache[key] = _LLM_PROVIDERS[key]()
+    return cache[key]
 
 def _reset_state_on_startup() -> None:
     """Reset persisted state on startup so each server launch begins clean."""
@@ -58,7 +87,7 @@ def _reset_state_on_startup() -> None:
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     _reset_state_on_startup()
-    app.state.llm = _LLM_PROVIDERS[llm_provider]()
+    app.state.llm_clients = {}
     host = resolve_host()
     mcp_transport = SSETransport(url=f"http://{host}:8000/sse")
     # One persistent MCP connection for the app's lifetime, instead of opening
@@ -378,12 +407,18 @@ def _build_state_hint(state=None) -> str:
         return ""
 
 
+@app.get("/chat/providers")
+async def chat_providers():
+    return {"providers": available_providers(), "default": "openai"}
+
+
 @app.post("/chat/stream")
 async def chat_stream(request: Request):
     """SSE endpoint. Events: status, log, progress, reply (terminal), error."""
     data    = await request.json()
     message = data.get("message", "")
     history = data.get("history", [])
+    llm_client = get_llm_client(request.app, data.get("provider", ""))
 
     MAX_HISTORY_TURNS = 4
     if len(history) > MAX_HISTORY_TURNS:
@@ -447,7 +482,7 @@ async def chat_stream(request: Request):
                 tool_choice = "required" if iteration == 0 else "auto"
 
                 try:
-                    assistant_message = await request.app.state.llm.chat(
+                    assistant_message = await llm_client.chat(
                         messages, tools=current_tools, tool_choice=tool_choice
                     )
                 except Exception as e:
@@ -495,7 +530,7 @@ async def chat_stream(request: Request):
                 })
 
                 if pipeline is None:
-                    pipeline = ChatPipeline(mcp_client=request.app.state.mcp_client, llm=request.app.state.llm)
+                    pipeline = ChatPipeline(mcp_client=request.app.state.mcp_client, llm=llm_client)
 
                 tool_results, early_reply = await pipeline.run(
                     tool_calls, messages, progress_cb=progress_cb

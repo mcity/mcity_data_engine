@@ -26,6 +26,16 @@ Parameters:
     Default: ''
     Description: Anthropic API key
     NoEcho: true
+  GEMINIAPIKEY:
+    Type: String
+    Default: ''
+    Description: Gemini API key
+    NoEcho: true
+  GROQAPIKEY:
+    Type: String
+    Default: ''
+    Description: Groq API key
+    NoEcho: true
   LSTOKEN:
     Type: String
     Default: ''
@@ -133,6 +143,8 @@ Resources:
           #OPENAI_MODEL=gpt-5-mini
           OPENAI_API_KEY=${OPENAIAPIKEY}
           ANTHROPIC_API_KEY=${ANTHROPICAPIKEY}
+          GEMINI_API_KEY=${GEMINIAPIKEY}
+          GROQ_API_KEY=${GROQAPIKEY}
           HF_TOKEN=${HFTOKEN}
           LS_TOKEN=${LSTOKEN}
           LS_URL=${LSURL}

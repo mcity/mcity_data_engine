@@ -16,7 +16,6 @@ if IGNORE_FUTURE_WARNINGS:
 import gc
 
 import fiftyone as fo
-import torch.multiprocessing as mp
 from tqdm import tqdm
 
 from config.config import (
@@ -28,34 +27,20 @@ from config.config import (
     V51_REMOTE,
     WORKFLOWS,
 )
-from utils.anomaly_detection_data_preparation import AnomalyDetectionDataPreparation
-from utils.data_loader import FiftyOneTorchDatasetCOCO, TorchToHFDatasetCOCO
-from utils.dataset_loader import load_dataset
 from utils.logging import configure_logging
-from utils.mp_distribution import ZeroShotDistributer
 from utils.sidebar_groups import arrange_fields_in_groups
 from utils.wandb_helper import wandb_close, wandb_init
-from workflows.anomaly_detection import Anodec
-from workflows.auto_labeling import (
-    CustomCoDETRObjectDetection,
-    CustomRFDETRObjectDetection,
-    HuggingFaceObjectDetection,
-    UltralyticsObjectDetection,
-    ZeroShotObjectDetection,
-)
-from workflows.rfdetr_keypoint import RFDETRKeypointDetection
 # from workflows.vitpose_keypoint import (
 #     ViTPoseKeypointDetection,
 #     RoIKeypointDetection,
 #     download_vitpose_weights,
 # )
-from workflows.aws_download import AwsDownloader
-from workflows.class_mapping import ClassMapper
-from workflows.embedding_selection import EmbeddingSelection
-from workflows.ensemble_selection import EnsembleSelection
-from workflows.auto_label_mask import AutoLabelMask
-from workflows.class_mapping import ClassMapper
 from workflows.data_ingest import run_data_ingest
+
+# NOTE: model-framework-specific imports (torch/transformers/ultralytics/anomalib/
+# CoDETR/RFDETR, etc.) are done lazily inside the workflow functions/branches that
+# actually use them below -- keeps `data_ingest`-only runs from paying the import
+# cost of every other workflow's ML stack on each fresh `python main.py` subprocess.
 
 wandb_run = None  # Init globally to make sure it is available
 
@@ -72,6 +57,8 @@ def signal_handler(sig, frame):
 
 def workflow_aws_download(parameters, wandb_activate=True):
     """Download and process data from AWS S3 bucket."""
+    from workflows.aws_download import AwsDownloader
+
     dataset = None
     dataset_name = None
     wandb_exit_code = 0
@@ -141,6 +128,8 @@ def workflow_anomaly_detection(
     wandb_activate=True,
 ):
     """Run anomaly detection workflow using specified models and configurations."""
+    from workflows.anomaly_detection import Anodec
+
     try:
         # Weights and Biases
         wandb_exit_code = 0
@@ -195,6 +184,8 @@ def workflow_embedding_selection(
     dataset, dataset_info, MODEL_NAME, config, wandb_activate=True
 ):
     """Compute embeddings and find representative and rare images for dataset selection."""
+    from workflows.embedding_selection import EmbeddingSelection
+
     try:
         wandb_exit_code = 0
         wandb_run, log_dir = wandb_init(
@@ -245,6 +236,8 @@ def workflow_embedding_selection(
 
 def workflow_auto_labeling_ultralytics(dataset, run_config, wandb_activate=True):
     """Auto-labeling workflow using Ultralytics models with optional training and inference."""
+    from workflows.auto_labeling import UltralyticsObjectDetection
+
     try:
         wandb_exit_code = 0
         wandb_run = wandb_init(
@@ -282,6 +275,8 @@ def workflow_auto_labeling_ultralytics(dataset, run_config, wandb_activate=True)
 
 def workflow_auto_labeling_hf(dataset, hf_dataset, run_config, wandb_activate=True):
     """Auto-labeling using Hugging Face models on a dataset, including training and/or inference based on the provided configuration."""
+    from workflows.auto_labeling import HuggingFaceObjectDetection
+
     try:
         wandb_exit_code = 0
         wandb_run = wandb_init(
@@ -323,6 +318,7 @@ def workflow_auto_labeling_custom_codetr(
     dataset, dataset_info, run_config, wandb_activate=True
 ):
     """Auto labeling workflow using Co-DETR model supporting training and inference modes."""
+    from workflows.auto_labeling import CustomCoDETRObjectDetection
 
     try:
         wandb_exit_code = 0
@@ -366,6 +362,11 @@ def workflow_auto_labeling_custom_codetr(
 
 def workflow_zero_shot_object_detection(dataset, dataset_info, config):
     """Run zero-shot object detection on a dataset using models from Huggingface, supporting both single and multi-GPU inference."""
+    import torch.multiprocessing as mp
+    from utils.data_loader import FiftyOneTorchDatasetCOCO
+    from utils.mp_distribution import ZeroShotDistributer
+    from workflows.auto_labeling import ZeroShotObjectDetection
+
     # Set multiprocessing mode for CUDA multiprocessing
     try:
         mp.set_start_method("spawn", force=True)
@@ -410,6 +411,8 @@ def workflow_zero_shot_object_detection(dataset, dataset_info, config):
 
 
 def workflow_auto_label_mask(dataset, dataset_info, config):
+    from workflows.auto_label_mask import AutoLabelMask
+
     try:
         depth_config = config["depth_estimation"]
         seg_config = config["semantic_segmentation"]
@@ -441,6 +444,8 @@ def workflow_auto_label_mask(dataset, dataset_info, config):
 
 def workflow_ensemble_selection(dataset, dataset_info, run_config, wandb_activate=True):
     """Runs ensemble selection workflow on given dataset using provided configuration."""
+    from workflows.ensemble_selection import EnsembleSelection
+
     try:
         wandb_exit_code = 0
 
@@ -472,6 +477,8 @@ def workflow_class_mapping(
     test_dataset_target=None,
 ):
     """Runs class mapping workflow to align labels between the source dataset and target dataset."""
+    from workflows.class_mapping import ClassMapper
+
     try:
         wandb_exit_code = 0
         # Initialize a wandb run for class mapping
@@ -711,6 +718,9 @@ class WorkflowExecutor:
                         )
 
                 elif workflow == "anomaly_detection":
+                    from utils.anomaly_detection_data_preparation import (
+                        AnomalyDetectionDataPreparation,
+                    )
 
                     # Config
                     ano_dec_config = WORKFLOWS["anomaly_detection"]
@@ -797,6 +807,11 @@ class WorkflowExecutor:
 
                         # Dataset Conversion
                         try:
+                            from utils.data_loader import (
+                                FiftyOneTorchDatasetCOCO,
+                                TorchToHFDatasetCOCO,
+                            )
+
                             logging.info("Converting dataset into Hugging Face format.")
                             pytorch_dataset = FiftyOneTorchDatasetCOCO(self.dataset)
                             pt_to_hf_converter = TorchToHFDatasetCOCO(pytorch_dataset)
@@ -850,6 +865,8 @@ class WorkflowExecutor:
 
                     if SUPPORTED_MODEL_SOURCES[1] in selected_model_source:
                         # Ultralytics Models
+                        from workflows.auto_labeling import UltralyticsObjectDetection
+
                         config_ultralytics = config_autolabel["ultralytics"]
                         models_ultralytics = config_ultralytics["models"]
                         export_dataset_root = config_ultralytics["export_dataset_root"]
@@ -921,6 +938,7 @@ class WorkflowExecutor:
                             )
 
                     if SUPPORTED_MODEL_SOURCES[3] in selected_model_source:
+                        from workflows.auto_labeling import CustomRFDETRObjectDetection
 
                         config_rfdetr = config_autolabel["roboflow"]
 
@@ -1001,6 +1019,8 @@ class WorkflowExecutor:
 
                     if SUPPORTED_MODEL_SOURCES[4] in selected_model_source:
                         # RF-DETR with keypoint head
+                        from workflows.rfdetr_keypoint import RFDETRKeypointDetection
+
                         config_rfdetr_kp = config_autolabel["roboflow_keypoint"]
 
                         shared_config = {
@@ -1275,6 +1295,8 @@ def main():
         dataset_info = executor.dataset_info
 
     else:
+        from utils.dataset_loader import load_dataset
+
         dataset, dataset_info = load_dataset(SELECTED_DATASET)
 
         executor = WorkflowExecutor(

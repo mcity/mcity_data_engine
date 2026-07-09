@@ -28,6 +28,8 @@ class CloudFormationManager:
                 {'ParameterKey': 'HFTOKEN', 'ParameterValue': self.config.HFTOKEN},
                 {'ParameterKey': 'InstanceType', 'ParameterValue': self.config.INSTANCE_TYPE},
                 {'ParameterKey': 'ANTHROPICAPIKEY', 'ParameterValue': self.config.ANTHROPICAPIKEY},
+                {'ParameterKey': 'GEMINIAPIKEY', 'ParameterValue': self.config.GEMINIAPIKEY},
+                {'ParameterKey': 'GROQAPIKEY', 'ParameterValue': self.config.GROQAPIKEY},
                 {'ParameterKey': 'LSTOKEN', 'ParameterValue': self.config.LSTOKEN},
                 {'ParameterKey': 'LSURL', 'ParameterValue': self.config.LSURL},
                 {'ParameterKey': 'CVATACCESSTOKEN', 'ParameterValue': self.config.CVATACCESSTOKEN}

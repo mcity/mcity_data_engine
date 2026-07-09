@@ -1,4 +1,5 @@
 import importlib
+import logging
 import re
 import sys
 import os
@@ -8,6 +9,7 @@ from typing import List
 
 import fiftyone as fo
 import fiftyone.core.odm as _foodm
+from ruamel.yaml import YAML
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))  # project root
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))       # mcp_layer/
@@ -38,12 +40,46 @@ def select_workflow(workflow_name: str) -> str:
     return f"Workflow selected: `{workflow_name}`."
 
 
+def _prune_stale_custom_entries() -> None:
+    """Drop datasets.yaml entries for load_custom_dataset datasets no longer in
+    FiftyOne (e.g. after manual cleanup) -- these have no lazy-load fallback, so
+    a stale entry would otherwise pass selection and fail deep inside the run.
+    """
+    try:
+        _foodm.get_db_conn()
+        existing = set(fo.list_datasets())
+    except Exception as e:
+        logging.warning(f"[DATASETS] Could not verify against FiftyOne, skipping prune: {e}")
+        return
+
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.indent(sequence=4, offset=2)
+    try:
+        with open(DEFAULT_DATASETS_YAML, "r") as f:
+            data = yaml.load(f)
+        entries = data.get("datasets", []) or []
+        stale = [
+            d for d in entries
+            if str(d.get("loader_fct", "")) == "load_custom_dataset" and str(d.get("name", "")) not in existing
+        ]
+        if not stale:
+            return
+        data["datasets"] = [d for d in entries if d not in stale]
+        with open(DEFAULT_DATASETS_YAML, "w") as f:
+            yaml.dump(data, f)
+        logging.warning(f"[DATASETS] Pruned stale entries no longer in FiftyOne: {[str(d.get('name')) for d in stale]}")
+    except Exception as e:
+        logging.warning(f"[DATASETS] Failed to prune stale entries: {e}")
+
+
 @mcp.tool()
 def set_selected_dataset(dataset_name: str) -> str:
     """
     Updates SELECTED_DATASET section in config.py with the given dataset name.
     Always uses the full dataset (n_samples = None).
     """
+    _prune_stale_custom_entries()
     _foodm.get_db_conn()
     available = fo.list_datasets()
     if dataset_name not in available:
@@ -175,6 +211,7 @@ def list_datasets() -> List[str]:
     Returns all available dataset names.
     Fixed datasets always appear first, followed by names from datasets.yaml.
     """
+    _prune_stale_custom_entries()
     dynamic_names = _extract_names_after_line(DEFAULT_DATASETS_YAML, 52)
     out: List[str] = []
     for n in FIXED_DATASETS:
