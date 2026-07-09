@@ -444,7 +444,7 @@ WANDB_ACTIVE = False
 
 """Voxel51 Config"""
 #: Address for Voxel51 connection
-V51_ADDRESS = "localhost"
+V51_ADDRESS = "0.0.0.0"
 #: Port for Voxel51 connection
 V51_PORT = 5151
 #: Remote app sessions will listen to any connection to their ports
