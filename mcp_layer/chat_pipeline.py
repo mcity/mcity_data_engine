@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 import json
 import logging
 import os
@@ -7,6 +8,8 @@ import sys
 from pathlib import Path
 
 from fastmcp import Client
+
+import config.config as _cc
 
 from validate_workflow_state import (
     WorkflowState, AutoLabelingState, ClassMappingState,
@@ -565,8 +568,9 @@ class ChatPipeline:
                             f"SWITCH_LOCKED: Cannot reconfigure mid-{action}. "
                             f"Parameters are locked until the import step completes. "
                             f"If the user explicitly wants to discard all progress and restart "
-                            f"from scratch, confirm with them first, then call switch_workflow "
-                            f"with a DIFFERENT workflow name, then switch back."
+                            f"from scratch, confirm with them first, then call "
+                            f"reset_workflow_state() — this clears the workflow, dataset, and "
+                            f"all progress so they can start over from scratch."
                         )
                         msg = result.split("SWITCH_LOCKED: ", 1)[1] if "SWITCH_LOCKED: " in result else result
                         return result, [HardStop(msg)]
@@ -788,8 +792,14 @@ class ChatPipeline:
             f"backend={initial_backend!r}"
         )
 
-        # No-op: same dataset already confirmed for this session.
-        if self.state.dataset_confirmed and self.state.dataset_name == dataset_name:
+        importlib.reload(_cc)
+        config_dataset = _cc.SELECTED_DATASET.get("name", "")
+
+        if (
+            self.state.dataset_confirmed
+            and self.state.dataset_name == dataset_name
+            and config_dataset == dataset_name
+        ):
             logging.warning(
                 f"[PIPELINE] set_selected_dataset: '{dataset_name}' already confirmed — no-op"
             )

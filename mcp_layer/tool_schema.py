@@ -243,7 +243,13 @@ tools = [
             "type": "function",
             "function": {
                 "name": "list_class_mapping_models",
-                "description": "Lists zero-shot classification models available for class mapping.",
+                "description": (
+                    "Lists zero-shot classification models available for class mapping. "
+                    "Only call this to show the list for the first time. "
+                    "Do NOT call this again once the list has already been shown in this "
+                    "conversation — present the list to the user with send_reply and wait for "
+                    "them to name a model instead."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {}
@@ -326,7 +332,13 @@ tools = [
             "type": "function",
             "function": {
                 "name": "list_anomaly_detection_models",
-                "description": "Lists Anomalib image models available for anomaly detection.",
+                "description": (
+                    "Lists Anomalib image models available for anomaly detection. "
+                    "Only call this to show the list for the first time. "
+                    "Do NOT call this again once the list has already been shown in this "
+                    "conversation — present the list to the user with send_reply and wait for "
+                    "them to name a model instead."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {}
@@ -388,7 +400,13 @@ tools = [
             "type": "function",
             "function": {
                 "name": "list_embedding_selection_models",
-                "description": "Lists models available for embedding selection",
+                "description": (
+                    "Lists models available for embedding selection. "
+                    "Only call this to show the list for the first time. "
+                    "Do NOT call this again once the list has already been shown in this "
+                    "conversation — present the list to the user with send_reply and wait for "
+                    "them to name a model instead."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {}
@@ -462,7 +480,14 @@ tools = [
             "type": "function",
             "function": {
                 "name": "list_zsal",
-                "description": "Lists models available for auto_labeling_zero_shot > hf_models_zeroshot_objectdetection.",
+                "description": (
+                    "Lists models available for auto_labeling_zero_shot > "
+                    "hf_models_zeroshot_objectdetection. "
+                    "Only call this to show the list for the first time. "
+                    "Do NOT call this again once the list has already been shown in this "
+                    "conversation — present the list to the user with send_reply and wait for "
+                    "them to name the models to use instead."
+                ),
                 "parameters": {
                 "type": "object",
                 "properties": {}
@@ -592,7 +617,13 @@ tools = [
             "type": "function",
             "function": {
                 "name": "reset_workflow_state",
-                "description": "Reset workflow selection state after a workflow is complete",
+                "description": (
+                    "Fully resets workflow, dataset, and all in-progress state so the user can "
+                    "start completely over. Use this after a workflow completes, or when the "
+                    "user explicitly confirms they want to discard all progress and restart — "
+                    "including while LOCKED mid-run/mid-annotation, when switch_workflow itself "
+                    "is blocked and returns an error."
+                ),
                 "parameters": {
                 "type": "object",
                 "properties": {},

@@ -1,0 +1,37 @@
+========== ENSEMBLE SELECTION WORKFLOW ==========
+
+Retains detections where multiple zero-shot models agree. This workflow works on top of the
+zero-shot auto labeling workflow, and thus it can't be used before the zero-shot auto labeling
+workflow has been used. If the user selects ensemble selection as the first workflow to use,
+send a message guiding them to use zero-shot auto labeling before ensemble selection.
+
+STEP 1 — PARAMETERS
+If the user selects the ensemble_selection workflow, guide the user to modify the parameters
+for ensemble selection. The user can update any of the following:
+  - agreement_threshold (required): Sets the minimum number of models that must produce
+    overlapping detections for a prediction to be retained; must be an integer >= 1 and no
+    greater than the number of zero-shot models used.
+  - iou_threshold: Defines the minimum IoU (Intersection-over-Union) required to consider
+    bounding boxes from different models as overlapping; must be a float between 0 and 1, with
+    a suggested default of 0.5.
+  - max_bbox_size: Specifies the maximum relative area of bounding boxes (normalized to the
+    image size) to include in the ensemble; must be a float between 0 and 1 and is useful for
+    filtering out overly large or noisy detections, with a suggested default of 0.1.
+After changing a parameter, ask: "Would you like to modify any other parameters?"
+Then YOU MUST call set_ensemble_selection_parameters, passing all the parameters that the user
+changed — the others can remain default.
+
+STEP 2 — POSITIVE CLASSES
+Then guide the user to set the positive classes for ensemble selection, and remind them that
+this should be a subset of the object classes they used for zero-shot auto labeling.
+Once the user provides the positive classes, YOU MUST call
+set_ensemble_selection_classes(positive_classes=[...]), passing the list of user-specified
+class names. The existing list in the config must be replaced with this new list.
+
+STEP 3 — RUN
+Then make sure to confirm with the user before calling the run_ensemble_selection tool.
+Remember this tool does not take any input arguments, thus execute run_ensemble_selection()
+when the user explicitly says something like:
+  - "Run the workflow"
+  - "Start training"
+  - "Let's begin"

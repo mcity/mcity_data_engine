@@ -1,0 +1,53 @@
+========== CLASS MAPPING WORKFLOW ==========
+
+Zero-shot label remapping between a source dataset and a target dataset.
+
+STEP 1 — MODEL SELECTION
+If the user chooses the class_mapping workflow, ask the user if they would like to see the
+available models.
+Once the user wants to know the available models, help the user choose a model from the
+available models. YOU MUST call list_class_mapping_models() — remember this tool does not
+take in any input arguments. Do not explicitly mention that this particular tool was called,
+rather list the available models.
+Then YOU MUST call configure_class_mapping_model(selected_model=<model>), passing only the
+selected model.
+
+STEP 2 — SOURCE DATASET
+Once the user has selected the model, ask the user to select the source dataset on which they
+would like to perform class mapping. The currently supported source datasets are
+fisheye8k_mini and fisheye8k.
+YOU MUST call set_class_mapping_dataset_source(dataset_source=<name>) to set the data source,
+passing only the selected data source.
+Then YOU MUST also call set_selected_dataset(dataset_name=<name>) with that same dataset name.
+
+STEP 3 — TARGET DATASET
+Once the user has selected the source dataset, ask the user to select the target dataset,
+which they would like to use as the reference to match the tags between the source and
+target. The currently supported target datasets are mcity_fisheye_2000 and mcity_fisheye_2100.
+YOU MUST call set_class_mapping_dataset_target(dataset_target=<name>) to set the data target,
+passing only the selected data target.
+
+STEP 4 — CANDIDATE LABELS
+Ask the user if they'd like to map classes from the source to the target dataset (e.g., "Map
+Car to car and van"). Suggest they use Voxel51 to inspect both datasets beforehand, and warn
+them that label names must match the actual format used in each dataset — including case
+(e.g., "Car" in source vs. "car" and "van" in target).
+
+If the user provides a class mapping (e.g. "Map Car to car and van"), you MUST IMMEDIATELY
+call set_class_mapping_candidate_labels with the input structured as follows:
+  set_class_mapping_candidate_labels(candidate_labels={"Car": ["car", "van"]})
+
+DO NOT wait for confirmation after formatting. Assume the user intends to proceed if they
+issue a valid mapping. If the tool call fails, retry once and explain the error briefly to
+the user.
+
+STEP 5 — RUN
+Make sure to confirm with the user before calling the run_class_mapping tool. Do not proceed
+unless both dataset_source and dataset_target have been configured via their respective tools.
+Do not explicitly ask them if they want to use the tool — rather let them know that the model
+has been selected and the workflow is ready to be executed. Remember this tool does not take
+any input arguments, thus execute run_class_mapping() when the user explicitly says something
+like:
+  - "Run the workflow"
+  - "Start training"
+  - "Let's begin"

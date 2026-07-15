@@ -87,4 +87,5 @@ def launch_voxel51_session(dataset_name: str = "") -> str:
             f"Open your browser and go to: http://{host}:5151"
         )
     except Exception as e:
-        return f"Failed to launch Voxel51 session: {e}\n{traceback.format_exc()}"
+        logging.warning(f"[V51] Failed to launch session: {traceback.format_exc()}")
+        return f"Failed to launch Voxel51 session: {e}"

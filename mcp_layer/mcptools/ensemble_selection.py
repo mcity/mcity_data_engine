@@ -1,5 +1,6 @@
 from mcptools import mcp
 import asyncio
+import logging
 import sys
 from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -121,9 +122,14 @@ async def run_ensemble_selection() -> str:
                 "Ensemble Selection completed successfully. The final predictions now reflect consensus across multiple zero-shot models.\n"
             )
         else:
+            logging.warning(
+                f"[ENSEMBLE_SELECTION] run_ensemble_selection failed with exit code "
+                f"{process.returncode}:\n{error_output}"
+            )
+            tail = error_output.strip().splitlines()[-1] if error_output.strip() else "no error output captured"
             return (
                 f"Ensemble selection failed with exit code {process.returncode}.\n"
-                f"Error details: {error_output[-5000:]}\n"
+                f"Last error line: {tail}\n"
                 f"Full logs saved to `{log_path}`"
             )
 

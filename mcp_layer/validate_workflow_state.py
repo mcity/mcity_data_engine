@@ -391,7 +391,7 @@ class WorkflowState(BaseModel):
 
     def valid_tool_names(self) -> set[str] | None:
         """Return valid tools for the current step, or None to expose all tools."""
-        ALWAYS = {"send_reply", "switch_workflow"}
+        ALWAYS = {"send_reply", "switch_workflow", "reset_workflow_state"}
 
         if not self.workflow_name:
             return ALWAYS | {"select_workflow"}

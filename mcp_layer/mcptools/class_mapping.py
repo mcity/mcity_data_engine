@@ -1,6 +1,7 @@
 from mcptools import mcp
 import re
 import asyncio
+import logging
 from pathlib import Path
 import os
 import sys
@@ -264,9 +265,14 @@ async def run_class_mapping() -> str:
                 f"Full logs saved to `{log_path}`"
             )
         else:
+            logging.warning(
+                f"[CLASS_MAPPING] run_class_mapping failed with exit code "
+                f"{process.returncode}:\n{error_output}"
+            )
+            tail = error_output.strip().splitlines()[-1] if error_output.strip() else "no error output captured"
             return (
                 f"Class Mapping failed with exit code {process.returncode}.\n"
-                f"Error details: {error_output[-5000:]}\n"
+                f"Last error line: {tail}\n"
                 f"Full logs saved to `{log_path}`"
             )
 

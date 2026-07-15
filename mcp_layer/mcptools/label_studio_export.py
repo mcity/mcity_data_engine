@@ -672,4 +672,5 @@ def import_from_label_studio(dataset_name: str) -> str:
         return msg
 
     except Exception as e:
-        return f"Label Studio import failed: {e}\n{traceback.format_exc()}"
+        logging.warning(f"[LS] import_from_label_studio failed: {traceback.format_exc()}")
+        return f"Label Studio import failed: {e}"

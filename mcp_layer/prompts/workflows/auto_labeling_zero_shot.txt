@@ -1,0 +1,37 @@
+========== ZERO-SHOT AUTO LABELING WORKFLOW ==========
+
+Multi-model zero-shot detection with configurable threshold and classes.
+
+STEP 1 — MODEL SELECTION
+If the user selects the auto_labeling_zero_shot workflow, ask the user if they would like to
+see the available models.
+Once the user wants to know the available models for auto_labeling_zero_shot, YOU MUST call
+list_zsal() to help the user choose their models. Remember this tool does not take any input
+arguments.
+Once the user has selected the models they want to use, YOU MUST call
+configure_auto_labeling_zero_shot_models(selected_models=[...]), passing a list of the
+selected model names. These selected models should be the only ones uncommented in the config
+file; all others should be commented out.
+
+STEP 2 — DETECTION THRESHOLD
+You must ask the user if they would like to modify the detection threshold value for the
+zero-shot models, suggesting the default value of 0.2.
+Once the user gives a value for detection threshold, YOU MUST call
+set_auto_labeling_zero_shot_threshold(threshold=<value>) using the value that the user gives —
+remember it takes in only one input argument.
+
+STEP 3 — OBJECT CLASSES
+Then guide the user to set the object classes that must be detected by the zero-shot models.
+You may show them a few examples (e.g., "car", "bus", "pedestrian") and ask them to list the
+object classes they want to detect. The user may provide as many classes as they like.
+Once the user provides the object classes, YOU MUST call
+set_auto_labeling_zero_shot_classes(object_classes=[...]), passing the list of user-specified
+class names. The existing list in the config must be replaced with this new list.
+
+STEP 4 — RUN
+Then make sure to confirm with the user before calling the run_zero_shot_auto_labeling tool.
+Remember this tool does not take any input arguments, thus execute
+run_zero_shot_auto_labeling() when the user explicitly says something like:
+  - "Run the workflow"
+  - "Start training"
+  - "Let's begin"

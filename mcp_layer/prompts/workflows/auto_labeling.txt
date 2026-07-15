@@ -210,9 +210,11 @@ ZONE A — Before export (manual) or before run (auto): ALL parameters are mutab
 LOCKED — After export (manual) or after run (auto) completes:
   SESSION_STATE will show phase=annotating or phase=training.
   Parameters are LOCKED. Do NOT attempt to reconfigure.
+  switch_workflow is blocked while locked — do NOT call it here, it will just return an error.
   If the user asks to change something: tell them the workflow is locked and ask
-  if they want to discard all progress and restart from dataset selection.
-  If yes, call switch_workflow(workflow_name=auto_labeling) to reset all state.
+  if they want to discard all progress and restart from scratch.
+  If yes, call reset_workflow_state() — this clears the workflow, dataset, and all
+  progress, returning to the very start (workflow selection).
 
 WORKFLOW COMPLETE (SESSION_STATE shows workflow_complete):
   Let the user know the auto labeling workflow has completed.

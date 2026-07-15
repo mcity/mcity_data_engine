@@ -1,6 +1,7 @@
 from mcptools import mcp  #shared instance from __init__.py
 import re
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
@@ -236,8 +237,6 @@ def list_model_sources_and_models() -> dict:
 @mcp.tool()
 async def run_auto_labeling() -> str:
     """Run auto_labeling workflow and return training or inference summary."""
-    import os as _os
-
     try:
         process = await asyncio.create_subprocess_exec(
             sys.executable, "-u", str(MAIN_PATH),
@@ -286,9 +285,14 @@ async def run_auto_labeling() -> str:
                 f"Full logs saved to `{log_path}`"
             )
         else:
+            logging.warning(
+                f"[AUTO_LABELING] run_auto_labeling failed with exit code "
+                f"{process.returncode}:\n{error_output}"
+            )
+            tail = error_output.strip().splitlines()[-1] if error_output.strip() else "no error output captured"
             return (
                 f"Auto-labeling failed with exit code {process.returncode}.\n"
-                f"Error details:\n```\n{error_output[-3000:]}\n```\n"
+                f"Last error line: {tail}\n"
                 f"Full logs saved to `{log_path}`"
             )
 

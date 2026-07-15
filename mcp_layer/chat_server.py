@@ -131,6 +131,11 @@ app.add_middleware(
 # Add an entry here + drop the file in prompts/workflows/ to register a new workflow.
 WORKFLOW_META = {
     "auto_labeling": {"label": "Auto Labeling", "file": "auto_labeling.txt"},
+    "class_mapping": {"label": "Class Mapping", "file": "class_mapping.txt"},
+    "anomaly_detection": {"label": "Anomaly Detection", "file": "anomaly_detection.txt"},
+    "embedding_selection": {"label": "Embedding Selection", "file": "embedding_selection.txt"},
+    "auto_labeling_zero_shot": {"label": "Zero-Shot Auto Labeling", "file": "auto_labeling_zero_shot.txt"},
+    "ensemble_selection": {"label": "Ensemble Selection (requires Zero-Shot Auto Labeling first)", "file": "ensemble_selection.txt"},
 }
 
 _PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
@@ -564,7 +569,12 @@ async def chat_stream(request: Request):
                     })
 
             logging.warning(f"[STREAM] Exceeded {MAX_AGENTIC_ITERATIONS} agentic iterations")
-            await event_queue.put(("reply", {"message": "I wasn't able to complete this step. Please try again."}))
+            await event_queue.put(("reply", {
+                "message": (
+                    "I wasn't able to complete this step. Please try again, or let me know if "
+                    "you'd like to switch to a different workflow."
+                )
+            }))
 
         except Exception as e:
             logging.warning(f"[STREAM] run_pipeline exception: {e}")

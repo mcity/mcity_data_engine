@@ -359,6 +359,9 @@ function classifySource(source) {
     ) {
         return { level: "verified", note: "✓ sourced from project" };
     }
+    if (s === "operational") {
+        return { level: "verified", note: "✓ verified" };
+    }
     return { level: "caution", note: "⚠ LLM knowledge — proceed with reasonable caution" };
 }
 

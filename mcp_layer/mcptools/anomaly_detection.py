@@ -1,6 +1,7 @@
 from mcptools import mcp  # shared instance from __init__.py
 import re
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
@@ -243,9 +244,14 @@ async def run_anomaly_detection() -> str:
                 f"Full logs saved to `{log_path}`"
             )
         else:
+            logging.warning(
+                f"[ANOMALY_DETECTION] run_anomaly_detection failed with exit code "
+                f"{process.returncode}:\n{error_output}"
+            )
+            tail = error_output.strip().splitlines()[-1] if error_output.strip() else "no error output captured"
             return (
                 f"Anomaly detection failed with exit code {process.returncode}.\n"
-                f"Error details: {error_output[-5000:]}\n"
+                f"Last error line: {tail}\n"
                 f"Full logs saved to `{log_path}`"
             )
 

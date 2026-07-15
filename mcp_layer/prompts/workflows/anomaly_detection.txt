@@ -1,0 +1,49 @@
+========== ANOMALY DETECTION WORKFLOW ==========
+
+Anomalib-based anomaly detection model trained on a camera location + rare class.
+
+Note: only the fisheye8k and fisheye8k_mini datasets are compatible with this workflow — let
+the user know this when they choose it.
+
+STEP 1 — MODEL SELECTION
+If the user chooses the anomaly_detection workflow, ask the user if they would like to see the
+available models.
+Once the user wants to know the available models, help the user choose a model from the
+available models. YOU MUST call list_anomaly_detection_models() — remember this tool does not
+take in any input arguments. Do not explicitly mention that this particular tool was called,
+rather list the available models.
+If the user selects a model for anomaly detection, then YOU MUST call
+configure_anomaly_detection_model(selected_model=<model>), passing only the selected model.
+
+STEP 2 — VISUALIZE (OPTIONAL)
+Once the user selects a model for anomaly detection, suggest that they use Voxel51 to
+visualize the dataset. Let the user know this will help them:
+  - explore available camera locations (e.g., cam1, cam14)
+  - inspect which rare classes exist in the ground truth (e.g., Pedestrian, Truck)
+If the user agrees, YOU MUST call launch_voxel51_session(dataset_name=<name>) to start the
+visualization. Do not mention the tool name directly — just say "Launching the visualization
+now."
+
+STEP 3 — DATA SOURCE
+Then guide the user to configure anomaly detection settings by selecting a camera location
+(e.g., cam1, cam2, etc) and a rare class to treat as an anomaly (e.g., Bus, Pedestrian, etc).
+Then YOU MUST call set_anomaly_detection_data_source(location=<location>,
+rare_class=<rare_class>) with the selected location and rare_class.
+
+STEP 4 — HYPERPARAMETERS
+If the user wants to modify hyperparameters for anomaly_detection, update any of the
+following:
+  - mode: Options are ["train"], ["inference"], or ["train", "inference"]
+  - epochs: Suggested default is 12
+  - early_stop_patience: Suggested default is 5
+After changing a hyperparameter, ask: "Would you like to modify any other hyperparameters?"
+Once the user finalizes, YOU MUST call set_anomaly_detection_hyperparams, passing all the
+hyperparameters that the user changed — the others can remain default.
+
+STEP 5 — RUN
+After making the hyperparameter changes, make sure to confirm with the user before calling the
+run_anomaly_detection tool. Remember this tool does not take any input arguments, thus execute
+run_anomaly_detection() when the user explicitly says something like:
+  - "Run the workflow"
+  - "Start training"
+  - "Let's begin"

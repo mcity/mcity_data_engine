@@ -125,10 +125,33 @@ def set_selected_dataset(dataset_name: str) -> str:
     return f"Dataset set to `{dataset_name}`."
 
 
+def _reset_selected_dataset_block(lines: list[str]) -> list[str]:
+    """Return `lines` with the SELECTED_DATASET block reset to empty defaults."""
+    result_lines = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if "SELECTED_DATASET = {" in line:
+            result_lines.append("SELECTED_DATASET = {")
+            result_lines.append('    "name": "",')
+            result_lines.append('    "n_samples": None,')
+            result_lines.append('    "custom_view": None,')
+            result_lines.append("}")
+            while i < len(lines) and lines[i].strip() != "}":
+                i += 1
+        else:
+            result_lines.append(line)
+        i += 1
+    return result_lines
+
+
 @mcp.tool()
 def switch_workflow(workflow_name: str) -> str:
     """
-    Switch to a new workflow. Updates SELECTED_WORKFLOW in config.py.
+    Switch to a new workflow. Updates SELECTED_WORKFLOW and clears SELECTED_DATASET
+    in config.py — every caller treats this as a full reset (WorkflowState is reset
+    before this tool is ever invoked), so config.py must not keep pointing at the
+    previous workflow's dataset.
     """
     lines = CONFIG_PATH.read_text().split("\n")
     modified = []
@@ -138,6 +161,7 @@ def switch_workflow(workflow_name: str) -> str:
             modified.append(f'SELECTED_WORKFLOW = ["{workflow_name}"]')
         else:
             modified.append(line)
+    modified = _reset_selected_dataset_block(modified)
     CONFIG_PATH.write_text("\n".join(modified).rstrip("\n") + "\n")
     return f"Switched to workflow: `{workflow_name}`."
 
@@ -153,25 +177,14 @@ def reset_workflow_state() -> str:
     WorkflowState.reset()
 
     # Reset SELECTED_WORKFLOW and SELECTED_DATASET via line replacement
-    src = CONFIG_PATH.read_text()
+    src_lines = CONFIG_PATH.read_text().split("\n")
     result_lines = []
-    src_lines = src.split("\n")
-    i = 0
-    while i < len(src_lines):
-        line = src_lines[i]
+    for line in src_lines:
         if line.strip().startswith("SELECTED_WORKFLOW"):
             result_lines.append('SELECTED_WORKFLOW = [""]')
-        elif "SELECTED_DATASET = {" in line:
-            result_lines.append("SELECTED_DATASET = {")
-            result_lines.append('    "name": "",')
-            result_lines.append('    "n_samples": None,')
-            result_lines.append('    "custom_view": None,')
-            result_lines.append("}")
-            while i < len(src_lines) and src_lines[i].strip() != "}":
-                i += 1
         else:
             result_lines.append(line)
-        i += 1
+    result_lines = _reset_selected_dataset_block(result_lines)
 
     CONFIG_PATH.write_text("\n".join(result_lines).rstrip("\n") + "\n")
     return "Workflow, dataset, and session state have been reset. You may now start a new workflow."

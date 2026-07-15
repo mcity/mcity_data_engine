@@ -262,7 +262,11 @@ def import_from_cvat(dataset_name: str) -> str:
                 result_url = status_data.get("result_url")
                 break
             elif status == "failed":
-                return f"CVAT export failed: {status_data}"
+                logging.warning(f"[CVAT] annotation export job failed: {status_data}")
+                return (
+                    "CVAT reported that the annotation export job failed. "
+                    "This is often a transient server-side issue — please try again in a moment."
+                )
         else:
             return "CVAT export timed out after 90 seconds."
 
@@ -339,4 +343,5 @@ def import_from_cvat(dataset_name: str) -> str:
             return msg
 
     except Exception as e:
-        return f"CVAT import failed: {e}\n{traceback.format_exc()}"
+        logging.warning(f"[CVAT] import_from_cvat failed: {traceback.format_exc()}")
+        return f"CVAT import failed: {e}"
