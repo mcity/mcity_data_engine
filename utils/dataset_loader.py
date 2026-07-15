@@ -2,6 +2,7 @@ import datetime
 import logging
 import os
 import re
+from pathlib import Path
 from typing import List, Union
 from glob import glob
 import numpy as np
@@ -17,7 +18,9 @@ from utils.custom_view import max_detections, subset_splits, vru_mcity_fisheye
 from utils.sample_field_operations import rename_sample_field
 
 
-def get_supported_datasets(config_path="config/datasets.yaml"):
+_DEFAULT_DATASETS_YAML = Path(__file__).resolve().parents[1] / "config" / "datasets.yaml"
+
+def get_supported_datasets(config_path=_DEFAULT_DATASETS_YAML):
     """Returns a list of supported dataset names from the config file."""
     try:
         with open(config_path, "r") as file:
@@ -239,7 +242,7 @@ def _post_process_dataset(dataset):
     return dataset
 
 
-def load_dataset_info(dataset_name, config_path="./config/datasets.yaml"):
+def load_dataset_info(dataset_name, config_path=_DEFAULT_DATASETS_YAML):
     """Load dataset information from a YAML configuration file."""
     logging.info(f"Currently active V51 datasets: {fo.list_datasets()}")
     with open(config_path) as f:
