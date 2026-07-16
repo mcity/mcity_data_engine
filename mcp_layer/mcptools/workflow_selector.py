@@ -1,15 +1,20 @@
+import asyncio
 import importlib
 import logging
 import re
 import sys
 import os
+import time
 import ast as _ast
 from pathlib import Path
 from typing import List
+from unittest import mock
 
 import fiftyone as fo
 import fiftyone.core.odm as _foodm
+from fastmcp import Context
 from ruamel.yaml import YAML
+from tqdm import tqdm as _tqdm_base
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))  # project root
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))       # mcp_layer/
@@ -20,6 +25,44 @@ import config.config as _cc
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT_DIR / "config" / "config.py"
 DEFAULT_DATASETS_YAML = ROOT_DIR / "config" / "datasets.yaml"
+
+
+async def _load_dataset_with_progress(dataset_name: str, ctx) -> None:
+    """Runs load_dataset() in a worker thread, relaying ~30s progress updates
+    over the MCP log channel if the download goes through FiftyOne's HF loader.
+
+    FiftyOne has no public progress callback, so this patches tqdm.tqdm itself
+    for the duration of the call -- fiftyone.utils.huggingface imports tqdm
+    locally per-call rather than at module level, so that's the only patch
+    target that actually takes effect. No-op for datasets that don't hit that
+    code path.
+    """
+    loop = asyncio.get_running_loop()
+    last_emit = 0.0
+
+    class _ProgressTqdm(_tqdm_base):
+        def update(self, n=1):
+            nonlocal last_emit
+            result = super().update(n)
+            if ctx and self.total:
+                now = time.time()
+                is_done = self.n >= self.total
+                if now - last_emit >= 30 or is_done:
+                    last_emit = now
+                    pct = self.n / self.total * 100
+                    msg = f"Downloading {dataset_name}: {self.n}/{self.total} ({pct:.0f}%)"
+                    rate = self.format_dict.get("rate")
+                    if rate and not is_done:
+                        remaining = (self.total - self.n) / rate
+                        msg += f", ~{_tqdm_base.format_interval(remaining)} remaining"
+                    asyncio.run_coroutine_threadsafe(ctx.log(msg), loop)
+            return result
+
+    with mock.patch("tqdm.tqdm", _ProgressTqdm):
+        await asyncio.to_thread(
+            load_dataset,
+            {"name": dataset_name, "n_samples": None, "custom_view": None},
+        )
 
 
 @mcp.tool()
@@ -74,7 +117,7 @@ def _prune_stale_custom_entries() -> None:
 
 
 @mcp.tool()
-def set_selected_dataset(dataset_name: str) -> str:
+async def set_selected_dataset(dataset_name: str, ctx: Context = None) -> str:
     """
     Updates SELECTED_DATASET section in config.py with the given dataset name.
     Always uses the full dataset (n_samples = None).
@@ -120,7 +163,7 @@ def set_selected_dataset(dataset_name: str) -> str:
     CONFIG_PATH.write_text("\n".join(modified).rstrip("\n") + "\n")
 
     if not dataset_name.startswith("custom"):
-        load_dataset({"name": dataset_name, "n_samples": None, "custom_view": None})
+        await _load_dataset_with_progress(dataset_name, ctx)
 
     return f"Dataset set to `{dataset_name}`."
 

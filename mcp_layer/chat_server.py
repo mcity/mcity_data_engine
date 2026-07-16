@@ -23,6 +23,7 @@ logging.basicConfig(
 from chat_pipeline import ChatPipeline
 from host_utils import resolve_host
 from llm_clients import ClaudeClient, GeminiClient, GroqClient, OpenAIClient
+from progress_relay import get_active_progress_cb
 from tool_schema import tools
 from validate_workflow_state import LabelingBackend, AutoLabelingPhase, LabelingPath, WorkflowState
 
@@ -84,6 +85,16 @@ def _reset_state_on_startup() -> None:
         logging.warning(f"[STARTUP] Could not reset WORKFLOW_STATE: {e}")
 
 
+async def _mcp_log_handler(params) -> None:
+    """Relay ctx.log() notifications from a running MCP tool call to whichever
+    /chat/stream request is currently awaiting one, via progress_relay."""
+    cb = get_active_progress_cb()
+    if not cb:
+        return
+    text = params.data if isinstance(params.data, str) else str(params.data)
+    await cb("log", {"line": text})
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     _reset_state_on_startup()
@@ -97,7 +108,7 @@ async def _lifespan(app: FastAPI):
     # deploy-agent.yml launches mcp_server.py and chat_server.py back-to-back
     # with no ordering guarantee, so mcp_server may not be listening yet on
     # the first attempt -- retry with backoff instead of failing startup.
-    mcp_client_cm = Client(mcp_transport)
+    mcp_client_cm = Client(mcp_transport, log_handler=_mcp_log_handler)
     last_exc: Exception | None = None
     for attempt in range(15):
         try:

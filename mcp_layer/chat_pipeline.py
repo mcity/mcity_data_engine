@@ -10,6 +10,7 @@ from pathlib import Path
 from fastmcp import Client
 
 import config.config as _cc
+from progress_relay import clear_active_progress_cb, set_active_progress_cb
 
 from validate_workflow_state import (
     WorkflowState, AutoLabelingState, ClassMappingState,
@@ -107,6 +108,13 @@ def unwrap_tool_output(raw) -> str:
             if key in raw and isinstance(raw[key], str):
                 return raw[key].replace("\\n", "\n").strip()
     return str(raw).strip()
+
+
+def _parse_cvat_task_ids(text: str) -> list[int]:
+    """Parse the comma-separated ids out of export_to_cvat's "Task IDs: 1, 2, 3"
+    line -- a dataset over CVAT_MAX_FILES_PER_TASK is split across several tasks."""
+    ids_part = text.split("Task IDs:")[1].split("\n")[0]
+    return [int(x.strip()) for x in ids_part.split(",") if x.strip()]
 
 
 # Each _handle_* returns (raw_str, list[ToolRouting]). _orchestrate does two
@@ -353,7 +361,7 @@ class ChatPipeline:
                 )
 
             elif fn_name == "set_selected_dataset":
-                result, routings = await self._handle_set_selected_dataset(fn_args, mcp_client)
+                result, routings = await self._handle_set_selected_dataset(fn_args, mcp_client, progress_cb)
 
             elif fn_name == "list_model_sources_and_models":
                 result, routings = await self._handle_list_model_sources_and_models(
@@ -469,7 +477,7 @@ class ChatPipeline:
                 result, routings = await self._handle_run_ensemble_selection(mcp_client)
 
             elif fn_name == "export_to_cvat":
-                result, routings = await self._handle_export_to_cvat(fn_args, mcp_client)
+                result, routings = await self._handle_export_to_cvat(fn_args, mcp_client, progress_cb)
 
             elif fn_name == "run_auto_labeling":
                 if progress_cb:
@@ -480,7 +488,7 @@ class ChatPipeline:
                     result, routings = await self._handle_run_auto_labeling(fn_args, mcp_client)
 
             elif fn_name == "import_from_cvat":
-                result, routings = await self._handle_import_from_cvat(fn_args, mcp_client)
+                result, routings = await self._handle_import_from_cvat(fn_args, mcp_client, progress_cb)
 
             elif fn_name == "get_labeling_backend":
                 result, routings = await self._handle_get_labeling_backend(fn_args, mcp_client)
@@ -492,10 +500,10 @@ class ChatPipeline:
                 result, routings = await self._handle_set_labeling_backend(fn_args, mcp_client)
 
             elif fn_name == "export_to_label_studio":
-                result, routings = await self._handle_export_to_label_studio(fn_args, mcp_client)
+                result, routings = await self._handle_export_to_label_studio(fn_args, mcp_client, progress_cb)
 
             elif fn_name == "import_from_label_studio":
-                result, routings = await self._handle_import_from_label_studio(fn_args, mcp_client)
+                result, routings = await self._handle_import_from_label_studio(fn_args, mcp_client, progress_cb)
 
             elif fn_name == "launch_voxel51_session":
                 result, routings = await self._handle_launch_voxel51(fn_args, mcp_client)
@@ -689,30 +697,36 @@ class ChatPipeline:
         self.state.save()
         return True, path_was_preserved
 
-    async def _retry_dataset_lookup(self, dataset_name: str, mcp_client) -> str:
+    async def _retry_dataset_lookup(self, dataset_name: str, mcp_client, progress_cb=None) -> str:
         """Call set_selected_dataset with exponential backoff on DATASET_NOT_FOUND.
 
         FiftyOne's registry cache can lag after recent ingestion, so we retry up to
         three times (at 2 s, 4 s, 6 s) before returning the final result.
         """
-        raw = await mcp_client.call_tool("set_selected_dataset", {"dataset_name": dataset_name})
-        tool_output = unwrap_tool_output(raw)
-
-        if Sentinels.DATASET_NOT_FOUND not in tool_output:
-            return tool_output
-
-        logging.warning(f"[PIPELINE] Dataset '{dataset_name}' not found — retrying up to 3 times")
-        for attempt, wait in enumerate([2, 4, 6], start=1):
-            await asyncio.sleep(wait)
+        if progress_cb:
+            set_active_progress_cb(progress_cb)
+        try:
             raw = await mcp_client.call_tool("set_selected_dataset", {"dataset_name": dataset_name})
             tool_output = unwrap_tool_output(raw)
+
             if Sentinels.DATASET_NOT_FOUND not in tool_output:
-                logging.warning(f"[PIPELINE] Dataset '{dataset_name}' found on retry {attempt}")
-                break
-            logging.warning(
-                f"[PIPELINE] Dataset '{dataset_name}' still not found after retry {attempt}"
-            )
-        return tool_output
+                return tool_output
+
+            logging.warning(f"[PIPELINE] Dataset '{dataset_name}' not found — retrying up to 3 times")
+            for attempt, wait in enumerate([2, 4, 6], start=1):
+                await asyncio.sleep(wait)
+                raw = await mcp_client.call_tool("set_selected_dataset", {"dataset_name": dataset_name})
+                tool_output = unwrap_tool_output(raw)
+                if Sentinels.DATASET_NOT_FOUND not in tool_output:
+                    logging.warning(f"[PIPELINE] Dataset '{dataset_name}' found on retry {attempt}")
+                    break
+                logging.warning(
+                    f"[PIPELINE] Dataset '{dataset_name}' still not found after retry {attempt}"
+                )
+            return tool_output
+        finally:
+            if progress_cb:
+                clear_active_progress_cb()
 
     async def _route_after_dataset_confirmed(
         self,
@@ -777,7 +791,7 @@ class ChatPipeline:
         return tool_output, [Injection(f"DATASET_CONFIRMED: {dataset_name}")]
 
     async def _handle_set_selected_dataset(
-        self, fn_args: dict, mcp_client
+        self, fn_args: dict, mcp_client, progress_cb=None
     ) -> tuple[str, list[ToolRouting]]:
         ok, msg = self.state.can_confirm_dataset()
         if not ok:
@@ -815,7 +829,7 @@ class ChatPipeline:
             return f"Dataset '{dataset_name}' is already confirmed. No change needed.", routings
 
         was_dataset_switch, path_was_preserved = self._preserve_zone_a_state_on_switch(dataset_name)
-        tool_output = await self._retry_dataset_lookup(dataset_name, mcp_client)
+        tool_output = await self._retry_dataset_lookup(dataset_name, mcp_client, progress_cb)
 
         if Sentinels.DATASET_NOT_FOUND not in tool_output:
             return await self._route_after_dataset_confirmed(
@@ -1578,7 +1592,7 @@ class ChatPipeline:
         )
 
     async def _handle_export_generic(
-        self, backend: str, fn_args: dict, mcp_client
+        self, backend: str, fn_args: dict, mcp_client, progress_cb=None
     ) -> tuple[str, list[ToolRouting]]:
         """Shared implementation for export_to_cvat and export_to_label_studio.
 
@@ -1631,7 +1645,7 @@ class ChatPipeline:
             return msg, [HardStop(msg)]
 
         al = self.state.auto_labeling
-        has_existing_task = bool(al and al.ls_task_ids) if is_ls else bool(al and al.cvat_task_id)
+        has_existing_task = bool(al and al.ls_task_ids) if is_ls else bool(al and al.cvat_task_ids)
         if not with_predictions and not has_existing_task and not (al and al.export_confirmed):
             sentinel = self._build_export_confirmation_block(fn_args, backend_label)
             if "CLASSES_REQUIRED" in sentinel:
@@ -1652,7 +1666,13 @@ class ChatPipeline:
             self.state.auto_labeling.manual_classes = fn_args["classes"]
             self.state.save()
 
-        result = unwrap_tool_output(await mcp_client.call_tool(tool_name, fn_args))
+        if progress_cb:
+            set_active_progress_cb(progress_cb)
+        try:
+            result = unwrap_tool_output(await mcp_client.call_tool(tool_name, fn_args))
+        finally:
+            if progress_cb:
+                clear_active_progress_cb()
 
         # CVAT-specific error sentinels checked first for CVAT exports.
         if not is_ls and any(s in result for s in [
@@ -1695,10 +1715,10 @@ class ChatPipeline:
                     f"{result.strip()}\n\n"
                     f"Let me know when you have finished annotating and I will import your labels."
                 )]
-            if not is_ls and "Task ID:" in result:
+            if not is_ls and "Task IDs:" in result:
                 try:
-                    task_id = int(result.split("Task ID:")[1].split()[0].strip())
-                    al.cvat_task_id = task_id
+                    task_ids = _parse_cvat_task_ids(result)
+                    al.cvat_task_ids = task_ids
                     al.phase = AutoLabelingPhase.ANNOTATING
                     self.state.save()
                     return result, [HardStop(
@@ -1707,17 +1727,17 @@ class ChatPipeline:
                     )]
                 except Exception:
                     return result, [HardStop(
-                        "The export may have succeeded on the CVAT backend, but the task ID "
+                        "The export may have succeeded on the CVAT backend, but the task ID(s) "
                         "could not be read from the response. Please check CVAT directly for "
-                        "your task, or retry the export. If the problem persists, contact support."
+                        "your task(s), or retry the export. If the problem persists, contact support."
                     )]
 
         return result, [FallThrough()]
 
     async def _handle_export_to_cvat(
-        self, fn_args: dict, mcp_client
+        self, fn_args: dict, mcp_client, progress_cb=None
     ) -> tuple[str, list[ToolRouting]]:
-        return await self._handle_export_generic(LabelingBackend.CVAT, fn_args, mcp_client)
+        return await self._handle_export_generic(LabelingBackend.CVAT, fn_args, mcp_client, progress_cb)
 
     async def _handle_run_auto_labeling_streaming(
         self, fn_args: dict, progress_cb, mcp_client
@@ -1830,13 +1850,19 @@ class ChatPipeline:
         return result, [HardStop(finalized)]
 
     async def _handle_import_from_cvat(
-        self, fn_args: dict, mcp_client
+        self, fn_args: dict, mcp_client, progress_cb=None
     ) -> tuple[str, list[ToolRouting]]:
         if self.state.auto_labeling:
             ok, msg = self.state.auto_labeling.can_import_from_cvat()
             if not ok:
                 return msg, [FallThrough()]
-        result = unwrap_tool_output(await mcp_client.call_tool("import_from_cvat", fn_args))
+        if progress_cb:
+            set_active_progress_cb(progress_cb)
+        try:
+            result = unwrap_tool_output(await mcp_client.call_tool("import_from_cvat", fn_args))
+        finally:
+            if progress_cb:
+                clear_active_progress_cb()
         return result, [HardStop(self._finalize_import(fn_args, result))]
 
     async def _handle_set_labeling_backend(
@@ -1943,18 +1969,24 @@ class ChatPipeline:
             )]
 
     async def _handle_export_to_label_studio(
-        self, fn_args: dict, mcp_client
+        self, fn_args: dict, mcp_client, progress_cb=None
     ) -> tuple[str, list[ToolRouting]]:
-        return await self._handle_export_generic(LabelingBackend.LABEL_STUDIO, fn_args, mcp_client)
+        return await self._handle_export_generic(LabelingBackend.LABEL_STUDIO, fn_args, mcp_client, progress_cb)
 
     async def _handle_import_from_label_studio(
-        self, fn_args: dict, mcp_client
+        self, fn_args: dict, mcp_client, progress_cb=None
     ) -> tuple[str, list[ToolRouting]]:
         if self.state.auto_labeling:
             ok, msg = self.state.auto_labeling.can_import_from_label_studio()
             if not ok:
                 return msg, [FallThrough()]
-        result = unwrap_tool_output(await mcp_client.call_tool("import_from_label_studio", fn_args))
+        if progress_cb:
+            set_active_progress_cb(progress_cb)
+        try:
+            result = unwrap_tool_output(await mcp_client.call_tool("import_from_label_studio", fn_args))
+        finally:
+            if progress_cb:
+                clear_active_progress_cb()
         if Sentinels.LS_NO_ANNOTATIONS in result:
             err = result.split(":", 1)[1].strip() if ":" in result else result
             return result, [HardStop(err)]
@@ -2061,7 +2093,7 @@ class ChatPipeline:
             return f"{tool_output}\n\nWhich model would you like to use?"
 
     async def _do_post_run_export(
-        self, backend: str, dataset_name: str, mcp_client
+        self, backend: str, dataset_name: str, mcp_client, progress_cb=None
     ) -> str:
         """Call the appropriate export tool after auto-labeling and update task-ID state.
 
@@ -2071,11 +2103,17 @@ class ChatPipeline:
         tool_name     = "export_to_label_studio" if is_ls else "export_to_cvat"
         backend_label = "Label Studio"            if is_ls else "CVAT"
 
-        export_result = await mcp_client.call_tool(
-            tool_name, {"dataset_name": dataset_name, "with_predictions": True}
-        )
+        if progress_cb:
+            set_active_progress_cb(progress_cb)
+        try:
+            export_result = await mcp_client.call_tool(
+                tool_name, {"dataset_name": dataset_name, "with_predictions": True}
+            )
+        finally:
+            if progress_cb:
+                clear_active_progress_cb()
         export_msg = unwrap_tool_output(export_result)
-        success = ("Project ID" in export_msg) if is_ls else ("Task ID:" in export_msg)
+        success = ("Project ID" in export_msg) if is_ls else ("Task IDs:" in export_msg)
 
         al = self.state.auto_labeling
         if al and success:
@@ -2091,8 +2129,7 @@ class ChatPipeline:
                     pass
             else:
                 try:
-                    task_id = int(export_msg.split("Task ID:")[1].split()[0].strip())
-                    al.cvat_task_id = task_id
+                    al.cvat_task_ids = _parse_cvat_task_ids(export_msg)
                     self.state.save()
                 except Exception:
                     pass
@@ -2131,7 +2168,7 @@ class ChatPipeline:
                 await self._progress_cb("status", {"message": f"Exporting predictions to {backend_label}..."})
 
             try:
-                reply += await self._do_post_run_export(backend, dataset_name, mcp_client)
+                reply += await self._do_post_run_export(backend, dataset_name, mcp_client, self._progress_cb)
             except Exception as e:
                 reply += f"\n\nNote: {backend} export failed: {str(e)}"
         else:

@@ -193,7 +193,7 @@ border-radius:10px;border:1px solid #1d273f;font-family: ui-monospace, SFMono-Re
   display: none;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px; color: #64748b;
-  max-height: 72px; overflow: hidden;
+  max-height: 72px; overflow-y: auto;
   white-space: pre-wrap; word-break: break-all;
   border-top: 1px solid var(--border); padding-top: 4px; margin-top: 6px;
 }
@@ -436,6 +436,7 @@ function updateStatusBubble(container, update) {
         _logLines.push(update.log);
         if (_logLines.length > MAX_LOG_LINES) _logLines.shift();
         logEl.textContent = _logLines.join("\n");
+        logEl.scrollTop = logEl.scrollHeight;
     }
 
     chatEl.scrollTop = chatEl.scrollHeight;
@@ -466,6 +467,9 @@ function parseSseChunk(buffer) {
 
 async function chatSend(content) {
     addMsg("user", content);
+
+    // Reset per turn so a previous tool's logs don't bleed into a new one.
+    _logLines = [];
 
     const statusContainer = createStatusBubble();
     chatEl.appendChild(statusContainer);
@@ -498,9 +502,8 @@ async function chatSend(content) {
 
             for (const { type, data } of events) {
                 if (type === "status") {
-                    // Keep accumulated log lines while run_auto_labeling is active.
-                    const keepLog = _logLines.length > 0;
-                    updateStatusBubble(statusContainer, { status: data.message, keepLog });
+                    // Safe to always keep logs within a turn since they're reset above.
+                    updateStatusBubble(statusContainer, { status: data.message, keepLog: true });
                 }
                 if (type === "log")   updateStatusBubble(statusContainer, { log: data.line });
                 if (type === "reply") reply = data.message || "";

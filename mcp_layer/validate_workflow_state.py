@@ -145,7 +145,7 @@ class AutoLabelingState(BaseModel):
     model_configured: bool = False
     hyperparams_confirmed: bool = False
     auto_labeling_complete: bool = False
-    cvat_task_id: int = 0
+    cvat_task_ids: list[int] = []
     ls_task_ids: list[int] = []
     labels_imported: bool = False
     export_confirmed: bool = False
@@ -222,7 +222,7 @@ class AutoLabelingState(BaseModel):
         return True, ""
 
     def can_import_from_cvat(self) -> tuple[bool, str]:
-        if self.cvat_task_id == 0:
+        if not self.cvat_task_ids:
             return False, (
                 "The dataset must be exported to CVAT before importing annotations. "
                 "Please export to CVAT first."
@@ -446,7 +446,7 @@ class WorkflowState(BaseModel):
                     return ALWAYS | {"confirm_export", "set_selected_dataset", "set_labeling_backend", "set_labeling_path"}
                 return ALWAYS | {"set_selected_dataset", "export_to_label_studio", "set_labeling_backend", "set_labeling_path"}
             else:
-                if al.cvat_task_id > 0:
+                if al.cvat_task_ids:
                     return ALWAYS | {"import_from_cvat"}
                 if al.manual_classes and not al.export_confirmed:
                     return ALWAYS | {"confirm_export", "set_selected_dataset", "set_labeling_backend", "set_labeling_path"}
@@ -573,7 +573,7 @@ class WorkflowState(BaseModel):
 
         old_al_fields = {
             "auto_labeling_complete": "auto_labeling_complete",
-            "cvat_task_id": "cvat_task_id",
+            "cvat_task_id": "cvat_task_ids",
         }
         wf = raw.get("workflow_name", "")
         if wf == "auto_labeling" and "auto_labeling" not in raw:
@@ -581,8 +581,8 @@ class WorkflowState(BaseModel):
             for old_key, new_key in old_al_fields.items():
                 if old_key in raw:
                     val = raw.pop(old_key)
-                    if new_key == "cvat_task_id" and val is None:
-                        val = 0
+                    if new_key == "cvat_task_ids":
+                        val = [val] if val else []
                     substate[new_key] = val
             if substate:
                 raw["auto_labeling"] = substate
@@ -592,7 +592,13 @@ class WorkflowState(BaseModel):
 
         al = raw.get("auto_labeling")
         if isinstance(al, dict):
+            # cvat_task_id (single int) predates multi-task CVAT export chunking;
+            # convert in place so extra="forbid" doesn't reject the old key.
+            if "cvat_task_id" in al:
+                old_val = al.pop("cvat_task_id")
+                al.setdefault("cvat_task_ids", [old_val] if old_val else [])
             al.setdefault("labeling_backend", "")
+            al.setdefault("cvat_task_ids", [])
             al.setdefault("ls_task_ids", [])
             al.setdefault("manual_classes", [])
             al.setdefault("models_listed", False)

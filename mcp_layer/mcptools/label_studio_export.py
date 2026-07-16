@@ -1,12 +1,14 @@
 import os
 import json
 import time
+import asyncio
 import logging
 import traceback
 from pathlib import Path
 from dotenv import load_dotenv
 
 import fiftyone as fo
+from fastmcp import Context
 from label_studio_sdk import LabelStudio
 from mcptools import mcp
 
@@ -113,9 +115,9 @@ def _upload_image(http, project_id: int, path: Path) -> list[int]:
     )
 
 
-def _upload_images_concurrent(
-    http, project_id: int, paths: list[Path], max_workers: int = 3
-) -> dict[str, int]:
+async def _upload_images_concurrent(
+    ctx, http, project_id: int, paths: list[Path], max_workers: int = 3
+) -> tuple[dict[str, int], list[str]]:
     """
     Upload images one-per-POST using a thread pool, return {filename: task_id}.
 
@@ -123,12 +125,20 @@ def _upload_images_concurrent(
     into a single multipart body, so per-file uploads are required for N tasks.
     Concurrency removes the per-image latency; max_workers=3 stays under LS
     cloud rate limits (429 appears above ~5 simultaneous uploads).
+
+    Awaits each upload individually instead of blocking on a synchronous
+    as_completed loop, so control returns to the event loop between images and
+    progress can go out over the SSE connection -- a long export previously
+    held the loop with no traffic on it, tripping the client's 300s timeout.
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import ThreadPoolExecutor
 
     total = len(paths)
     t0 = time.time()
     logging.warning(f"[LS] Uploading {total} image(s) ({max_workers} concurrent)…")
+    if ctx:
+        await ctx.log(f"Uploading {total} image(s) to Label Studio…")
+        await ctx.report_progress(0, total)
 
     def _upload_one(path: Path) -> tuple[str, int]:
         for attempt in range(4):
@@ -148,16 +158,20 @@ def _upload_images_concurrent(
     fname_to_task_id: dict[str, int] = {}
     errors: list[str] = []
 
+    loop = asyncio.get_running_loop()
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {pool.submit(_upload_one, p): p for p in paths}
-        for done, future in enumerate(as_completed(futures), 1):
+        futures = [loop.run_in_executor(pool, _upload_one, p) for p in paths]
+        for done, coro in enumerate(asyncio.as_completed(futures), 1):
             try:
-                fname, task_id = future.result()
+                fname, task_id = await coro
                 fname_to_task_id[fname] = task_id
             except Exception as e:
                 errors.append(str(e))
             if done % 10 == 0 or done == total:
                 logging.warning(f"[LS] {done}/{total} uploaded…")
+                if ctx:
+                    await ctx.report_progress(done, total)
+                    await ctx.log(f"{done}/{total} images uploaded…")
 
     if errors:
         logging.warning(f"[LS] {len(errors)} upload error(s): {errors[:3]}")
@@ -165,7 +179,11 @@ def _upload_images_concurrent(
     logging.warning(
         f"[LS] {len(fname_to_task_id)}/{total} images uploaded in {time.time()-t0:.1f}s"
     )
-    return fname_to_task_id
+    if ctx:
+        await ctx.log(
+            f"Uploaded {len(fname_to_task_id)}/{total} images in {time.time()-t0:.1f}s"
+        )
+    return fname_to_task_id, errors
 
 
 def _detections_to_ls_results(detections) -> list:
@@ -358,10 +376,11 @@ def set_labeling_backend(backend: str) -> str:
 
 
 @mcp.tool()
-def export_to_label_studio(
+async def export_to_label_studio(
     dataset_name: str,
     with_predictions: bool = False,
     classes: list = None,
+    ctx: Context = None,
 ) -> str:
     """
     Export a FiftyOne dataset to Label Studio for annotation.
@@ -461,8 +480,18 @@ def export_to_label_studio(
         image_paths = [Path(s.filepath) for s in samples]
 
         # --- Upload (concurrent, one POST per image) ----------------------
-        fname_to_task_id = _upload_images_concurrent(http, project_id, image_paths)
+        fname_to_task_id, upload_errors = await _upload_images_concurrent(ctx, http, project_id, image_paths)
         all_task_ids = list(fname_to_task_id.values())
+
+        if not all_task_ids:
+            # Total failure -- nothing worth keeping, unlike a partial one.
+            try:
+                client.projects.delete(id=project_id)
+                logging.warning(f"[LS] Deleted empty project {project_id} after total upload failure")
+            except Exception:
+                pass
+            detail = "; ".join(upload_errors[:3]) if upload_errors else "no images uploaded"
+            return f"Label Studio export failed: {detail}"
 
         # --- Attach predictions (auto path only) --------------------------
         if with_predictions and label_field and fname_to_task_id:
@@ -520,6 +549,12 @@ def export_to_label_studio(
         )
         if with_predictions and label_field:
             msg += f"\nPredictions attached with classes: {classes}"
+        if upload_errors:
+            msg += (
+                f"\n\nWarning: {len(upload_errors)}/{len(image_paths)} image(s) failed to upload "
+                f"and were skipped: {'; '.join(upload_errors[:3])}"
+                f"{' (and more)' if len(upload_errors) > 3 else ''}"
+            )
 
         logging.info(msg)
         return msg
@@ -543,7 +578,7 @@ def export_to_label_studio(
 
 
 @mcp.tool()
-def import_from_label_studio(dataset_name: str) -> str:
+async def import_from_label_studio(dataset_name: str, ctx: Context = None) -> str:
     """
     Download completed annotations from Label Studio for a previously exported
     dataset and save them as a new FiftyOne dataset named <dataset_name>_labeled
@@ -566,7 +601,11 @@ def import_from_label_studio(dataset_name: str) -> str:
         client = _get_client()
         http   = _get_http(client)
 
-        exported_tasks = _export_snapshot(http, project_id)
+        if ctx:
+            await ctx.log(f"Requesting annotation snapshot from Label Studio project {project_id}...")
+        exported_tasks = await asyncio.to_thread(_export_snapshot, http, project_id)
+        if ctx:
+            await ctx.log(f"Snapshot ready — {len(exported_tasks)} task(s) found, matching to local images...")
 
         if not exported_tasks:
             return (
