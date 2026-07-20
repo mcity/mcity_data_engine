@@ -2,10 +2,12 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Mcity data engine deployment'
 
 Parameters:
+  UbuntuAMI:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/canonical/ubuntu/server/noble/stable/current/amd64/hvm/ebs-gp3/ami-id'
   OPENAIAPIKEY:
     Type: String
     Default: sk-123456789123456789123456789 # Replace this key
-    NoEcho: true
   KeyPairName:
     Type: String
     Default: mcity-data-engine-key
@@ -20,6 +22,35 @@ Parameters:
   HFTOKEN:
     Type: String
     Default: hf_asdasdasduasdasdasTSDSDasfadfasdasd
+    NoEcho: true
+  ANTHROPICAPIKEY:
+    Type: String
+    Default: ''
+    Description: Anthropic API key
+    NoEcho: true
+  GEMINIAPIKEY:
+    Type: String
+    Default: ''
+    Description: Gemini API key
+    NoEcho: true
+  GROQAPIKEY:
+    Type: String
+    Default: ''
+    Description: Groq API key
+    NoEcho: true
+  LSTOKEN:
+    Type: String
+    Default: ''
+    Description: Label Studio API token
+    NoEcho: true
+  LSURL:
+    Type: String
+    Default: 'https://app.humansignal.com'
+    Description: Label Studio instance URL
+  CVATACCESSTOKEN:
+    Type: String
+    Default: ''
+    Description: CVAT access token (leave empty if using Label Studio)
     NoEcho: true
 
 Resources:
@@ -50,6 +81,7 @@ Resources:
           ToPort: 5151
           CidrIp: 0.0.0.0/0
 
+  # EC2 Instance using Amazon Linux 2023
   WebServerInstance:
     Type: 'AWS::EC2::Instance'
     Properties:
@@ -57,41 +89,71 @@ Resources:
       KeyName: !Ref MyKeyPair
       SecurityGroups:
         - !Ref InstanceSecurityGroup
-      ImageId: ami-0722d33f9d127fc05
+      # ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/noble/stable/current/amd64/hvm/ebs-gp3/ami-id}}' # Amazon Linux 2023 (AMI varies by region)
+      ImageId: ami-0753cdad0e246f99f
       BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeSize: 100
-            VolumeType: gp3
-            DeleteOnTermination: true
+       - DeviceName: /dev/sda1  # Root device name for Amazon Linux 2023
+         Ebs:
+           VolumeSize: 100      # Size in GiB
+           VolumeType: gp3      # Latest generation SSD for better performance
+           DeleteOnTermination: true
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
+          # Update Ubuntu and install Git/Python
+          #export DEBIAN_FRONTEND=noninteractive
+          sudo -s
+          # apt-get update -y
+          # apt-get install -y git python3-pip python3-venv curl ffmpeg
+          # Move to the ubuntu home directory
           cd /home/ubuntu/myapp
+          # git clone --branch agentic-data-engine ${RepoURL}  myapp
+          # cd myapp
+
 
           python3 -m venv venv
           source venv/bin/activate
+
+          # Install dependencies
+          #if [ -f requirements.txt ]; then
+          #  while read p; do pip3 install "$p" || continue; done < requirements.txt
+          #fi
+          # if [ -f requirements.txt ]; then
+          #  while read p; do pip3 install "$p" || continue; done < requirements_prod.txt
+          # fi
+          # if [ -f agent_requirements.txt ]; then
+          #   while read p; do pip3 install "$p" || continue; done <  agent_requirements.txt
+          # fi
 
           cat <<EOF > .env
           LLM_PROVIDER=openai
           #OPENAI_MODEL=gpt-5-mini
           OPENAI_API_KEY=${OPENAIAPIKEY}
+          ANTHROPIC_API_KEY=${ANTHROPICAPIKEY}
+          GEMINI_API_KEY=${GEMINIAPIKEY}
+          GROQ_API_KEY=${GROQAPIKEY}
           HF_TOKEN=${HFTOKEN}
+          LS_TOKEN=${LSTOKEN}
+          LS_URL=${LSURL}
+          CVAT_ACCESS_TOKEN=${CVATACCESSTOKEN}
           EOF
 
+          #chown -R ubuntu:ubuntu /home/ubuntu/myapp
+          #chown ubuntu:ubuntu .env
           chmod 600 .env
-
-          # PYTHONPATH lets mcp_layer scripts import the config/ package from project root
-          export PYTHONPATH=/home/ubuntu/myapp
-
           nohup python3 session_v51.py > session_v51.log 2>&1 &
 
           cd mcp_layer
+          # Run multiple python files in background
+          # Redirect output to logs for troubleshooting
           nohup python3 client_chat.py --ui > client_chat.log 2>&1 &
           nohup python3 mcp_server.py > mcp_server.log 2>&1  &
           nohup python3 llm_clients.py > llm_clients.log 2>&1  &
           nohup python3 chat_server.py > chat_server.log 2>&1   &
           nohup uvicorn ingest_server:app --host 0.0.0.0 --port 8002 --reload > ingest_server.log 2>&1
+
+
+
 
 
 Outputs:

@@ -90,7 +90,7 @@ Resources:
       SecurityGroups:
         - !Ref InstanceSecurityGroup
       # ImageId: '{{resolve:ssm:/aws/service/canonical/ubuntu/server/noble/stable/current/amd64/hvm/ebs-gp3/ami-id}}' # Amazon Linux 2023 (AMI varies by region)
-      ImageId: ami-0722d33f9d127fc05
+      ImageId: ami-0753cdad0e246f99f
       BlockDeviceMappings:
        - DeviceName: /dev/sda1  # Root device name for Amazon Linux 2023
          Ebs:
