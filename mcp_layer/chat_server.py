@@ -14,6 +14,7 @@ from fastmcp import Client
 from fastmcp.client.transports import SSETransport
 
 sys.path.append(os.path.dirname(__file__))
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 logging.basicConfig(
     level=logging.WARNING,
