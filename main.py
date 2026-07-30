@@ -658,6 +658,7 @@ class WorkflowExecutor:
             return False
 
         logging.info(f"Selected workflows: {self.workflows}")
+        failed_workflows: List[str] = []
         for workflow in self.workflows:
             logging.info(
                 f"Running workflow {workflow} for dataset {self.selected_dataset}"
@@ -1267,9 +1268,18 @@ class WorkflowExecutor:
                 logging.info(f"Completed workflow {workflow} and cleaned up memory")
 
             except Exception as e:
-                logging.error(f"Workflow {workflow}: An error occurred: {e}")
+                # logging.exception keeps the traceback -- logging.error dropped
+                # it, which made these swallowed failures very hard to diagnose.
+                logging.exception(f"Workflow {workflow}: An error occurred: {e}")
+                failed_workflows.append(workflow)
                 wandb_close(exit_code=1)
                 #cleanup_memory()  # Clean up even after failure
+
+        # Remaining workflows still run after one fails (unchanged), but the
+        # failure is no longer hidden: this used to return True regardless.
+        if failed_workflows:
+            logging.error(f"Failed workflows: {failed_workflows}")
+            return False
 
         return True
 
@@ -1290,7 +1300,7 @@ def main():
             dataset=None,
             dataset_info=None,
         )
-        executor.execute()
+        workflows_ok = executor.execute()
 
         # FIX: Pull back outputs after ingestion
         dataset = executor.dataset
@@ -1307,7 +1317,7 @@ def main():
             dataset,
             dataset_info,
         )
-        executor.execute()
+        workflows_ok = executor.execute()
 
 
     if dataset is not None:
@@ -1336,7 +1346,13 @@ def main():
     time_stop = time.time()
     logging.info(f"Elapsed time: {time_stop - time_start:.2f} seconds")
 
+    return workflows_ok
+
 
 if __name__ == "__main__":
     cleanup_memory()
-    main()
+    # Exit non-zero when a workflow failed. Every MCP tool that runs main.py as
+    # a subprocess decides success from the exit code, so returning 0 after a
+    # caught workflow exception reported the failed run as a success.
+    if not main():
+        sys.exit(1)

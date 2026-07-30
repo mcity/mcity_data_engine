@@ -91,11 +91,36 @@ async def ingest_stream(job_id: str):
     async def event_generator():
         # Optional SSE retry instruction for client reconnects
         yield "retry: 1000\n\n"
+        had_error = False
         while True:
             msg = await q.get()
             if msg is None:
-                yield "event: done\ndata: {}\n\n"
+                # Terminal event. run_ingest_and_stream() always reaches its
+                # finally block, so "the stream ended" does not mean "the run
+                # worked" -- ok carries the real outcome. Same envelope shape
+                # as the core's own done event so the client reads one field.
+                payload = json.dumps({"type": "done", "data": {"ok": not had_error}})
+                yield f"event: done\ndata: {payload}\n\n"
                 break
-            yield f"event: log\ndata: {msg}\n\n"
+
+            # Forward each event under its OWN type. This used to be hardcoded
+            # to "log", which silently downgraded ingestion failures into
+            # ordinary log lines and left the client's error handler dead.
+            try:
+                parsed = json.loads(msg)
+            except ValueError:
+                parsed = None
+            # Anything that is not a JSON object has no type field, and must
+            # not crash the generator -- that would kill the whole stream.
+            ev_type = parsed.get("type", "log") if isinstance(parsed, dict) else "log"
+
+            if ev_type == "error":
+                had_error = True
+                # Renamed: EventSource dispatches its own transport failures as
+                # "error" too, so an app error sent under that name would also
+                # trip the client's onerror handler.
+                ev_type = "ingest_error"
+
+            yield f"event: {ev_type}\ndata: {msg}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

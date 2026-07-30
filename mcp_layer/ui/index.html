@@ -585,6 +585,10 @@ document.getElementById('ingestForm').addEventListener('submit', async function(
         // Listen to SSE events
         const evtSource = new EventSource(`${INGEST_BASE}/ingest/stream/${jobId}`);
 
+        // The stream always ends with a "done" event, including after a
+        // failure, so success must be proven rather than assumed.
+        let hadError = false;
+
         evtSource.onopen = () => {
             logsEl.textContent += `[INFO] Event stream connected\n`;
             logsEl.scrollTop = logsEl.scrollHeight;
@@ -629,7 +633,10 @@ document.getElementById('ingestForm').addEventListener('submit', async function(
             }
         });
 
-        evtSource.addEventListener("error", (event) => {
+        // Named "ingest_error", not "error": EventSource reports its own
+        // transport failures as "error", which onerror above already covers.
+        evtSource.addEventListener("ingest_error", (event) => {
+            hadError = true;
             try {
                 const data = JSON.parse(event.data);
                 logsEl.textContent += `[ERROR] ${data.data.msg}\n`;
@@ -640,9 +647,22 @@ document.getElementById('ingestForm').addEventListener('submit', async function(
             }
         });
 
-        evtSource.addEventListener("done", () => {
-            statusEl.textContent = "✅ Ingestion complete";
-            logsEl.textContent += `[INFO] Ingestion completed successfully\n`;
+        evtSource.addEventListener("done", (event) => {
+            let ok = !hadError;
+            try {
+                const parsed = JSON.parse(event.data);
+                if (parsed && parsed.data && parsed.data.ok === false) ok = false;
+            } catch (e) {
+                /* Unparseable terminal event — fall back to the error flag. */
+            }
+
+            if (ok) {
+                statusEl.textContent = "✅ Ingestion complete";
+                logsEl.textContent += `[INFO] Ingestion completed successfully\n`;
+            } else {
+                statusEl.textContent = "❌ Ingestion failed";
+                logsEl.textContent += `[INFO] Ingestion failed — see the errors above\n`;
+            }
             logsEl.scrollTop = logsEl.scrollHeight;
             evtSource.close();
         });

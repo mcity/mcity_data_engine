@@ -12,7 +12,7 @@ SELECTED_DATASET = {
 }
 
 #: Runtime session state — managed by the agent via WorkflowState, do not edit manually
-WORKFLOW_STATE = {'workflow_name': '', 'dataset_name': '', 'dataset_confirmed': False, 'labeled_dataset_name': '', 'auto_labeling': None, 'class_mapping': None, 'anomaly_detection': None, 'embedding_selection': None, 'auto_labeling_zero_shot': None, 'ensemble_selection': None, 'workflow_just_reset': False}
+WORKFLOW_STATE = {'workflow_name': 'auto_labeling', 'dataset_name': '', 'dataset_confirmed': False, 'labeled_dataset_name': '', 'auto_labeling': {'labeling_path': '', 'labeling_backend': '', 'manual_classes': [], 'models_listed': False, 'model_configured': False, 'hyperparams_confirmed': False, 'auto_labeling_complete': False, 'cvat_task_ids': [], 'ls_task_ids': [], 'labels_imported': False, 'export_confirmed': False, 'run_confirmed': False, 'run_awaiting_confirmation': False, 'model_source': '', 'model_name': '', 'phase': ''}, 'class_mapping': None, 'anomaly_detection': None, 'embedding_selection': None, 'auto_labeling_zero_shot': None, 'ensemble_selection': None, 'workflow_just_reset': True}
 
 #: Workflows and associated parameters
 WORKFLOWS = {
