@@ -230,9 +230,6 @@ min-width:auto;
 <section class="pane pane-chat">
 <main id="chat" class="chat"></main>
 <form id="form" class="composer">
-  <div id="chat-helper" style="grid-column:1/3; color: var(--muted); font-size: 13px; margin-bottom: 4px;">
-    Type <strong>hi</strong> and click <strong>Send</strong> button.
-  </div>
   <textarea id="input" rows="1" placeholder="Type a message…" autocomplete="off"></textarea>
   <button id="send" type="submit">Send</button>
   <div style="grid-column:2/3; display:flex; justify-content:flex-end;">
@@ -313,7 +310,24 @@ async function initProviderDropdown() {
         localStorage.setItem(PROVIDER_KEY, selectedProvider);
     });
 }
+// Show the agent's starting information on page load, so the user does not
+// have to type "hi" first. This hits the read-only /chat/greeting endpoint
+// instead of /chat/stream: a refresh must not touch session state or fire a
+// tool call. It is also not pushed into `history` -- it is not a real turn.
+async function loadGreeting() {
+    try {
+        const res = await fetch(`${CHAT_BASE}/chat/greeting`);
+        if (!res.ok) return;
+        const { message } = await res.json();
+        if (message) addMsg("agent", message);
+    } catch {
+        // Chat server not up yet — stay silent rather than opening the page
+        // with an error bubble the user did nothing to cause.
+    }
+}
+
 initProviderDropdown();
+loadGreeting();
 
 // Extract [source: ...] tag from the end of a message, return {body, source}.
 function extractSource(text) {

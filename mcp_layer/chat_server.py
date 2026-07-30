@@ -162,6 +162,19 @@ _WORKFLOW_LIST = "\n".join(
     for i, (name, meta) in enumerate(WORKFLOW_META.items())
 )
 
+# Display-only variant for the page-load greeting: labels without the internal
+# names, matching the base prompt's rule about never showing them to the user.
+_WORKFLOW_LABELS = "\n".join(
+    f"{i + 1}. {meta['label']}"
+    for i, meta in enumerate(WORKFLOW_META.values())
+)
+
+GREETING_TEXT = (
+    "Hello! I am the Mcity AI Agent. I can help you with these workflows:\n\n"
+    f"{_WORKFLOW_LABELS}\n\n"
+    "Tell me which workflow you want to start."
+)
+
 BASE_PROMPT = (
     (_PROMPTS_DIR / "base_prompt.txt").read_text().replace("{WORKFLOW_LIST}", _WORKFLOW_LIST)
 )
@@ -427,6 +440,18 @@ def _build_state_hint(state=None) -> str:
 @app.get("/chat/providers")
 async def chat_providers():
     return {"providers": available_providers(), "default": "openai"}
+
+
+@app.get("/chat/greeting")
+async def chat_greeting():
+    """Static greeting text for the UI to show on page load.
+
+    Read-only on purpose. It does not load WorkflowState, does not run the
+    tool loop, and does not clear workflow_just_reset -- a page refresh must
+    never mutate session state or fire a tool call. See chat_stream() below,
+    which does all three and is therefore unsafe to call automatically.
+    """
+    return {"message": GREETING_TEXT}
 
 
 @app.post("/chat/stream")

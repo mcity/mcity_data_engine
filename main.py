@@ -1002,10 +1002,12 @@ class WorkflowExecutor:
                                 if "inference" in mode:
                                     logging.info(f"Running inference for RF-DETR model: {config}")
                                     fallback_hf_map = config_rfdetr.get("fallback_hf_repo", {})
+                                    fallback_file_map = config_rfdetr.get("fallback_hf_filename", {})
                                     rfdetr_inference_settings = {
                                         **config_autolabel["inference_settings"],
                                         "class_names": config_rfdetr.get("class_names"),
                                         "fallback_hf_repo": fallback_hf_map.get(config),
+                                        "fallback_hf_filename": fallback_file_map.get(config),
                                     }
                                     detector.inference(
                                         inference_settings=rfdetr_inference_settings

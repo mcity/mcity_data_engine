@@ -6,24 +6,13 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "gs_gen_zina_msight1",
+    "name": "",
     "n_samples": None,
     "custom_view": None,
 }
 
 #: Runtime session state — managed by the agent via WorkflowState, do not edit manually
-WORKFLOW_STATE = {
-    "workflow_name": "",
-    "dataset_name": "",
-    "dataset_confirmed": False,
-    "labeled_dataset_name": "",
-    "auto_labeling": None,
-    "class_mapping": None,
-    "anomaly_detection": None,
-    "embedding_selection": None,
-    "auto_labeling_zero_shot": None,
-    "ensemble_selection": None,
-}
+WORKFLOW_STATE = {'workflow_name': '', 'dataset_name': '', 'dataset_confirmed': False, 'labeled_dataset_name': '', 'auto_labeling': None, 'class_mapping': None, 'anomaly_detection': None, 'embedding_selection': None, 'auto_labeling_zero_shot': None, 'ensemble_selection': None, 'workflow_just_reset': False}
 
 #: Workflows and associated parameters
 WORKFLOWS = {
@@ -85,9 +74,9 @@ WORKFLOWS = {
         "mode": ['inference'],
         "model_source": [
         # "hf_models_objectdetection",
-        # "ultralytics",
+        "ultralytics",
         # "custom_codetr",
-         "roboflow",         # fine-tune RF-DETR for detection
+        #  "roboflow",         # fine-tune RF-DETR for detection
         #"roboflow_keypoint",  # fine-tune RF-DETR with joint bbox+keypoint head
         # "vitpose",          # fine-tune ViTPose-B on GT RoI crops (run before roi_keypoint)
         # "roi_keypoint",     # two-stage inference: RF-DETR detect → ViTPose predict
@@ -102,7 +91,9 @@ WORKFLOWS = {
         "inference_settings": {
             "do_eval": False,
             "inference_on_test": False,
-            "model_hf": None,  # None (automatic selection) or overwrite with Hugging Face ID. Assumes same model as selected below.
+            # None (automatic selection) or overwrite with Hugging Face ID. Assumes same model as selected below.
+            # Shared by every model source — reset to None before switching to a different source.
+            "model_hf": "mcity-data-engine/fisheye8k_yolo12x",
             "detection_threshold": 0.2,
             "pedestrian_class_name": "pedestrian",  # class name to use for pedestrian tracking
         },
@@ -126,8 +117,8 @@ WORKFLOWS = {
         "custom_codetr": {
             "export_dataset_root": "output/datasets/codetr_data/",
             "configs": [
-                "projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py",
-                "projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
+#                "projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py",
+"projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
             ],
             "n_gpus": "1",
             "container_tool": "docker",
@@ -137,10 +128,10 @@ WORKFLOWS = {
             "configs": [
                 # "rfdetr_nano",
                 # "rfdetr_small",
-                 #"rfdetr_medium",
+                 "rfdetr_medium",
                 #"rfdetr_large",
 		#"rfdetr_xlarge",
-		"rfdetr_2xlarge",
+  # "rfdetr_2xlarge",
             ],
             # Fallback HuggingFace repo to download best.pt from when no local model is found.
             # Maps config name → HF repo ID. Set to None to skip HF fallback for that config.
@@ -248,10 +239,10 @@ WORKFLOWS = {
                 #"yolo11n": {"batch_size": 8, "img_size": 1280},
                 #"yolo11x": {"batch_size": 1, "img_size": 960},
                 #"yolo12n": {"batch_size": 8, "img_size": 1280},
-                #"yolo12x": {"batch_size": 1, "img_size": 960},
+"yolo12x": {"batch_size": 1, "img_size": 960},
 		#"yolo26x": {"batch_size": 1, "img_size": 960},
 		#"yolo26l": {"batch_size": 1, "img_size": 960},
-		"yolo26m": {"batch_size": 1, "img_size": 960},
+#		"yolo26m": {"batch_size": 1, "img_size": 960},
             },
         },
     },

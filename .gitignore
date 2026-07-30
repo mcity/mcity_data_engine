@@ -189,3 +189,6 @@ wandb/
 pre_trained/
 # Ultralytics cannot change the default download folder during Init()
 yolo*.pt
+
+*.zip
+*.mp4

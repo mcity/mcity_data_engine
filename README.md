@@ -122,12 +122,13 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 pip install -r agent_requirements.txt
+sudo apt update && sudo apt install -y ffmpeg
 ```
 
 Login with your [Weights and Biases](https://wandb.ai/) and [Hugging Face](https://huggingface.co/) accounts:
 ```
 wandb login
-huggingface-cli login
+hf auth login
 ```
 
 ### Agentic Implementation Guide:
@@ -152,7 +153,7 @@ Start all four components one after the other in separate terminals:
 python mcp_layer/mcp_server.py
 
 # Terminal 2: Chat Server (port 8001)
-uvicorn mcp_layer.chat_server:app --port 8001 --reload
+uvicorn mcp_layer.chat_server:app --port 8001 --reload --reload-exclude "config/config.py"
 
 # Terminal 3: Data Ingestion Server (port 8002)
 uvicorn mcp_layer.ingest_server:app --host 0.0.0.0 --port 8002 --reload

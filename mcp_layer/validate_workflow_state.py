@@ -635,7 +635,12 @@ class WorkflowState(BaseModel):
                         start = node.lineno - 1
                         end = node.end_lineno
                         lines[start:end] = [f"WORKFLOW_STATE = {repr(state_dict)}"]
-                        CONFIG_PATH.write_text("\n".join(lines).rstrip("\n") + "\n")
+                        new_src = "\n".join(lines).rstrip("\n") + "\n"
+                        # Only write on a real change. An identical write still
+                        # changes the mtime, which makes uvicorn --reload restart
+                        # the server, which saves again — an endless loop.
+                        if new_src != src:
+                            CONFIG_PATH.write_text(new_src)
                         return
         raise RuntimeError(
             f"WORKFLOW_STATE assignment not found in config.py — save aborted"

@@ -2315,7 +2315,11 @@ class CustomRFDETRObjectDetection:
                     logging.info(f"Using model_path from inference_settings: {model_path}")
                 else:
                     fallback_repo = inference_settings.get("fallback_hf_repo") or self.hf_repo_name
-                    logging.info(f"Local model not found. Attempting to download from {fallback_repo}")
+                    fallback_filename = inference_settings.get("fallback_hf_filename") or "best.pt"
+                    logging.info(
+                        f"Local model not found. Attempting to download {fallback_filename} "
+                        f"from {fallback_repo}"
+                    )
                     download_dir = os.path.join(
                         "output/models/rfdetr", self.dataset_name, model_name
                     )
@@ -2323,7 +2327,7 @@ class CustomRFDETRObjectDetection:
                     try:
                         model_path = hf_hub_download(
                             repo_id=fallback_repo,
-                            filename="best.pt",
+                            filename=fallback_filename,
                             local_dir=download_dir,
                             token=os.environ.get("HF_TOKEN"),
                         )
