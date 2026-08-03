@@ -12,7 +12,7 @@ SELECTED_DATASET = {
 }
 
 #: Runtime session state — managed by the agent via WorkflowState, do not edit manually
-WORKFLOW_STATE = {'workflow_name': 'auto_labeling', 'dataset_name': 'custom_dataset2', 'dataset_confirmed': True, 'labeled_dataset_name': '', 'auto_labeling': {'labeling_path': 'auto', 'labeling_backend': 'cvat', 'manual_classes': [], 'models_listed': True, 'model_configured': True, 'hyperparams_confirmed': True, 'auto_labeling_complete': False, 'cvat_task_ids': [], 'ls_task_ids': [], 'labels_imported': False, 'export_confirmed': False, 'run_confirmed': False, 'run_awaiting_confirmation': False, 'model_source': 'ultralytics', 'model_name': 'yolo12x', 'phase': ''}, 'class_mapping': None, 'anomaly_detection': None, 'embedding_selection': None, 'auto_labeling_zero_shot': None, 'ensemble_selection': None, 'last_run': {'workflow': 'auto_labeling', 'status': 'failed', 'error': 'the export to CVAT contained 0 images', 'log_path': '', 'attempts': 1}, 'workflow_just_reset': False}
+WORKFLOW_STATE = {'workflow_name': 'auto_labeling', 'dataset_name': 'custom_dataset2', 'dataset_confirmed': True, 'labeled_dataset_name': '', 'auto_labeling': {'labeling_path': 'auto', 'labeling_backend': 'cvat', 'manual_classes': [], 'models_listed': True, 'model_configured': True, 'hyperparams_confirmed': True, 'auto_labeling_complete': False, 'cvat_task_ids': [], 'ls_task_ids': [], 'labels_imported': False, 'export_confirmed': False, 'run_confirmed': False, 'run_awaiting_confirmation': True, 'model_source': 'custom_codetr', 'model_name': 'co_deformable_detr_r50_1x_coco.py', 'phase': ''}, 'class_mapping': None, 'anomaly_detection': None, 'embedding_selection': None, 'auto_labeling_zero_shot': None, 'ensemble_selection': None, 'last_run': {'workflow': 'auto_labeling', 'status': 'failed', 'error': 'the export to CVAT contained 0 images', 'log_path': '', 'attempts': 1}, 'workflow_just_reset': False}
 
 #: Workflows and associated parameters
 WORKFLOWS = {
@@ -74,8 +74,8 @@ WORKFLOWS = {
         "mode": ['inference'],
         "model_source": [
         # "hf_models_objectdetection",
-        "ultralytics",
-        # "custom_codetr",
+        # "ultralytics",
+        "custom_codetr",
         # "roboflow",
         # "roboflow_keypoint",
         # "vitpose",

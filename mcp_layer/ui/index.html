@@ -547,6 +547,14 @@ formEl.addEventListener("submit", (e) => {
     chatSend(val);
 });
 
+// Enter sends the message, Shift+Enter makes a new line
+inputEl.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.shiftKey) return;
+    if (e.isComposing || e.keyCode === 229) return;  // ignore IME input
+    e.preventDefault();
+    formEl.requestSubmit();
+});
+
 // Ingestion functionality
 document.getElementById('ingestForm').addEventListener('submit', async function(e) {
     e.preventDefault();
