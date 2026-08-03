@@ -658,7 +658,7 @@ document.getElementById('ingestForm').addEventListener('submit', async function(
 
             if (ok) {
                 statusEl.textContent = "✅ Ingestion complete";
-                logsEl.textContent += `[INFO] Ingestion completed successfully\n`;
+                logsEl.textContent += `[INFO] Ingestion completed successfully. To use this dataset, provide dataset name in the chat window.\n`;
             } else {
                 statusEl.textContent = "❌ Ingestion failed";
                 logsEl.textContent += `[INFO] Ingestion failed — see the errors above\n`;

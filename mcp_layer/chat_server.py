@@ -261,7 +261,7 @@ def _build_state_hint(state=None) -> str:
                     )
                 else:
                     parts.append(f"labeling_path={al.labeling_path}")
-            if (al.manual_classes and not al.cvat_task_id and not al.ls_task_ids
+            if (al.manual_classes and not al.cvat_task_ids and not al.ls_task_ids
                     and not al.phase):
                 classes_s = ", ".join(al.manual_classes)
                 if al.export_confirmed:
@@ -426,6 +426,21 @@ def _build_state_hint(state=None) -> str:
                     "ensemble: fully_configured | "
                     "call run_ensemble_selection when user confirms"
                 )
+
+        # Failed run: nothing was locked or reset, so say so explicitly. Without
+        # this the model treats the failure as a dead end and offers only a restart.
+        lr = state.failed_run()
+        if lr:
+            log_note = f" Logs: {lr.log_path}." if lr.log_path else ""
+            parts.append(
+                f"last_run=FAILED (attempt {lr.attempts}): {lr.error}{log_note} "
+                f"Parameters are UNLOCKED and no progress was reset. "
+                f"Do NOT tell the user to restart the workflow and do NOT call "
+                f"switch_workflow or reset_workflow_state unless the user asks for a restart. "
+                f"user asks what went wrong → send_reply with the error above; "
+                f"user gives a new parameter value → call the matching set_* or configure_* tool; "
+                f"user says retry / run again / try again → call the run tool for this workflow again."
+            )
 
         parts.append(
             "ALWAYS AVAILABLE: user wants a completely different workflow → "

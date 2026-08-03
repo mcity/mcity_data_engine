@@ -128,7 +128,7 @@ async def run_ensemble_selection() -> str:
             )
             tail = error_output.strip().splitlines()[-1] if error_output.strip() else "no error output captured"
             return (
-                f"Ensemble selection failed with exit code {process.returncode}.\n"
+                f"RUN_FAILED: Ensemble selection failed with exit code {process.returncode}.\n"
                 f"Last error line: {tail}\n"
                 f"Full logs saved to `{log_path}`"
             )

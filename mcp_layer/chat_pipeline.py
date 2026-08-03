@@ -161,6 +161,61 @@ class Sentinels:
     CVAT_TIMEOUT_ERROR        = "CVAT_TIMEOUT_ERROR"
     BACKEND_NOT_SET           = "BACKEND_NOT_SET"
     LS_NO_ANNOTATIONS         = "LS_NO_ANNOTATIONS"
+    RUN_FAILED                = "RUN_FAILED"
+    EXPORT_NO_IMAGES          = "EXPORT_NO_IMAGES"
+
+
+# Every run_* tool formats its failure return as "... failed with exit code N",
+# so a tool that has not been given the RUN_FAILED prefix is still detected.
+_RUN_FAILED_FALLBACK = "failed with exit code"
+
+_LOG_PATH_RE   = re.compile(r"Full logs saved to `([^`]+)`")
+_ERROR_LINE_RE = re.compile(r"Last error line:\s*(.+)")
+
+
+def run_failed(result: str) -> bool:
+    """True when a run_* tool result reports a subprocess that did not succeed."""
+    if Sentinels.RUN_FAILED in result:
+        return True
+    # Fallback for a tool that has no sentinel yet. Only the first line is
+    # tested: a successful run whose captured logs mention an exit code deeper
+    # in the report must not be read as a failure.
+    stripped = result.strip()
+    first_line = stripped.splitlines()[0] if stripped else ""
+    return _RUN_FAILED_FALLBACK in first_line
+
+
+def export_empty(result: str) -> bool:
+    """True when an export tool uploaded no images.
+
+    An empty export gives the user nothing to annotate, so it counts as a
+    failure even when the export tool itself raised no error.
+    """
+    return Sentinels.EXPORT_NO_IMAGES in result or "Images: 0\n" in result
+
+
+def parse_run_failure(result: str) -> tuple[str, str]:
+    """Return (error line, log path) from a failed run_* tool result."""
+    log_match = _LOG_PATH_RE.search(result)
+    log_path  = log_match.group(1) if log_match else ""
+
+    err_match = _ERROR_LINE_RE.search(result)
+    if err_match:
+        return err_match.group(1).strip(), log_path
+
+    # The streaming auto-labeling path returns a fenced stderr block instead
+    # of a single "Last error line:" summary. Keep the last real stderr line:
+    # the fences and the "failed with exit code N" headline say nothing useful.
+    body  = result.split("Full logs saved to")[0]
+    lines = []
+    for line in body.splitlines():
+        line = line.strip()
+        if not line or line.startswith("```") or line == "Error details:":
+            continue
+        if _RUN_FAILED_FALLBACK in line:
+            continue
+        lines.append(line.removeprefix(f"{Sentinels.RUN_FAILED}:").strip())
+    return (lines[-1] if lines else "no error output captured"), log_path
 
 
 class ChatPipeline:
@@ -230,6 +285,72 @@ class ChatPipeline:
         state_setter()
         self.state.save()
         return None
+
+    # What the user can change after a failed run, per workflow. Plain wording:
+    # this text goes into the reply, so it must not name tools.
+    _RETRY_HINTS: dict[str, str] = {
+        "auto_labeling":
+            "the model, or the hyperparameters (mode, epochs, learning rate, "
+            "weight decay, early stop patience)",
+        "class_mapping":
+            "the model, the source or target dataset, or the candidate labels",
+        "anomaly_detection":
+            "the model, the camera location and rare class, or the "
+            "hyperparameters (mode, epochs, early stop patience)",
+        "embedding_selection":
+            "the model, or the selection parameters (representativeness, "
+            "uniqueness, similarity, neighbour count)",
+        "auto_labeling_zero_shot":
+            "the models, the detection threshold, or the object classes",
+        "ensemble_selection":
+            "the parameters (agreement threshold, IoU threshold, max bbox size) "
+            "or the positive classes",
+    }
+
+    def _handle_run_failure(self, workflow: str, result: str) -> str:
+        """Record a failed run and build the reply.
+
+        The workflow's own flags are left as they are on purpose: no completion
+        flag is set and no phase advances, so the workflow stays in its mutable
+        zone. The configuration tools therefore stay in the tool list and the
+        user can change a parameter and run again. Any state the caller changed
+        before this call is persisted by record_run().
+        """
+        error, log_path = parse_run_failure(result)
+        self.state.record_run(workflow, failed=True, error=error, log_path=log_path)
+        attempts = self.state.last_run.attempts if self.state.last_run else 1
+        logging.warning(
+            f"[PIPELINE] {workflow} run failed (attempt {attempts}): {error}"
+        )
+        hint     = self._RETRY_HINTS.get(workflow, "the workflow parameters")
+        log_line = f"\n\nFull logs: `{log_path}`" if log_path else ""
+        return (
+            f"The {workflow.replace('_', ' ')} run did not finish.\n\n"
+            f"**Error:** {error}{log_line}\n\n"
+            f"Nothing was reset — your settings are still in place and you can "
+            f"change {hint}.\n\n"
+            f"Tell me what you would like to change, or say \"run it again\" to "
+            f"retry with the same settings."
+        )
+
+    def _handle_empty_export(self, workflow: str, backend_label: str, body: str) -> str:
+        """Record a run whose export delivered no images, and build the reply.
+
+        The run itself may have exited 0, but nothing reached the annotation
+        tool, so there is nothing to import. It is recorded as a failed run:
+        the workflow stays unlocked and the user can change a parameter and
+        run again. record_run() persists the flags the caller reset.
+        """
+        error = f"the export to {backend_label} contained 0 images"
+        self.state.record_run(workflow, failed=True, error=error)
+        logging.warning(f"[PIPELINE] {workflow}: empty export to {backend_label} — run marked failed")
+        hint = self._RETRY_HINTS.get(workflow, "the workflow parameters")
+        return (
+            f"{body}\n\n"
+            f"**The run did not produce anything to annotate — {error}.**\n\n"
+            f"Nothing was reset. Please check that the dataset has images, or "
+            f"change {hint} and run it again."
+        )
 
     async def run(self, tool_calls: list, messages: list, progress_cb=None) -> tuple[list, str | None]:
         """Process all tool calls for one request. Reloads WorkflowState from config.py each call."""
@@ -1209,6 +1330,9 @@ class ChatPipeline:
         if not ok:
             return msg, [FallThrough()]
         result = unwrap_tool_output(await mcp_client.call_tool("run_class_mapping", {}))
+        if run_failed(result):
+            return result, [HardStop(self._handle_run_failure("class_mapping", result))]
+        self.state.record_run("class_mapping", failed=False)
         return result, [HardStop(await self._format_class_mapping_reply(result))]
 
     # Anomaly detection
@@ -1297,6 +1421,9 @@ class ChatPipeline:
         if not ok:
             return msg, [FallThrough()]
         result = unwrap_tool_output(await mcp_client.call_tool("run_anomaly_detection", {}))
+        if run_failed(result):
+            return result, [HardStop(self._handle_run_failure("anomaly_detection", result))]
+        self.state.record_run("anomaly_detection", failed=False)
         return result, [HardStop(await self._format_anomaly_detection_reply(result))]
 
     # Embedding selection
@@ -1370,6 +1497,9 @@ class ChatPipeline:
         if not ok:
             return msg, [FallThrough()]
         result = unwrap_tool_output(await mcp_client.call_tool("run_embedding_selection", {}))
+        if run_failed(result):
+            return result, [HardStop(self._handle_run_failure("embedding_selection", result))]
+        self.state.record_run("embedding_selection", failed=False)
         return result, [HardStop(self._format_embedding_selection_reply(result))]
 
     # Zero-shot auto-labeling
@@ -1446,6 +1576,9 @@ class ChatPipeline:
         if not ok:
             return msg, [FallThrough()]
         result = unwrap_tool_output(await mcp_client.call_tool("run_zero_shot_auto_labeling", {}))
+        if run_failed(result):
+            return result, [HardStop(self._handle_run_failure("auto_labeling_zero_shot", result))]
+        self.state.record_run("auto_labeling_zero_shot", failed=False)
         return result, [HardStop(self._format_zero_shot_reply(result))]
 
     # Ensemble selection
@@ -1511,6 +1644,9 @@ class ChatPipeline:
         if not ok:
             return msg, [FallThrough()]
         result = unwrap_tool_output(await mcp_client.call_tool("run_ensemble_selection", {}))
+        if run_failed(result):
+            return result, [HardStop(self._handle_run_failure("ensemble_selection", result))]
+        self.state.record_run("ensemble_selection", failed=False)
         return result, [HardStop(self._format_ensemble_reply(result))]
 
     async def _handle_confirm_export(self) -> tuple[str, list[ToolRouting]]:
@@ -1674,6 +1810,17 @@ class ChatPipeline:
             if progress_cb:
                 clear_active_progress_cb()
 
+        # An export with 0 images is a failure on both backends: no task ids are
+        # recorded and the phase does not advance, so the workflow stays in Zone A.
+        if export_empty(result):
+            detail = result.split(":", 1)[1].strip() if ":" in result else result
+            logging.warning(f"[PIPELINE] {tool_name}: empty export — {detail}")
+            return result, [HardStop(
+                f"{detail}\n\n"
+                f"Nothing was exported to {backend_label}, so there is nothing to annotate. "
+                f"Please check that the dataset has images, or select a different dataset."
+            )]
+
         # CVAT-specific error sentinels checked first for CVAT exports.
         if not is_ls and any(s in result for s in [
             Sentinels.CVAT_TASK_LIMIT_REACHED, Sentinels.CVAT_FORBIDDEN, Sentinels.CVAT_AUTH_ERROR,
@@ -1820,7 +1967,7 @@ class ChatPipeline:
             )
         else:
             result = (
-                f"Auto-labeling failed with exit code {process.returncode}.\n"
+                f"{Sentinels.RUN_FAILED}: Auto-labeling failed with exit code {process.returncode}.\n"
                 f"Error details:\n```\n{error_output[-3000:]}\n```\n"
                 f"Full logs saved to `{log_path}`"
             )
@@ -2094,10 +2241,13 @@ class ChatPipeline:
 
     async def _do_post_run_export(
         self, backend: str, dataset_name: str, mcp_client, progress_cb=None
-    ) -> str:
+    ) -> tuple[str, bool]:
         """Call the appropriate export tool after auto-labeling and update task-ID state.
 
-        Returns the text to append to the run reply.  Callers catch any exception.
+        Returns (text to append to the run reply, export delivered images).
+        A False flag makes the caller treat the whole run as failed, because a
+        run whose predictions never reached the annotation tool leaves the user
+        with nothing to import. Callers catch any exception.
         """
         is_ls = backend == LabelingBackend.LABEL_STUDIO
         tool_name     = "export_to_label_studio" if is_ls else "export_to_cvat"
@@ -2114,6 +2264,8 @@ class ChatPipeline:
                 clear_active_progress_cb()
         export_msg = unwrap_tool_output(export_result)
         success = ("Project ID" in export_msg) if is_ls else ("Task IDs:" in export_msg)
+        if export_empty(export_msg):
+            success = False
 
         al = self.state.auto_labeling
         if al and success:
@@ -2137,44 +2289,69 @@ class ChatPipeline:
         if not success:
             return (
                 f"\n\n{export_msg}"
-                f"\n\nExport to {backend_label} did not complete — the predictions were not uploaded. "
-                f"Let me know how you'd like to proceed."
+                f"\n\nExport to {backend_label} did not complete — the predictions were not uploaded.",
+                False,
             )
 
         return (
             f"\n\n{export_msg}"
             f"\n\nPlease review and correct the predictions in {backend_label}. "
-            f"Let me know when you're done and I'll import the labels back."
+            f"Let me know when you're done and I'll import the labels back.",
+            True,
         )
 
     async def _finalize_auto_labeling(self, tool_output: str, mcp_client) -> str:
         al = self.state.auto_labeling
+
+        if run_failed(tool_output):
+            # auto_labeling_complete and phase stay untouched: the workflow
+            # remains in Zone A, so every configuration tool stays available and
+            # the run can be repeated. The post-run export is skipped as well —
+            # a failed run produced no predictions to upload.
+            if al:
+                # Force a new pre-run summary, so the user sees the values that
+                # they changed before the retry starts.
+                al.run_confirmed = False
+                al.run_awaiting_confirmation = False
+            return self._handle_run_failure("auto_labeling", tool_output)
+
         if not (self.state.dataset_confirmed and al and al.model_configured and al.hyperparams_confirmed):
+            self.state.record_run("auto_labeling", failed=False)
             return tool_output
 
-        if self.state.auto_labeling:
-            self.state.auto_labeling.auto_labeling_complete = True
-            self.state.auto_labeling.phase = AutoLabelingPhase.TRAINING
-            self.state.save()
-
+        # auto_labeling_complete gates the with_predictions export below.
+        al.auto_labeling_complete = True
         reply = await self._format_auto_labeling_reply(tool_output)
         dataset_name = self.state.dataset_name
 
+        backend = (al.labeling_backend or LabelingBackend.CVAT)
+        backend_label = "Label Studio" if backend == LabelingBackend.LABEL_STUDIO else "CVAT"
+
         if dataset_name:
-            backend = (self.state.auto_labeling.labeling_backend if self.state.auto_labeling else LabelingBackend.CVAT) or LabelingBackend.CVAT
-
             if self._progress_cb:
-                backend_label = "Label Studio" if backend == LabelingBackend.LABEL_STUDIO else "CVAT"
                 await self._progress_cb("status", {"message": f"Exporting predictions to {backend_label}..."})
-
             try:
-                reply += await self._do_post_run_export(backend, dataset_name, mcp_client, self._progress_cb)
+                export_note, exported = await self._do_post_run_export(
+                    backend, dataset_name, mcp_client, self._progress_cb
+                )
             except Exception as e:
-                reply += f"\n\nNote: {backend} export failed: {str(e)}"
+                export_note, exported = f"\n\nNote: {backend} export failed: {str(e)}", False
         else:
-            reply += "\n\nNote: Could not determine dataset name for export."
+            export_note, exported = "\n\nNote: Could not determine dataset name for export.", False
 
-        return reply
+        # The phase advances only when the predictions reached the annotation
+        # tool. An export of 0 images leaves nothing to import, so the run counts
+        # as failed and the workflow stays reconfigurable instead of locking.
+        if not exported:
+            al.auto_labeling_complete = False
+            al.phase = AutoLabelingPhase.PENDING
+            al.run_confirmed = False
+            al.run_awaiting_confirmation = False
+            return self._handle_empty_export("auto_labeling", backend_label, reply + export_note)
+
+        al.phase = AutoLabelingPhase.TRAINING
+        self.state.record_run("auto_labeling", failed=False)
+        return reply + export_note
 
     def _finalize_import(self, fn_args: dict, tool_output: str) -> str:
         base_dataset = fn_args.get("dataset_name", "").removesuffix("_labeled")

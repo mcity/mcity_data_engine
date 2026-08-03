@@ -337,6 +337,21 @@ VALID_WORKFLOW = Literal[
 ]
 
 
+class LastRun(BaseModel):
+    """Outcome of the most recent run_* tool call, for any workflow.
+
+    Written by ChatPipeline after every run attempt. A failed run deliberately
+    leaves the workflow's own flags untouched, so the workflow stays in its
+    mutable zone: parameters remain editable and the run can be retried.
+    """
+    model_config = ConfigDict(extra="forbid")
+    workflow: str = ""
+    status: Literal["", "success", "failed"] = ""
+    error: str = ""
+    log_path: str = ""
+    attempts: int = 0
+
+
 class WorkflowState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -351,6 +366,9 @@ class WorkflowState(BaseModel):
     embedding_selection: Optional[EmbeddingSelectionState] = None
     auto_labeling_zero_shot: Optional[ZeroShotAutoLabelingState] = None
     ensemble_selection: Optional[EnsembleSelectionState] = None
+
+    # Outcome of the last run_* call; drives the failed-run hint in chat_server.
+    last_run: Optional[LastRun] = None
 
     # Triggers a WORKFLOW_RESET context injection in chat_server on next request.
     workflow_just_reset: bool = False
@@ -375,6 +393,33 @@ class WorkflowState(BaseModel):
         if self.auto_labeling is not None:
             self.auto_labeling.reset_from_step(step)
         self.save()
+
+    def record_run(
+        self, workflow: str, failed: bool, error: str = "", log_path: str = ""
+    ) -> None:
+        """Store the outcome of a run_* tool call and persist the whole state.
+
+        `attempts` counts consecutive runs of the same workflow, so the LLM can
+        tell a first failure from a repeated one. Any state the caller mutated
+        before this call is saved in the same write.
+        """
+        prev = self.last_run
+        previous_attempts = prev.attempts if (prev and prev.workflow == workflow) else 0
+        self.last_run = LastRun(
+            workflow=workflow,
+            status="failed" if failed else "success",
+            error=error[:500],
+            log_path=log_path,
+            attempts=previous_attempts + 1,
+        )
+        self.save()
+
+    def failed_run(self) -> Optional[LastRun]:
+        """The last run record when it is a failure of the ACTIVE workflow, else None."""
+        lr = self.last_run
+        if lr and lr.status == "failed" and lr.workflow == self.workflow_name:
+            return lr
+        return None
 
     def check_workflow_dependencies(
         self, workflow_name: str, completed_workflows: list[str]
@@ -610,12 +655,21 @@ class WorkflowState(BaseModel):
             al.setdefault("phase", "")
             al.pop("pending_dataset_change", None)
 
+        lr = raw.get("last_run")
+        if isinstance(lr, dict):
+            # extra="forbid" rejects the whole state on one unknown key, which
+            # would drop the live session back to defaults.
+            for key in list(lr.keys()):
+                if key not in {"workflow", "status", "error", "log_path", "attempts"}:
+                    lr.pop(key)
+
         known = {
             "workflow_name", "dataset_name", "dataset_confirmed",
             "labeled_dataset_name",
             "auto_labeling", "class_mapping",
             "anomaly_detection", "embedding_selection",
             "auto_labeling_zero_shot", "ensemble_selection",
+            "last_run",
         }
         for key in list(raw.keys()):
             if key not in known:

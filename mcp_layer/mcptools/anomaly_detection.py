@@ -250,7 +250,7 @@ async def run_anomaly_detection() -> str:
             )
             tail = error_output.strip().splitlines()[-1] if error_output.strip() else "no error output captured"
             return (
-                f"Anomaly detection failed with exit code {process.returncode}.\n"
+                f"RUN_FAILED: Anomaly detection failed with exit code {process.returncode}.\n"
                 f"Last error line: {tail}\n"
                 f"Full logs saved to `{log_path}`"
             )

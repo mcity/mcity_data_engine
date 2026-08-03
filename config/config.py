@@ -6,13 +6,13 @@ SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "",
+    "name": "custom_dataset2",
     "n_samples": None,
     "custom_view": None,
 }
 
 #: Runtime session state — managed by the agent via WorkflowState, do not edit manually
-WORKFLOW_STATE = {'workflow_name': 'auto_labeling', 'dataset_name': '', 'dataset_confirmed': False, 'labeled_dataset_name': '', 'auto_labeling': {'labeling_path': '', 'labeling_backend': '', 'manual_classes': [], 'models_listed': False, 'model_configured': False, 'hyperparams_confirmed': False, 'auto_labeling_complete': False, 'cvat_task_ids': [], 'ls_task_ids': [], 'labels_imported': False, 'export_confirmed': False, 'run_confirmed': False, 'run_awaiting_confirmation': False, 'model_source': '', 'model_name': '', 'phase': ''}, 'class_mapping': None, 'anomaly_detection': None, 'embedding_selection': None, 'auto_labeling_zero_shot': None, 'ensemble_selection': None, 'workflow_just_reset': True}
+WORKFLOW_STATE = {'workflow_name': 'auto_labeling', 'dataset_name': 'custom_dataset2', 'dataset_confirmed': True, 'labeled_dataset_name': '', 'auto_labeling': {'labeling_path': 'auto', 'labeling_backend': 'cvat', 'manual_classes': [], 'models_listed': True, 'model_configured': True, 'hyperparams_confirmed': True, 'auto_labeling_complete': False, 'cvat_task_ids': [], 'ls_task_ids': [], 'labels_imported': False, 'export_confirmed': False, 'run_confirmed': False, 'run_awaiting_confirmation': False, 'model_source': 'ultralytics', 'model_name': 'yolo12x', 'phase': ''}, 'class_mapping': None, 'anomaly_detection': None, 'embedding_selection': None, 'auto_labeling_zero_shot': None, 'ensemble_selection': None, 'last_run': {'workflow': 'auto_labeling', 'status': 'failed', 'error': 'the export to CVAT contained 0 images', 'log_path': '', 'attempts': 1}, 'workflow_just_reset': False}
 
 #: Workflows and associated parameters
 WORKFLOWS = {
@@ -76,15 +76,15 @@ WORKFLOWS = {
         # "hf_models_objectdetection",
         "ultralytics",
         # "custom_codetr",
-        #  "roboflow",         # fine-tune RF-DETR for detection
-        #"roboflow_keypoint",  # fine-tune RF-DETR with joint bbox+keypoint head
-        # "vitpose",          # fine-tune ViTPose-B on GT RoI crops (run before roi_keypoint)
-        # "roi_keypoint",     # two-stage inference: RF-DETR detect → ViTPose predict
+        # "roboflow",
+        # "roboflow_keypoint",
+        # "vitpose",
+        # "roi_keypoint",
         ],
         "n_worker_dataloader": 20,
-        "epochs": 15,
+        "epochs": 5,
         "early_stop_patience": 2,
-        "early_stop_threshold": 0,
+        "early_stop_threshold": 0.0,
         "learning_rate": 2e-05,
         "weight_decay": 0.0001,
         "max_grad_norm": 0.01,
@@ -118,7 +118,7 @@ WORKFLOWS = {
             "export_dataset_root": "output/datasets/codetr_data/",
             "configs": [
 #                "projects/configs/co_deformable_detr/co_deformable_detr_r50_1x_coco.py",
-"projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
+#"projects/configs/co_dino_vit/co_dino_5scale_vit_large_coco.py",
             ],
             "n_gpus": "1",
             "container_tool": "docker",

@@ -47,7 +47,9 @@ def _compute_cvat_batches(image_paths: list, max_tasks: int) -> list:
     import math
 
     total = len(image_paths)
-    if max_tasks <= 0:
+    if total == 0 or max_tasks <= 0:
+        # total == 0 would make batch_size 0 and raise on range(0, 0, 0);
+        # callers reject an empty dataset before this point anyway.
         return []
     if total <= CVAT_MAX_FILES_PER_TASK:
         batch_size = total
@@ -228,6 +230,17 @@ async def export_to_cvat(
 
     try:
         image_paths = [sample.filepath for sample in dataset]
+
+        # Checked before anything else: an empty export gives the user nothing to
+        # annotate, and an empty CVAT task cannot be imported back. Stopping here
+        # also skips the 20-second prediction-field poll below.
+        if not image_paths:
+            logging.warning(f"[CVAT] export_to_cvat: dataset '{dataset_name}' has no images")
+            return (
+                f"EXPORT_NO_IMAGES: Dataset '{dataset_name}' contains 0 images, "
+                f"so there is nothing to export to CVAT."
+            )
+
         schema = dataset.get_field_schema()
 
         label_field = None

@@ -189,7 +189,7 @@ async def run_embedding_selection() -> str:
             )
             tail = error_output.strip().splitlines()[-1] if error_output.strip() else "no error output captured"
             return (
-                f"Embedding Selection failed with exit code {process.returncode}.\n"
+                f"RUN_FAILED: Embedding Selection failed with exit code {process.returncode}.\n"
                 f"Last error line: {tail}\n"
                 f"Full logs saved to `{log_path}`"
             )

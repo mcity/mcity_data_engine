@@ -227,3 +227,15 @@ If run_auto_labeling returns "Cannot run auto-labeling: no dataset was confirmed
   2. Ask them to confirm the correct dataset name.
   3. Call set_selected_dataset(dataset_name=<confirmed_name>).
   4. Call run_auto_labeling again.
+
+If the run FAILS (SESSION_STATE shows last_run=FAILED):
+  The workflow is NOT locked and NOTHING was reset. The dataset, backend, model
+  and hyperparameters are all still set, and phase stays empty (Zone A).
+  Do NOT say the workflow must be restarted. Do NOT call switch_workflow or
+  reset_workflow_state unless the user explicitly asks to start over.
+  - User asks what went wrong → send_reply with the error line from SESSION_STATE
+    and the log path.
+  - User names a new value    → call set_auto_labeling_hyperparams (or
+    configure_auto_labeling for a different model), then continue as in Zone A.
+  - User wants to retry       → call run_auto_labeling again. It shows a fresh
+    pre-run summary first, because the run confirmation was cleared.

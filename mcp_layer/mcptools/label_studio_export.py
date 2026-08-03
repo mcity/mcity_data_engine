@@ -405,6 +405,16 @@ async def export_to_label_studio(
     except Exception as e:
         return f"Failed to load dataset '{dataset_name}': {e}"
 
+    # Checked before anything else: an empty export gives the user nothing to
+    # annotate. Stopping here also skips the 20-second prediction-field poll
+    # below, and creates no project that would only be deleted again.
+    if len(dataset) == 0:
+        logging.warning(f"[LS] export_to_label_studio: dataset '{dataset_name}' has no images")
+        return (
+            f"EXPORT_NO_IMAGES: Dataset '{dataset_name}' contains 0 images, "
+            f"so there is nothing to export to Label Studio."
+        )
+
     try:
         client = _get_client()
         http   = _get_http(client)
@@ -491,7 +501,12 @@ async def export_to_label_studio(
             except Exception:
                 pass
             detail = "; ".join(upload_errors[:3]) if upload_errors else "no images uploaded"
-            return f"Label Studio export failed: {detail}"
+            # Same outcome as an empty dataset — 0 images reached the backend —
+            # so it carries the same sentinel and stops the workflow the same way.
+            return (
+                f"EXPORT_NO_IMAGES: Label Studio export uploaded 0 of "
+                f"{len(image_paths)} images: {detail}"
+            )
 
         # --- Attach predictions (auto path only) --------------------------
         if with_predictions and label_field and fname_to_task_id:
