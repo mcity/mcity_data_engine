@@ -163,6 +163,99 @@ class Sentinels:
     LS_NO_ANNOTATIONS         = "LS_NO_ANNOTATIONS"
     RUN_FAILED                = "RUN_FAILED"
     EXPORT_NO_IMAGES          = "EXPORT_NO_IMAGES"
+    BACKEND_NOT_NAMED         = "BACKEND_NOT_NAMED"
+    PATH_NOT_NAMED            = "PATH_NOT_NAMED"
+    CONFIRM_NOT_PENDING       = "CONFIRM_NOT_PENDING"
+
+
+# ---------------------------------------------------------------------------
+# Provenance guards
+#
+# chat_server sends tool_choice="required" on the first agentic iteration, so
+# the model MUST emit a tool call on every turn. When the user's message is
+# ambiguous ("try again", "ok"), that pressure used to make the model invent an
+# argument value and silently configure the session. These guards refuse any
+# configuration value the user did not type themselves.
+#
+# They fail OPEN: a token set that is too generous only lets a real selection
+# through, while the ambiguous-retry case stays blocked.
+# ---------------------------------------------------------------------------
+
+# Spellings that count as the user naming a choice in their own message.
+# Ordinals are included because STEP 3b presents the paths as a numbered list.
+_BACKEND_USER_TOKENS: dict[str, tuple[str, ...]] = {
+    LabelingBackend.CVAT:         ("cvat",),
+    LabelingBackend.LABEL_STUDIO: ("label studio", "label_studio", "labelstudio", "label-studio"),
+}
+
+_PATH_USER_TOKENS: dict[str, tuple[str, ...]] = {
+    LabelingPath.MANUAL: ("manual", "manually", "myself", "my own", "by hand", "1", "first"),
+    LabelingPath.AUTO:   ("auto", "automatic", "automatically", "auto-generated",
+                          "generated", "predictions", "2", "second"),
+}
+
+
+def _user_texts(messages: list) -> list[str]:
+    """Return every user message as lowercased text, oldest first.
+
+    Content is normally a plain string, but list-of-blocks content is handled
+    too so the guards still work if the message format changes.
+    """
+    texts: list[str] = []
+    for msg in messages or []:
+        if not isinstance(msg, dict) or msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str):
+            texts.append(content.lower())
+        elif isinstance(content, list):
+            texts.append(" ".join(
+                b.get("text", "")
+                for b in content
+                if isinstance(b, dict) and b.get("type") == "text"
+            ).lower())
+    return texts
+
+
+def _mentions(text: str, tokens: tuple[str, ...]) -> bool:
+    """True when `text` contains any token as a whole word.
+
+    Whole-word matching keeps short tokens safe: the ordinal '1' must not match
+    inside 'custom_dataset1', and a model name must not match a longer name.
+    """
+    return any(
+        re.search(rf"(?<!\w){re.escape(t)}(?!\w)", text)
+        for t in tokens if t
+    )
+
+
+def _value_named_by_user(requested: str, choices: dict, user_texts: list[str]) -> bool:
+    """True when the user typed `requested` themselves — never inferred.
+
+    The current message is the primary source. Earlier messages are accepted as
+    a fallback, because base_prompt tells the agent not to re-ask for something
+    the user already said ("use custom_dataset8 with CVAT"). An earlier message
+    that names a RIVAL choice too is not a selection — it is a comparison
+    question ("what is the difference between CVAT and Label Studio?") — so it
+    does not count.
+    """
+    tokens = choices.get(requested, ())
+    if not tokens or not user_texts:
+        return False
+    rivals = tuple(t for k, toks in choices.items() if k != requested for t in toks)
+    if _mentions(user_texts[-1], tokens):
+        return True
+    return any(
+        _mentions(text, tokens) and not _mentions(text, rivals)
+        for text in user_texts[:-1]
+    )
+
+
+def _free_value_named_by_user(value: str, user_texts: list[str]) -> bool:
+    """Provenance check for free-text values (model names) with no fixed choice set."""
+    if not value:
+        return False
+    return any(_mentions(text, (value.lower(),)) for text in user_texts)
 
 
 # Every run_* tool formats its failure return as "... failed with exit code N",
@@ -262,6 +355,7 @@ class ChatPipeline:
         }
 
         self._progress_cb = None  # async (event_type: str, data: dict) -> None
+        self._user_texts: list[str] = []  # set by run(); used by provenance guards
 
     def _set_flag_if_ok(
         self,
@@ -356,6 +450,7 @@ class ChatPipeline:
         """Process all tool calls for one request. Reloads WorkflowState from config.py each call."""
         self.state = WorkflowState.load()
         self._progress_cb = progress_cb
+        self._user_texts = _user_texts(messages)
 
         # Sync caches from WORKFLOWS so displayed values reflect prior-request changes.
         try:
@@ -491,12 +586,9 @@ class ChatPipeline:
 
             elif fn_name == "configure_auto_labeling":
                 model_name_raw = fn_args.get("selected_model", "")
-                recent_user_text = " ".join(
-                    m["content"].lower()
-                    for m in messages[-6:]
-                    if m.get("role") == "user" and isinstance(m.get("content"), str)
-                )
-                if model_name_raw and model_name_raw.lower() not in recent_user_text:
+                if model_name_raw and not _free_value_named_by_user(
+                    model_name_raw, self._user_texts
+                ):
                     logging.warning(
                         f"[PIPELINE] configure_auto_labeling blocked: "
                         f"'{model_name_raw}' not found in recent user messages"
@@ -1652,7 +1744,24 @@ class ChatPipeline:
     async def _handle_confirm_export(self) -> tuple[str, list[ToolRouting]]:
         if self.state.auto_labeling is None:
             self.state.auto_labeling = AutoLabelingState()
+
+        # Consent gate: only record consent for a summary the user actually saw.
+        # Tool filtering already hides confirm_export outside this window, but the
+        # handler must not trust that — a stale or replayed call would otherwise
+        # unlock the export with no user approval.
+        if not self.state.auto_labeling.export_awaiting_confirmation:
+            logging.warning(
+                "[PIPELINE] confirm_export BLOCKED — no export summary is pending"
+            )
+            return Sentinels.CONFIRM_NOT_PENDING, [Injection(
+                "confirm_export was blocked: no export confirmation summary is pending, "
+                "so there is nothing for the user to have approved. Do NOT call "
+                "confirm_export again. Call the export tool to produce a fresh summary, "
+                "and wait for the user to approve it."
+            )]
+
         self.state.auto_labeling.export_confirmed = True
+        self.state.auto_labeling.export_awaiting_confirmation = False
         self.state.save()
         backend      = self.state.auto_labeling.labeling_backend or LabelingBackend.CVAT
         classes      = self.state.auto_labeling.manual_classes or []
@@ -1694,6 +1803,22 @@ class ChatPipeline:
     async def _handle_confirm_run(self) -> tuple[str, list[ToolRouting]]:
         if self.state.auto_labeling is None:
             self.state.auto_labeling = AutoLabelingState()
+
+        # Consent gate: this is the last checkpoint before a run that locks the
+        # workflow (phase=training). Only record consent for a summary the user
+        # actually saw. Recovery from a wrong run needs reset_workflow_state,
+        # which discards everything, so the handler must not trust the filter.
+        if not self.state.auto_labeling.run_awaiting_confirmation:
+            logging.warning(
+                "[PIPELINE] confirm_run BLOCKED — no pre-run summary is pending"
+            )
+            return Sentinels.CONFIRM_NOT_PENDING, [Injection(
+                "confirm_run was blocked: no pre-run confirmation summary is pending, "
+                "so there is nothing for the user to have approved. Do NOT call "
+                "confirm_run again. Call run_auto_labeling() to produce a fresh "
+                "summary, and wait for the user to approve it."
+            )]
+
         self.state.auto_labeling.run_confirmed = True
         self.state.auto_labeling.run_awaiting_confirmation = False
         self.state.save()
@@ -1717,8 +1842,12 @@ class ChatPipeline:
         if not effective_classes:
             return "CLASSES_REQUIRED: No annotation classes provided."
 
-        if classes and self.state.auto_labeling:
-            self.state.auto_labeling.manual_classes = classes
+        if self.state.auto_labeling:
+            if classes:
+                self.state.auto_labeling.manual_classes = classes
+            # Records that the summary below was actually shown, so confirm_export
+            # cannot record consent for a summary the user never saw.
+            self.state.auto_labeling.export_awaiting_confirmation = True
             self.state.save()
         dataset   = self.state.dataset_name or "?"
         classes_s = ", ".join(effective_classes)
@@ -2016,10 +2145,30 @@ class ChatPipeline:
         self, fn_args: dict, mcp_client
     ) -> tuple[str, list[ToolRouting]]:
         """Validate credentials for the chosen backend, update state, and persist."""
-        requested = fn_args.get("backend", LabelingBackend.CVAT)
+        requested = fn_args.get("backend", "")
         current   = (
             self.state.auto_labeling.labeling_backend if self.state.auto_labeling else ""
         ) or ""
+
+        # Provenance guard: on the FIRST selection (state is still the BOTH
+        # sentinel), only accept a backend the user named in their own message.
+        # tool_choice="required" forces a tool call on every turn, so an
+        # ambiguous reply ("try again", "ok") used to make the model invent a
+        # value here. Later changes in Zone A are exempt — the intent is clear
+        # once a backend is already confirmed.
+        if requested not in _BACKEND_USER_TOKENS or current in ("", LabelingBackend.BOTH):
+            if not _value_named_by_user(requested, _BACKEND_USER_TOKENS, self._user_texts):
+                last = self._user_texts[-1] if self._user_texts else ""
+                logging.warning(
+                    f"[PIPELINE] set_labeling_backend({requested!r}) BLOCKED — "
+                    f"never named by the user; last message {last[:80]!r}"
+                )
+                return Sentinels.BACKEND_NOT_NAMED, [HardStop(
+                    "Which annotation tool would you like to use?\n\n"
+                    "1. CVAT\n"
+                    "2. Label Studio\n\n"
+                    "Please name one and I will set it up."
+                )]
 
         if current == requested:
             logging.warning(
@@ -2065,6 +2214,25 @@ class ChatPipeline:
         if path not in (LabelingPath.MANUAL, LabelingPath.AUTO):
             msg = f"INVALID_PATH: '{path}' is not a valid labeling path. Must be 'manual' or 'auto'."
             return msg, [FallThrough()]
+
+        # Provenance guard: same failure shape as set_labeling_backend, one step
+        # later. An ambiguous reply at STEP 3b must not pick a path for the user.
+        if not _value_named_by_user(path, _PATH_USER_TOKENS, self._user_texts):
+            last = self._user_texts[-1] if self._user_texts else ""
+            logging.warning(
+                f"[PIPELINE] set_labeling_path({path!r}) BLOCKED — "
+                f"never named by the user; last message {last[:80]!r}"
+            )
+            return Sentinels.PATH_NOT_NAMED, [HardStop(
+                "How would you like to label this dataset?\n\n"
+                "1. **Manual Labeling** — I export your dataset to the annotation "
+                "tool, you annotate the images, then I import your labels back.\n"
+                "2. **Auto Generated Labeling** — I run a detection model of your "
+                "choice to generate predictions, then export them so you can review "
+                "and correct them.\n\n"
+                "Please name one and I will set it up."
+            )]
+
         if self.state.auto_labeling is None:
             self.state.auto_labeling = AutoLabelingState()
         al = self.state.auto_labeling

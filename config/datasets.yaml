@@ -104,3 +104,6 @@ datasets:
   - name: "custom_dataset5"
     loader_fct: "load_custom_dataset"
     v51_type: "FiftyOneDataset"
+  - name: "custom_dataset6"
+    loader_fct: "load_custom_dataset"
+    v51_type: "FiftyOneDataset"

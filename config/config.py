@@ -12,7 +12,7 @@ SELECTED_DATASET = {
 }
 
 #: Runtime session state — managed by the agent via WorkflowState, do not edit manually
-WORKFLOW_STATE = {'workflow_name': 'auto_labeling', 'dataset_name': 'custom_dataset2', 'dataset_confirmed': True, 'labeled_dataset_name': '', 'auto_labeling': {'labeling_path': 'auto', 'labeling_backend': 'cvat', 'manual_classes': [], 'models_listed': True, 'model_configured': True, 'hyperparams_confirmed': True, 'auto_labeling_complete': False, 'cvat_task_ids': [], 'ls_task_ids': [], 'labels_imported': False, 'export_confirmed': False, 'run_confirmed': False, 'run_awaiting_confirmation': True, 'model_source': 'custom_codetr', 'model_name': 'co_deformable_detr_r50_1x_coco.py', 'phase': ''}, 'class_mapping': None, 'anomaly_detection': None, 'embedding_selection': None, 'auto_labeling_zero_shot': None, 'ensemble_selection': None, 'last_run': {'workflow': 'auto_labeling', 'status': 'failed', 'error': 'the export to CVAT contained 0 images', 'log_path': '', 'attempts': 1}, 'workflow_just_reset': False}
+WORKFLOW_STATE = {'workflow_name': 'auto_labeling', 'dataset_name': 'custom_dataset2', 'dataset_confirmed': True, 'labeled_dataset_name': '', 'auto_labeling': {'labeling_path': 'auto', 'labeling_backend': 'cvat', 'manual_classes': [], 'models_listed': True, 'model_configured': False, 'hyperparams_confirmed': False, 'auto_labeling_complete': False, 'cvat_task_ids': [], 'ls_task_ids': [], 'labels_imported': False, 'export_confirmed': False, 'run_confirmed': False, 'run_awaiting_confirmation': False, 'export_awaiting_confirmation': False, 'model_source': '', 'model_name': '', 'phase': ''}, 'class_mapping': None, 'anomaly_detection': None, 'embedding_selection': None, 'auto_labeling_zero_shot': None, 'ensemble_selection': None, 'last_run': None, 'workflow_just_reset': False}
 
 #: Workflows and associated parameters
 WORKFLOWS = {
@@ -82,7 +82,7 @@ WORKFLOWS = {
         # "roi_keypoint",
         ],
         "n_worker_dataloader": 20,
-        "epochs": 5,
+        "epochs": 10,
         "early_stop_patience": 2,
         "early_stop_threshold": 0.0,
         "learning_rate": 2e-05,
@@ -239,7 +239,7 @@ WORKFLOWS = {
                 #"yolo11n": {"batch_size": 8, "img_size": 1280},
                 #"yolo11x": {"batch_size": 1, "img_size": 960},
                 #"yolo12n": {"batch_size": 8, "img_size": 1280},
-"yolo12x": {"batch_size": 1, "img_size": 960},
+#"yolo12x": {"batch_size": 1, "img_size": 960},
 		#"yolo26x": {"batch_size": 1, "img_size": 960},
 		#"yolo26l": {"batch_size": 1, "img_size": 960},
 #		"yolo26m": {"batch_size": 1, "img_size": 960},

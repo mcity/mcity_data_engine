@@ -152,6 +152,8 @@ class AutoLabelingState(BaseModel):
     run_confirmed: bool = False
     # True while the pre-run confirmation summary is shown; gates confirm_run tool.
     run_awaiting_confirmation: bool = False
+    # True while the pre-export confirmation summary is shown; gates confirm_export.
+    export_awaiting_confirmation: bool = False
     model_source: str = ""
     model_name: str = ""
     # "" = Zone A (mutable), "annotating" = post-export, "training" = post-run, "complete" = terminal
@@ -600,6 +602,9 @@ class WorkflowState(BaseModel):
                     if state.auto_labeling.run_awaiting_confirmation:
                         state.auto_labeling.run_awaiting_confirmation = False
                         logging.warning("[STATE] TTL: cleared stale run_awaiting_confirmation")
+                    if state.auto_labeling.export_awaiting_confirmation:
+                        state.auto_labeling.export_awaiting_confirmation = False
+                        logging.warning("[STATE] TTL: cleared stale export_awaiting_confirmation")
                     if state.auto_labeling.export_confirmed:
                         state.auto_labeling.export_confirmed = False
                         logging.warning("[STATE] TTL: cleared stale export_confirmed")
@@ -650,6 +655,7 @@ class WorkflowState(BaseModel):
             al.setdefault("export_confirmed", False)
             al.setdefault("run_confirmed", False)
             al.setdefault("run_awaiting_confirmation", False)
+            al.setdefault("export_awaiting_confirmation", False)
             al.setdefault("model_source", "")
             al.setdefault("model_name", "")
             al.setdefault("phase", "")

@@ -231,10 +231,15 @@ def _build_state_hint(state=None) -> str:
             if al.labeling_backend == LabelingBackend.BOTH:
                 parts.append(
                     "backend=AWAITING_CHOICE — user must choose annotation backend. "
-                    "Classify intent and act: "
-                    "user names a backend preference → call set_labeling_backend(backend=...) immediately; "
+                    "Call set_labeling_backend ONLY if the user's CURRENT message names "
+                    "'cvat' or 'label studio'. A name from an earlier turn does not count. "
+                    "Act on the current message: "
+                    "user names a backend → call set_labeling_backend(backend=...) immediately; "
                     "user provides a new dataset name → call set_selected_dataset; "
-                    "user provides both dataset and backend → call set_selected_dataset then set_labeling_backend."
+                    "user provides both dataset and backend → call set_selected_dataset then set_labeling_backend; "
+                    "anything else (a question, 'try again', 'ok', 'that one', or unclear input) → "
+                    "call send_reply that repeats the two options and asks the user to name one. "
+                    "NEVER guess the backend."
                 )
             elif al.labeling_backend and not al.labeling_path:
                 parts.append(
