@@ -112,6 +112,13 @@ class ConfigureAutoLabelingInput(BaseModel):
     selected_model: str = Field(min_length=1)
 
 
+class DeleteDatasetInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    dataset_name: str = Field(min_length=1)
+    # None is stripped by validate_tool_input, so the tool's own default applies.
+    delete_files: Optional[bool] = None
+
+
 TOOL_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "set_auto_labeling_hyperparams": SetAutoLabelingHyperparamsInput,
     "set_anomaly_detection_hyperparams": SetAnomalyDetectionHyperparamsInput,
@@ -121,6 +128,7 @@ TOOL_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "set_anomaly_detection_data_source": SetAnomalyDetectionDataSourceInput,
     "configure_auto_labeling": ConfigureAutoLabelingInput,
     "set_labeling_backend": SetLabelingBackendInput,
+    "delete_dataset": DeleteDatasetInput,
 }
 
 
@@ -375,6 +383,14 @@ class WorkflowState(BaseModel):
     # Triggers a WORKFLOW_RESET context injection in chat_server on next request.
     workflow_just_reset: bool = False
 
+    # Dataset deletion is irreversible, so it uses the same two-step consent gate
+    # as export: the first delete_dataset call only produces a summary and sets
+    # delete_awaiting_confirmation; confirm_delete_dataset then sets
+    # delete_confirmed, which unlocks the real delete for delete_pending_name only.
+    delete_awaiting_confirmation: bool = False
+    delete_confirmed: bool = False
+    delete_pending_name: str = ""
+
     @model_validator(mode="after")
     def dataset_confirmed_requires_name(self) -> "WorkflowState":
         if self.dataset_confirmed and not self.dataset_name:
@@ -390,6 +406,42 @@ class WorkflowState(BaseModel):
                 "Please select a workflow first."
             )
         return True, ""
+
+    def can_confirm_delete_dataset(self) -> tuple[bool, str]:
+        """confirm_delete_dataset is only valid while a deletion summary is pending."""
+        if not self.delete_awaiting_confirmation or not self.delete_pending_name:
+            return False, (
+                "No dataset deletion is awaiting confirmation. Call delete_dataset "
+                "first so the user sees exactly what will be erased, then call "
+                "confirm_delete_dataset only after the user agrees."
+            )
+        return True, ""
+
+    def delete_is_confirmed_for(self, dataset_name: str) -> bool:
+        """True only when the user confirmed the deletion of THIS dataset.
+
+        The name is part of the check so that consent for one dataset can never
+        be spent on another one.
+        """
+        return bool(
+            self.delete_confirmed
+            and self.delete_pending_name
+            and self.delete_pending_name == dataset_name
+        )
+
+    def await_delete_confirmation(self, dataset_name: str) -> None:
+        """Record that a deletion summary for `dataset_name` was shown to the user."""
+        self.delete_awaiting_confirmation = True
+        self.delete_confirmed = False
+        self.delete_pending_name = dataset_name
+        self.save()
+
+    def clear_delete_gate(self) -> None:
+        """Drop all deletion consent. Call after the delete runs, and on cancel."""
+        self.delete_awaiting_confirmation = False
+        self.delete_confirmed = False
+        self.delete_pending_name = ""
+        self.save()
 
     def reset_auto_labeling_from(self, step: str) -> None:
         if self.auto_labeling is not None:
@@ -449,7 +501,10 @@ class WorkflowState(BaseModel):
             return self._class_mapping_tools(ALWAYS)
 
         if not self.dataset_confirmed:
-            return ALWAYS | {"set_selected_dataset", "list_datasets"}
+            # Deletion tools live here rather than in ALWAYS: this is the only step
+            # at which no workflow holds a dataset open, so a delete cannot pull the
+            # data out from under a running or half-finished workflow.
+            return ALWAYS | {"set_selected_dataset", "list_datasets"} | self._delete_tools()
 
         routers = {
             "auto_labeling":           self._auto_labeling_tools,
@@ -463,6 +518,14 @@ class WorkflowState(BaseModel):
             return router(ALWAYS)
 
         return None
+
+    def _delete_tools(self) -> set[str]:
+        """Dataset-deletion tools. confirm_delete_dataset stays hidden until a
+        deletion summary is actually pending, so the LLM cannot confirm a delete
+        the user was never shown."""
+        if self.delete_awaiting_confirmation and not self.delete_confirmed:
+            return {"delete_dataset", "confirm_delete_dataset"}
+        return {"delete_dataset"}
 
     def _auto_labeling_tools(self, ALWAYS: set[str]) -> set[str]:
         al = self.auto_labeling
@@ -608,6 +671,13 @@ class WorkflowState(BaseModel):
                     if state.auto_labeling.export_confirmed:
                         state.auto_labeling.export_confirmed = False
                         logging.warning("[STATE] TTL: cleared stale export_confirmed")
+                # Deletion consent is not tied to a workflow, so it expires on its
+                # own — a dead session must never leave a delete pre-approved.
+                if age > 3600 and (state.delete_awaiting_confirmation or state.delete_confirmed):
+                    state.delete_awaiting_confirmation = False
+                    state.delete_confirmed = False
+                    state.delete_pending_name = ""
+                    logging.warning("[STATE] TTL: cleared stale dataset-delete confirmation")
             except Exception:
                 pass
 
@@ -676,6 +746,7 @@ class WorkflowState(BaseModel):
             "anomaly_detection", "embedding_selection",
             "auto_labeling_zero_shot", "ensemble_selection",
             "last_run",
+            "delete_awaiting_confirmation", "delete_confirmed", "delete_pending_name",
         }
         for key in list(raw.keys()):
             if key not in known:

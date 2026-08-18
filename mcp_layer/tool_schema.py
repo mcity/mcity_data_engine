@@ -94,7 +94,7 @@ tools = [
             "type": "function",
             "function": {
                 "name": "list_datasets",
-                "description": "Lists all available datasets from datasets.yaml (plus fixed defaults).",
+                "description": "Lists all available datasets from datasets.yaml (default datasets first, then ingested ones).",
                 "parameters": {
                     "type": "object",
                     "properties": {}
@@ -150,6 +150,63 @@ tools = [
                         }
                     },
                     "required": ["dataset_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "delete_dataset",
+                "description": (
+                    "Permanently deletes a dataset — the FiftyOne dataset and its datasets.yaml entry. "
+                    "Call this ONLY when the user asks to delete, remove, or erase a dataset AND names "
+                    "the dataset explicitly. Never infer the name from earlier in the conversation. "
+                    "This runs in two steps: the FIRST call deletes nothing — it returns a summary of "
+                    "what will be erased, which you must show to the user together with a clear warning "
+                    "that the action cannot be undone. Once the user confirms, call confirm_delete_dataset "
+                    "and then call delete_dataset AGAIN with the same dataset_name to perform the deletion. "
+                    "The default datasets that ship with the repo cannot be deleted — only "
+                    "datasets the user ingested. "
+                    "Call list_datasets afterwards before showing any dataset list — the old list is stale."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_name": {
+                            "type": "string",
+                            "description": (
+                                "The exact name of the dataset to delete. "
+                                "Must come from the user's message — do not infer or guess."
+                            )
+                        },
+                        "delete_files": {
+                            "type": "boolean",
+                            "description": (
+                                "Set true ONLY when the user explicitly asks to erase the uploaded "
+                                "image or video files as well. Defaults to false, which keeps the "
+                                "media on disk and removes only the dataset record."
+                            )
+                        }
+                    },
+                    "required": ["dataset_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "confirm_delete_dataset",
+                "description": (
+                    "Call this ONLY after you showed the user the deletion summary from delete_dataset "
+                    "and the user explicitly confirmed (e.g. 'yes', 'delete it', 'go ahead'). "
+                    "This records their consent and unlocks the deletion for that one dataset. "
+                    "After calling this, immediately call delete_dataset again with the same dataset_name. "
+                    "Do NOT call this speculatively, and do NOT call it if the user is hesitant, asks a "
+                    "question, or names a different dataset — in those cases use send_reply instead."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
                 }
             }
         },

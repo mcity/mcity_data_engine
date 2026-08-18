@@ -21,7 +21,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 
-from chat_pipeline import ChatPipeline
+from chat_pipeline import ChatPipeline, Sentinels
 from host_utils import resolve_host
 from llm_clients import ClaudeClient, GeminiClient, GroqClient, OpenAIClient
 from progress_relay import get_active_progress_cb
@@ -208,6 +208,28 @@ def filter_tools_for_state(all_tools: list, state) -> list:
     return [t for t in all_tools if t["function"]["name"] in valid_names]
 
 
+# A delete_dataset result carrying any of these erased nothing, so the dataset
+# list it was called against is still accurate.
+_DELETE_DID_NOTHING = (
+    Sentinels.DELETE_NEEDS_CONFIRMATION,
+    Sentinels.DATASET_NOT_NAMED,
+    Sentinels.DATASET_NOT_FOUND,
+    Sentinels.PROTECTED_DATASET,
+    Sentinels.DELETE_FAILED,
+)
+
+
+def dataset_was_deleted(tool_results: list) -> bool:
+    """True when a delete_dataset call in this batch actually erased a dataset."""
+    for r in tool_results or []:
+        if r.get("name") != "delete_dataset":
+            continue
+        result = str(r.get("result", ""))
+        if not any(s in result for s in _DELETE_DID_NOTHING):
+            return True
+    return False
+
+
 def _build_state_hint(state=None) -> str:
     """Return SESSION_STATE string injected before each user message."""
     try:
@@ -216,9 +238,31 @@ def _build_state_hint(state=None) -> str:
         if not state.workflow_name:
             return ""
         parts = [f"workflow={state.workflow_name}"]
+
+        # A pending deletion owns the turn: the user's message answers the
+        # confirmation prompt, not the dataset-selection question below.
+        pending_delete = state.delete_pending_name if (
+            state.delete_awaiting_confirmation or state.delete_confirmed
+        ) else ""
+        if state.delete_awaiting_confirmation and pending_delete:
+            parts.append(
+                f"delete_pending={pending_delete} — a deletion summary was shown and the user "
+                f"is answering it NOW. "
+                f"user confirms (yes, delete it, go ahead) → call confirm_delete_dataset "
+                f"immediately, then call delete_dataset(dataset_name='{pending_delete}') again; "
+                f"user declines, hesitates, or asks something else → do NOT delete, use send_reply. "
+                f"Do NOT call delete_dataset before confirm_delete_dataset — that only re-shows "
+                f"the same summary and asks the user the same question again."
+            )
+        elif state.delete_confirmed and pending_delete:
+            parts.append(
+                f"delete_confirmed={pending_delete} — the user already consented. Call "
+                f"delete_dataset(dataset_name='{pending_delete}') immediately to finish it."
+            )
+
         if state.dataset_confirmed and state.dataset_name:
             parts.append(f"dataset={state.dataset_name}")
-        else:
+        elif not pending_delete:
             parts.append(
                 "dataset=not confirmed — "
                 "NEXT STEP: wait for the user to name a dataset, then call set_selected_dataset immediately. "
@@ -611,7 +655,23 @@ async def chat_stream(request: Request):
                 current_tools = filter_tools_for_state(tools, pipeline.state)
 
                 tools_called = [r["name"] for r in tool_results]
-                if (
+
+                # A completed deletion invalidates every dataset list, including
+                # one fetched EARLIER IN THIS SAME BATCH — that list still names
+                # the deleted dataset. So this cannot be folded into the check
+                # below, which suppresses itself as soon as list_datasets appears
+                # anywhere in the batch, order ignored.
+                if dataset_was_deleted(tool_results):
+                    messages.append({
+                        "role":    "system",
+                        "content": (
+                            "Reminder: a dataset was just deleted. Every dataset list from "
+                            "earlier in this conversation is now out of date and still names "
+                            "the deleted dataset. Call list_datasets again before you show or "
+                            "refer to any dataset list. Do NOT list datasets from memory."
+                        ),
+                    })
+                elif (
                     pipeline.state.workflow_name
                     and not pipeline.state.dataset_confirmed
                     and "list_datasets" not in tools_called

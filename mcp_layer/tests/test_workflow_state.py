@@ -12,7 +12,10 @@ from validate_workflow_state import (
     LabelingBackend, AutoLabelingPhase,
 )
 
-ALWAYS = {"send_reply", "switch_workflow"}
+ALWAYS = {"send_reply", "switch_workflow", "reset_workflow_state"}
+
+# Available at the dataset-selection step, where no workflow holds a dataset open.
+DELETE_TOOLS = {"delete_dataset"}
 
 
 # ---------------------------------------------------------------------------
@@ -43,13 +46,13 @@ def test_valid_tool_names_no_workflow_selected():
 def test_valid_tool_names_non_class_mapping_workflow_dataset_not_confirmed():
     state = WorkflowState(workflow_name="auto_labeling")
     result = state.valid_tool_names()
-    assert result == ALWAYS | {"set_selected_dataset", "list_datasets"}
+    assert result == ALWAYS | {"set_selected_dataset", "list_datasets"} | DELETE_TOOLS
 
 
 def test_valid_tool_names_dataset_not_confirmed_anomaly_detection():
     state = WorkflowState(workflow_name="anomaly_detection")
     result = state.valid_tool_names()
-    assert result == ALWAYS | {"set_selected_dataset", "list_datasets"}
+    assert result == ALWAYS | {"set_selected_dataset", "list_datasets"} | DELETE_TOOLS
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +126,7 @@ def test_auto_labeling_tools_no_path_backend_confirmed_label_studio():
 def test_auto_labeling_tools_manual_cvat_no_classes_no_task():
     state = _al_state(
         labeling_path="manual", labeling_backend=LabelingBackend.CVAT,
-        manual_classes=[], cvat_task_id=0,
+        manual_classes=[], cvat_task_ids=[],
     )
     result = state.valid_tool_names()
     assert result == ALWAYS | {"set_selected_dataset", "export_to_cvat", "set_labeling_backend", "set_labeling_path"}
@@ -141,7 +144,7 @@ def test_auto_labeling_tools_manual_cvat_classes_set_export_not_confirmed():
 def test_auto_labeling_tools_manual_cvat_task_exported():
     state = _al_state(
         labeling_path="manual", labeling_backend=LabelingBackend.CVAT,
-        cvat_task_id=42,
+        cvat_task_ids=[42],
     )
     result = state.valid_tool_names()
     assert result == ALWAYS | {"import_from_cvat"}
@@ -493,3 +496,127 @@ def test_ensemble_tools_classes_set_ready_to_run():
     result = state.valid_tool_names()
     config_tools = {"set_ensemble_selection_parameters", "set_ensemble_selection_classes"}
     assert result == ALWAYS | config_tools | {"run_ensemble_selection"}
+
+
+# ---------------------------------------------------------------------------
+# Dataset deletion gate — two-step consent
+# ---------------------------------------------------------------------------
+
+def _pre_dataset_state(**kwargs) -> WorkflowState:
+    """WorkflowState at the dataset-selection step, where deletion is allowed."""
+    return WorkflowState(workflow_name="auto_labeling", **kwargs)
+
+
+def test_delete_tools_confirm_hidden_until_summary_shown():
+    state = _pre_dataset_state()
+    assert "delete_dataset" in state.valid_tool_names()
+    assert "confirm_delete_dataset" not in state.valid_tool_names()
+
+
+def test_delete_tools_confirm_exposed_while_awaiting():
+    state = _pre_dataset_state(
+        delete_awaiting_confirmation=True, delete_pending_name="old_ds"
+    )
+    assert "confirm_delete_dataset" in state.valid_tool_names()
+
+
+def test_delete_tools_confirm_hidden_once_confirmed():
+    """Consent is already given — re-confirming must not be possible."""
+    state = _pre_dataset_state(
+        delete_awaiting_confirmation=True, delete_confirmed=True,
+        delete_pending_name="old_ds",
+    )
+    assert "confirm_delete_dataset" not in state.valid_tool_names()
+
+
+def test_delete_tools_hidden_after_dataset_confirmed():
+    """A workflow holds the dataset open past this point, so deletion is gone."""
+    state = _al_state()
+    assert "delete_dataset" not in state.valid_tool_names()
+    assert "confirm_delete_dataset" not in state.valid_tool_names()
+
+
+def test_can_confirm_delete_dataset_requires_pending_summary():
+    ok, msg = _pre_dataset_state().can_confirm_delete_dataset()
+    assert ok is False
+    assert "delete_dataset" in msg
+
+
+def test_can_confirm_delete_dataset_allowed_while_pending():
+    state = _pre_dataset_state(
+        delete_awaiting_confirmation=True, delete_pending_name="old_ds"
+    )
+    assert state.can_confirm_delete_dataset() == (True, "")
+
+
+def test_delete_is_confirmed_for_matching_name_only():
+    state = _pre_dataset_state(
+        delete_awaiting_confirmation=True, delete_confirmed=True,
+        delete_pending_name="old_ds",
+    )
+    assert state.delete_is_confirmed_for("old_ds") is True
+    # Consent for one dataset must never be spent on another.
+    assert state.delete_is_confirmed_for("other_ds") is False
+
+
+def test_delete_is_confirmed_for_false_without_consent():
+    state = _pre_dataset_state(
+        delete_awaiting_confirmation=True, delete_pending_name="old_ds"
+    )
+    assert state.delete_is_confirmed_for("old_ds") is False
+
+
+def test_await_and_clear_delete_gate(monkeypatch):
+    state = _pre_dataset_state()
+    monkeypatch.setattr(WorkflowState, "save", lambda self: None)
+
+    state.await_delete_confirmation("old_ds")
+    assert (state.delete_awaiting_confirmation, state.delete_pending_name) == (True, "old_ds")
+    assert state.delete_confirmed is False
+
+    state.delete_confirmed = True
+    state.clear_delete_gate()
+    assert state.delete_awaiting_confirmation is False
+    assert state.delete_confirmed is False
+    assert state.delete_pending_name == ""
+
+
+def test_delete_gate_survives_migrate():
+    """_migrate drops unknown keys — the delete flags must not be dropped."""
+    raw = WorkflowState._migrate({
+        "workflow_name": "auto_labeling",
+        "delete_awaiting_confirmation": True,
+        "delete_confirmed": True,
+        "delete_pending_name": "old_ds",
+    })
+    state = WorkflowState.model_validate(raw)
+    assert state.delete_is_confirmed_for("old_ds") is True
+
+
+# ---------------------------------------------------------------------------
+# delete_dataset input validation
+# ---------------------------------------------------------------------------
+
+def test_validate_delete_dataset_input():
+    from validate_workflow_state import validate_tool_input
+
+    ok, err, cleaned = validate_tool_input("delete_dataset", {"dataset_name": "old_ds"})
+    assert ok is True and err == ""
+    # delete_files is stripped when unset, so the tool's own False default applies.
+    assert cleaned == {"dataset_name": "old_ds"}
+
+    ok, _, cleaned = validate_tool_input(
+        "delete_dataset", {"dataset_name": "old_ds", "delete_files": True}
+    )
+    assert ok is True and cleaned["delete_files"] is True
+
+    ok, err, _ = validate_tool_input("delete_dataset", {"dataset_name": ""})
+    assert ok is False and "delete_dataset" in err
+
+    ok, err, _ = validate_tool_input("delete_dataset", {})
+    assert ok is False
+
+    ok, err, _ = validate_tool_input(
+        "delete_dataset", {"dataset_name": "old_ds", "typo_arg": 1}
+    )
+    assert ok is False

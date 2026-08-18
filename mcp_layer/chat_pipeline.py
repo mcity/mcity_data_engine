@@ -7,6 +7,7 @@ import re
 import sys
 from pathlib import Path
 
+import yaml
 from fastmcp import Client
 
 import config.config as _cc
@@ -22,6 +23,13 @@ from validate_workflow_state import (
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "config.py"
 MAIN_PATH   = Path(__file__).resolve().parents[1] / "main.py"
+DATASETS_YAML = Path(__file__).resolve().parents[1] / "config" / "datasets.yaml"
+
+# Loader used by every ingested dataset. Any other loader means the entry ships
+# with the repo, so delete_dataset refuses it. Mirrors INGESTED_LOADER_FCT in
+# mcptools/workflow_selector.py, which owns the authoritative check — this copy
+# only lets the pipeline refuse BEFORE it asks the user to confirm.
+INGESTED_LOADER_FCT = "load_custom_dataset"
 
 # Human-readable status emitted to the UI before each tool call.
 TOOL_STATUS_MESSAGES: dict[str, str] = {
@@ -29,6 +37,10 @@ TOOL_STATUS_MESSAGES: dict[str, str] = {
     "switch_workflow":                       "Switching workflow...",
     "set_selected_dataset":                  "Confirming dataset...",
     "list_datasets":                         "Fetching available datasets...",
+    # The first delete_dataset call only builds a summary; the handler emits a
+    # second, precise status right before anything is actually erased.
+    "delete_dataset":                        "Checking dataset...",
+    "confirm_delete_dataset":                "Recording deletion consent...",
     "list_model_sources_and_models":         "Fetching available models...",
     "configure_auto_labeling":               "Configuring model selection...",
     "set_auto_labeling_hyperparams":         "Updating hyperparameters...",
@@ -166,6 +178,10 @@ class Sentinels:
     BACKEND_NOT_NAMED         = "BACKEND_NOT_NAMED"
     PATH_NOT_NAMED            = "PATH_NOT_NAMED"
     CONFIRM_NOT_PENDING       = "CONFIRM_NOT_PENDING"
+    DELETE_NEEDS_CONFIRMATION = "DELETE_NEEDS_CONFIRMATION"
+    DATASET_NOT_NAMED         = "DATASET_NOT_NAMED"
+    PROTECTED_DATASET         = "PROTECTED_DATASET"
+    DELETE_FAILED             = "DELETE_FAILED"
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +467,9 @@ class ChatPipeline:
         self.state = WorkflowState.load()
         self._progress_cb = progress_cb
         self._user_texts = _user_texts(messages)
+        delete_pending_at_start = (
+            self.state.delete_awaiting_confirmation or self.state.delete_confirmed
+        )
 
         # Sync caches from WORKFLOWS so displayed values reflect prior-request changes.
         try:
@@ -547,6 +566,19 @@ class ChatPipeline:
                 self.state.dataset_confirmed = True
                 self.state.save()
 
+        # A pending deletion is only good for the turn that asked for it. If this
+        # batch did nothing about it, the user moved on, so the consent must not
+        # survive — otherwise a later "yes" to an unrelated question could revive
+        # a delete the user already walked away from.
+        if delete_pending_at_start and not any(
+            r["name"] in ("delete_dataset", "confirm_delete_dataset") for r in tool_results
+        ):
+            logging.warning(
+                f"[PIPELINE] Dropping stale delete gate for "
+                f"{self.state.delete_pending_name!r} — the turn moved on"
+            )
+            self.state.clear_delete_gate()
+
         early_reply = self._orchestrate(all_routings, messages)
         return tool_results, early_reply
 
@@ -578,6 +610,12 @@ class ChatPipeline:
 
             elif fn_name == "set_selected_dataset":
                 result, routings = await self._handle_set_selected_dataset(fn_args, mcp_client, progress_cb)
+
+            elif fn_name == "delete_dataset":
+                result, routings = await self._handle_delete_dataset(fn_args, mcp_client, progress_cb)
+
+            elif fn_name == "confirm_delete_dataset":
+                result, routings = await self._handle_confirm_delete_dataset()
 
             elif fn_name == "list_model_sources_and_models":
                 result, routings = await self._handle_list_model_sources_and_models(
@@ -1051,6 +1089,177 @@ class ChatPipeline:
             )
         self.state.dataset_confirmed = False
         return tool_output, [FallThrough()]
+
+    def _protected_dataset_names(self) -> set[str]:
+        """Names delete_dataset will refuse: everything that ships with the repo.
+
+        Read from datasets.yaml on each call, because ingestion appends to that
+        file while the server runs. Fails open — an unreadable file returns an
+        empty set, and the MCP tool still refuses the delete on its own.
+        """
+        try:
+            with open(DATASETS_YAML) as f:
+                entries = (yaml.safe_load(f) or {}).get("datasets") or []
+            return {
+                str(d["name"]) for d in entries
+                if d.get("name") and str(d.get("loader_fct", "")) != INGESTED_LOADER_FCT
+            }
+        except Exception as e:
+            logging.warning(f"[PIPELINE] Could not read {DATASETS_YAML}: {e}")
+            return set()
+
+    async def _available_dataset_names(self, mcp_client) -> list[str]:
+        """Names from list_datasets; [] when the list cannot be fetched.
+
+        An empty result means "unknown", never "no datasets" — callers must not
+        read it as proof that a dataset is missing.
+        """
+        try:
+            raw = unwrap_tool_output(await mcp_client.call_tool("list_datasets", {}))
+        except Exception as e:
+            logging.warning(f"[PIPELINE] delete_dataset: could not fetch dataset list: {e}")
+            return []
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [str(n).strip() for n in parsed if str(n).strip()]
+        except Exception:
+            pass
+        return [line.strip() for line in raw.splitlines() if line.strip()]
+
+    async def _handle_delete_dataset(
+        self, fn_args: dict, mcp_client, progress_cb=None
+    ) -> tuple[str, list[ToolRouting]]:
+        """Delete a dataset in two steps: summarize first, erase only after consent.
+
+        The first call never deletes. It records delete_awaiting_confirmation and
+        hard-stops with a summary, so the user always sees exactly what will be
+        erased before confirm_delete_dataset can unlock the second call.
+        """
+        dataset_name = (fn_args.get("dataset_name") or "").strip()
+        delete_files = bool(fn_args.get("delete_files") or False)
+
+        # Provenance guard: deletion cannot be undone, so the name must come from
+        # the user. tool_choice="required" forces a tool call on every turn, and
+        # that pressure is exactly what makes the model invent an argument.
+        if not _free_value_named_by_user(dataset_name, self._user_texts):
+            last = self._user_texts[-1] if self._user_texts else ""
+            logging.warning(
+                f"[PIPELINE] delete_dataset({dataset_name!r}) BLOCKED — "
+                f"never named by the user; last message {last[:80]!r}"
+            )
+            self.state.clear_delete_gate()
+            return Sentinels.DATASET_NOT_NAMED, [HardStop(
+                "Which dataset would you like me to delete? Please type its exact "
+                "name — deleting a dataset cannot be undone, so I will not guess."
+            )]
+
+        if dataset_name in self._protected_dataset_names():
+            logging.warning(f"[PIPELINE] delete_dataset({dataset_name!r}) BLOCKED — default dataset")
+            self.state.clear_delete_gate()
+            return f"{Sentinels.PROTECTED_DATASET}: '{dataset_name}' is a default dataset.", [HardStop(
+                f"**{dataset_name}** is one of the datasets that ship with the engine, so it "
+                f"cannot be deleted. Only datasets you ingested yourself can be removed."
+            )]
+
+        # STEP 1 — no consent yet: check the name, then summarize and stop.
+        if not self.state.delete_is_confirmed_for(dataset_name):
+            available = await self._available_dataset_names(mcp_client)
+            if available and dataset_name not in available:
+                logging.warning(f"[PIPELINE] delete_dataset: '{dataset_name}' is not in the dataset list")
+                self.state.clear_delete_gate()
+                listed = "\n".join(f"- {n}" for n in available)
+                return f"{Sentinels.DATASET_NOT_FOUND}: '{dataset_name}' does not exist.", [HardStop(
+                    f"I could not find a dataset named **{dataset_name}**. "
+                    f"Here are the datasets I can see:\n\n{listed}\n\n"
+                    f"Which one would you like to delete?"
+                )]
+
+            self.state.await_delete_confirmation(dataset_name)
+            logging.warning(
+                f"[PIPELINE] delete_dataset: awaiting confirmation for "
+                f"{dataset_name!r} delete_files={delete_files}"
+            )
+            files_note = (
+                "The uploaded image and video files will be erased as well."
+                if delete_files else
+                "The uploaded files on disk will be kept."
+            )
+            return (
+                f"{Sentinels.DELETE_NEEDS_CONFIRMATION} "
+                f"dataset={dataset_name!r} delete_files={delete_files}"
+            ), [HardStop(
+                f"This will permanently delete **{dataset_name}** — the dataset itself and "
+                f"its entry in the dataset list. {files_note}\n\n"
+                f"**This cannot be undone.**\n\nShall I proceed?"
+            )]
+
+        # STEP 2 — the user confirmed this exact dataset: erase it.
+        if progress_cb:
+            await progress_cb("status", {"message": f"Deleting {dataset_name}..."})
+        try:
+            result = unwrap_tool_output(await mcp_client.call_tool(
+                "delete_dataset",
+                {"dataset_name": dataset_name, "delete_files": delete_files},
+            ))
+        except Exception as e:
+            logging.warning(f"[PIPELINE] delete_dataset({dataset_name!r}) raised: {e}")
+            self.state.clear_delete_gate()
+            return f"{Sentinels.DELETE_FAILED}: {e}", [FallThrough()]
+
+        if Sentinels.DATASET_NOT_FOUND in result or Sentinels.PROTECTED_DATASET in result:
+            # Consent is spent either way — it must never carry over to a retry.
+            self.state.clear_delete_gate()
+            return result, [FallThrough()]
+
+        # The MCP tool clears SELECTED_DATASET in config.py; mirror that in the
+        # session state so it cannot point at a dataset that no longer exists.
+        if self.state.dataset_name == dataset_name:
+            self.state.dataset_name = ""
+            self.state.dataset_confirmed = False
+        self.state.clear_delete_gate()  # persists both changes in one write
+
+        logging.warning(
+            f"[PIPELINE] delete_dataset: '{dataset_name}' deleted (files={delete_files})"
+        )
+        return result, [Injection(
+            f"DATASET_DELETED: '{dataset_name}' has been deleted. Tell the user plainly "
+            f"what was removed, using the tool result above — do not claim the media files "
+            f"were erased unless the result says so. Any dataset list from earlier in this "
+            f"conversation is now stale: call list_datasets before you show one again."
+        )]
+
+    async def _handle_confirm_delete_dataset(self) -> tuple[str, list[ToolRouting]]:
+        # Consent gate: only record consent for a summary the user actually saw.
+        # Tool filtering already hides this tool outside that window, but the
+        # handler must not trust the filter — a stale or replayed call would
+        # otherwise pre-approve a deletion that cannot be undone.
+        ok, msg = self.state.can_confirm_delete_dataset()
+        if not ok:
+            logging.warning(
+                "[PIPELINE] confirm_delete_dataset BLOCKED — no deletion summary is pending"
+            )
+            return Sentinels.CONFIRM_NOT_PENDING, [Injection(
+                f"confirm_delete_dataset was blocked: {msg} "
+                f"Do NOT call confirm_delete_dataset again."
+            )]
+
+        dataset_name = self.state.delete_pending_name
+        self.state.delete_confirmed = True
+        self.state.delete_awaiting_confirmation = False
+        self.state.save()
+        logging.warning(
+            f"[PIPELINE] confirm_delete_dataset: delete_confirmed=True dataset={dataset_name!r}"
+        )
+        result = (
+            f"Deletion consent recorded for dataset '{dataset_name}'. "
+            f"Call delete_dataset(dataset_name={dataset_name!r}) now."
+        )
+        return result, [Injection(
+            f"DELETE_CONFIRMED: Consent recorded for '{dataset_name}'. Call "
+            f"delete_dataset(dataset_name={dataset_name!r}) immediately, repeating the same "
+            f"delete_files value shown in the {Sentinels.DELETE_NEEDS_CONFIRMATION} line above."
+        )]
 
     async def _handle_get_labeling_backend(
         self, fn_args: dict, mcp_client
