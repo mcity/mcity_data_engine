@@ -570,6 +570,28 @@ def _run_msight_localization(dataset: fo.Dataset) -> None:
     import sys
     import importlib
 
+    detection_field = MSIGHT_CONFIG.get("detection_field")
+    loc_maps_path = MSIGHT_CONFIG.get("loc_maps")
+    intrinsics_path = MSIGHT_CONFIG.get("intrinsics")
+
+    if not detection_field or not loc_maps_path or not intrinsics_path:
+        logging.error(
+            "MSIGHT_CONFIG is missing one or more required keys: "
+            "'detection_field', 'loc_maps', 'intrinsics'. Skipping localization."
+        )
+        return
+
+    # The dataset holds no detections of this field, for example because the
+    # workflow ran a different model than the one MSIGHT_CONFIG points to.
+    # This is not an error: skip the step before the dependencies install.
+    if detection_field not in dataset.get_field_schema():
+        logging.warning(
+            f"MSight localization skipped: dataset '{dataset.name}' has no field "
+            f"'{detection_field}'. Set MSIGHT_CONFIG['detection_field'] to a "
+            f"field of this dataset, or set 'run_localization' to False."
+        )
+        return
+
     # Auto-install dependencies if not present
     try:
         importlib.import_module("msight_base")
@@ -594,17 +616,6 @@ def _run_msight_localization(dataset: fo.Dataset) -> None:
         )
     except ImportError as exc:
         logging.error(f"Could not import MSight localization modules: {exc}")
-        return
-
-    detection_field = MSIGHT_CONFIG.get("detection_field")
-    loc_maps_path = MSIGHT_CONFIG.get("loc_maps")
-    intrinsics_path = MSIGHT_CONFIG.get("intrinsics")
-
-    if not detection_field or not loc_maps_path or not intrinsics_path:
-        logging.error(
-            "MSIGHT_CONFIG is missing one or more required keys: "
-            "'detection_field', 'loc_maps', 'intrinsics'. Skipping localization."
-        )
         return
 
     msight_field = f"msight_{detection_field}"

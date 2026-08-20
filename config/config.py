@@ -2,17 +2,17 @@ import os
 import psutil
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = ["auto_labeling"]
+SELECTED_WORKFLOW = [""]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "custom_dataset2",
+    "name": "",
     "n_samples": None,
     "custom_view": None,
 }
 
 #: Runtime session state — managed by the agent via WorkflowState, do not edit manually
-WORKFLOW_STATE = {'workflow_name': 'auto_labeling', 'dataset_name': '', 'dataset_confirmed': False, 'labeled_dataset_name': '', 'auto_labeling': {'labeling_path': '', 'labeling_backend': '', 'manual_classes': [], 'models_listed': False, 'model_configured': False, 'hyperparams_confirmed': False, 'auto_labeling_complete': False, 'cvat_task_ids': [], 'ls_task_ids': [], 'labels_imported': False, 'export_confirmed': False, 'run_confirmed': False, 'run_awaiting_confirmation': False, 'export_awaiting_confirmation': False, 'model_source': '', 'model_name': '', 'phase': ''}, 'class_mapping': None, 'anomaly_detection': None, 'embedding_selection': None, 'auto_labeling_zero_shot': None, 'ensemble_selection': None, 'last_run': None, 'workflow_just_reset': False, 'delete_awaiting_confirmation': False, 'delete_confirmed': False, 'delete_pending_name': ''}
+WORKFLOW_STATE = {'workflow_name': '', 'dataset_name': '', 'dataset_confirmed': False, 'labeled_dataset_name': '', 'auto_labeling': None, 'class_mapping': None, 'anomaly_detection': None, 'embedding_selection': None, 'auto_labeling_zero_shot': None, 'ensemble_selection': None, 'last_run': None, 'workflow_just_reset': False, 'delete_awaiting_confirmation': False, 'delete_confirmed': False, 'delete_pending_name': ''}
 
 #: Workflows and associated parameters
 WORKFLOWS = {
@@ -74,8 +74,8 @@ WORKFLOWS = {
         "mode": ['inference'],
         "model_source": [
         # "hf_models_objectdetection",
-        # "ultralytics",
-        "custom_codetr",
+        "ultralytics",
+        # "custom_codetr",
         # "roboflow",
         # "roboflow_keypoint",
         # "vitpose",
@@ -236,13 +236,13 @@ WORKFLOWS = {
             "multi_scale": False,
             "cos_lr": True,
             "models": {  # Pick from https://docs.ultralytics.com/models/
-                #"yolo11n": {"batch_size": 8, "img_size": 1280},
-                #"yolo11x": {"batch_size": 1, "img_size": 960},
-                #"yolo12n": {"batch_size": 8, "img_size": 1280},
-#"yolo12x": {"batch_size": 1, "img_size": 960},
-		#"yolo26x": {"batch_size": 1, "img_size": 960},
-		#"yolo26l": {"batch_size": 1, "img_size": 960},
-#		"yolo26m": {"batch_size": 1, "img_size": 960},
+                # "yolo11n": {"batch_size": 8, "img_size": 1280},
+                # "yolo11x": {"batch_size": 1, "img_size": 960},
+                # "yolo12n": {"batch_size": 8, "img_size": 1280},
+                "yolo12x": {"batch_size": 1, "img_size": 960},
+                # "yolo26x": {"batch_size": 1, "img_size": 960},
+                # "yolo26l": {"batch_size": 1, "img_size": 960},
+                # "yolo26m": {"batch_size": 1, "img_size": 960},
             },
         },
     },
@@ -405,7 +405,9 @@ WORKFLOWS = {
 }
 
 MSIGHT_CONFIG = {
-    "run_localization": True,
+    # Set to True only for a dataset of the camera that the calibration files
+    # below describe. The detection_field must exist in that dataset.
+    "run_localization": False,
     "detection_field": "pred_od_rfdetr_2xlarge-"+SELECTED_DATASET['name'],
     "loc_maps": "MSight/data/calibration_results_ashley_huron.npz",
     "intrinsics": "MSight/data/ashley_huron_intrinsic.json",

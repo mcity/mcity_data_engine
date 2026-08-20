@@ -2824,5 +2824,6 @@ class ChatPipeline:
             "Which dataset would you like to use? If you'd like to use your own "
             "dataset, please use the **data ingestion window** on the right to "
             "upload it first (supported formats: raw images, videos, COCO, YOLO, "
-            "CVAT-xml). Note: after uploading, respond with the uploaded dataset's name."
+            "CVAT-xml). \n\nNote: after uploading, respond with the uploaded dataset's name. "
+            "If you want to delete a dataset, tell me."
         )

@@ -29,8 +29,21 @@ def configure_auto_labeling(selected_source: str, selected_model: str) -> str:
     in_rf_config_list = False
 
     source_key_pattern = re.compile(rf'^\s*"{selected_source}"\s*:\s*{{')
-    model_line_pattern = re.compile(r'^\s*"([^"]+)"\s*:')
+    model_line_pattern = re.compile(r'^\s*#?\s*"([^"]+)"\s*:')
     config_line_pattern = re.compile(r'^\s*"([^"]+\.py)"')
+
+    # A line may be commented as '    #"yolo12x"' or as '#\t\t"yolo26m"',
+    # so strip any mix of leading whitespace and '#', then rebuild the indent.
+    def _bare(line):
+        return re.sub(r'^[\s#]+', '', line).rstrip()
+
+    def _enable(line, indent="                "):
+        return indent + _bare(line)
+
+    def _disable(line, indent="                "):
+        return indent + "# " + _bare(line)
+
+    enabled_count = 0
 
     for line in lines:
         stripped = line.strip()
@@ -78,9 +91,10 @@ def configure_auto_labeling(selected_source: str, selected_model: str) -> str:
                 if match:
                     model_name = match.group(1)
                     if model_name == selected_model:
-                        modified.append(line.lstrip('#').strip())
+                        modified.append(_enable(line))
+                        enabled_count += 1
                     else:
-                        modified.append("#" + line if not line.strip().startswith("#") else line)
+                        modified.append(_disable(line))
                     continue
 
             if selected_source == "hf_models_objectdetection":
@@ -88,9 +102,10 @@ def configure_auto_labeling(selected_source: str, selected_model: str) -> str:
                 if match:
                     model_name = match.group(1)
                     if model_name == selected_model:
-                        modified.append(line.lstrip('#').strip())
+                        modified.append(_enable(line))
+                        enabled_count += 1
                     else:
-                        modified.append("#" + line if not line.strip().startswith("#") else line)
+                        modified.append(_disable(line))
                     continue
 
             if '"configs": [' in line and selected_source == "custom_codetr":
@@ -107,9 +122,10 @@ def configure_auto_labeling(selected_source: str, selected_model: str) -> str:
                 if match:
                     config_path = match.group(1)
                     if selected_model in config_path:
-                        modified.append(line.lstrip('#').strip())
+                        modified.append(_enable(line))
+                        enabled_count += 1
                     else:
-                        modified.append("#" + line if not line.strip().startswith("#") else line)
+                        modified.append(_disable(line))
                     continue
 
             if '"configs": [' in line and selected_source == "roboflow":
@@ -130,6 +146,7 @@ def configure_auto_labeling(selected_source: str, selected_model: str) -> str:
                         indent = len(line) - len(line.lstrip())
                         uncommented = line.lstrip().lstrip('#').lstrip()
                         modified.append(' ' * indent + uncommented)
+                        enabled_count += 1
                     else:
                         if not stripped.startswith("#"):
                             indent = len(line) - len(line.lstrip())
@@ -147,6 +164,15 @@ def configure_auto_labeling(selected_source: str, selected_model: str) -> str:
             f"Invalid model '{selected_model}' for source '{selected_source}'. "
             f"Available: {valid.get(selected_source, [])}"
         )
+
+    # Guard against a silent no-op: the model line must really be enabled.
+    if enabled_count != 1:
+        return (
+            f"Config not written: '{selected_model}' matched {enabled_count} lines "
+            f"in source '{selected_source}', but exactly 1 is needed. "
+            f"Please check the model list in config.py."
+        )
+
     CONFIG_PATH.write_text('\n'.join(modified).rstrip('\n') + '\n')
     return f"Config updated to use `{selected_model}` from `{selected_source}`."
 
