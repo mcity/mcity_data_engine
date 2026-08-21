@@ -383,10 +383,8 @@ class WorkflowState(BaseModel):
     # Triggers a WORKFLOW_RESET context injection in chat_server on next request.
     workflow_just_reset: bool = False
 
-    # Dataset deletion is irreversible, so it uses the same two-step consent gate
-    # as export: the first delete_dataset call only produces a summary and sets
-    # delete_awaiting_confirmation; confirm_delete_dataset then sets
-    # delete_confirmed, which unlocks the real delete for delete_pending_name only.
+    turns_since_reset: int = 0
+
     delete_awaiting_confirmation: bool = False
     delete_confirmed: bool = False
     delete_pending_name: str = ""
@@ -747,6 +745,7 @@ class WorkflowState(BaseModel):
             "auto_labeling_zero_shot", "ensemble_selection",
             "last_run",
             "delete_awaiting_confirmation", "delete_confirmed", "delete_pending_name",
+            "turns_since_reset",
         }
         for key in list(raw.keys()):
             if key not in known:
@@ -779,12 +778,19 @@ class WorkflowState(BaseModel):
 
     @classmethod
     def reset(cls) -> "WorkflowState":
+        """End the session. Every field returns to its default, turns_since_reset
+        included, which is what stops chat_server from sending the turns of the
+        discarded session to the model."""
         fresh = cls()
         fresh.save()
         return fresh
 
     def reset_for_workflow(self, workflow_name: str) -> "WorkflowState":
         fresh = WorkflowState(workflow_name=workflow_name)
+        # A switch clears the parameters but keeps the conversation: only
+        # reset_workflow_state ends the session, so the history budget carries
+        # over. Setting it to 0 here would silently change switch_workflow too.
+        fresh.turns_since_reset = self.turns_since_reset
         substate_map = {
             "auto_labeling": ("auto_labeling", AutoLabelingState),
             "class_mapping": ("class_mapping", ClassMappingState),

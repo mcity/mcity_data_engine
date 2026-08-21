@@ -831,8 +831,18 @@ class ChatPipeline:
                             f"reset_workflow_state() — this clears the workflow, dataset, and "
                             f"all progress so they can start over from scratch."
                         )
-                        msg = result.split("SWITCH_LOCKED: ", 1)[1] if "SWITCH_LOCKED: " in result else result
-                        return result, [HardStop(msg)]
+                        # The user must never read the second half of that text. A
+                        # HardStop reply becomes an assistant turn in the chat history,
+                        # where "then call reset_workflow_state()" survives for four
+                        # turns and reads as a standing order — it already wiped one
+                        # session while the user was choosing a dataset. The user-facing
+                        # sentence therefore names no tool and asks no yes/no question.
+                        return result, [HardStop(
+                            f"The workflow is locked while the {action} is in progress, so I "
+                            f"cannot change its settings until the labels are imported. If you "
+                            f"would rather discard all progress and start over from scratch, "
+                            f"tell me and I will confirm with you first."
+                        )]
 
                     if al and al.phase == AutoLabelingPhase.COMPLETE:
                         logging.warning(
@@ -885,7 +895,12 @@ class ChatPipeline:
 
                 self.state = self.state.reset_for_workflow(workflow_name)
             else:
-                self.state = WorkflowState()
+                fresh = WorkflowState()
+                # A switch clears the parameters but not the conversation, so the
+                # history budget carries over. Only reset_workflow_state ends the
+                # session and sends it back to 0.
+                fresh.turns_since_reset = self.state.turns_since_reset
+                self.state = fresh
                 self.state.save()
             result = unwrap_tool_output(await mcp_client.call_tool(fn_name, fn_args))
             return result, [HardStop(await self._fetch_and_return_dataset_list())]

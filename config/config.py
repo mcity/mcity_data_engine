@@ -2,17 +2,17 @@ import os
 import psutil
 
 #: Select workflow list from 'WORKFLOWS = {...}' dictionary
-SELECTED_WORKFLOW = [""]
+SELECTED_WORKFLOW = ["auto_labeling"]
 
 #: Select dataset from config/datasets.yaml
 SELECTED_DATASET = {
-    "name": "",
+    "name": "custom_dataset5",
     "n_samples": None,
     "custom_view": None,
 }
 
 #: Runtime session state — managed by the agent via WorkflowState, do not edit manually
-WORKFLOW_STATE = {'workflow_name': '', 'dataset_name': '', 'dataset_confirmed': False, 'labeled_dataset_name': '', 'auto_labeling': None, 'class_mapping': None, 'anomaly_detection': None, 'embedding_selection': None, 'auto_labeling_zero_shot': None, 'ensemble_selection': None, 'last_run': None, 'workflow_just_reset': False, 'delete_awaiting_confirmation': False, 'delete_confirmed': False, 'delete_pending_name': ''}
+WORKFLOW_STATE = {'workflow_name': '', 'dataset_name': '', 'dataset_confirmed': False, 'labeled_dataset_name': '', 'auto_labeling': None, 'class_mapping': None, 'anomaly_detection': None, 'embedding_selection': None, 'auto_labeling_zero_shot': None, 'ensemble_selection': None, 'last_run': None, 'workflow_just_reset': False, 'turns_since_reset': 0, 'delete_awaiting_confirmation': False, 'delete_confirmed': False, 'delete_pending_name': ''}
 
 #: Workflows and associated parameters
 WORKFLOWS = {
